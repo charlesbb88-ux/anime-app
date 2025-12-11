@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
+  --background: #f0f2f5; /* Facebook-style light gray */
   --foreground: #171717;
 }
 
@@ -12,12 +12,14 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* optional: remove this block if you don't want dark mode
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
   }
 }
+*/
 
 body {
   background: var(--background);

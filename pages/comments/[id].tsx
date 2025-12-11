@@ -1,0 +1,1684 @@
+"use client";
+
+import { useEffect, useState, useRef, type CSSProperties } from "react";
+import { useRouter } from "next/router";
+import Link from "next/link";
+import { MessageCircle, Heart, Bookmark } from "lucide-react";
+import { supabase } from "../../lib/supabaseClient";
+import CommentRow from "../../components/CommentRow";
+import LeftSidebar from "../../components/LeftSidebar";
+import RightSidebar from "../../components/RightSidebar";
+import { openAuthModal } from "../../lib/openAuthModal";
+
+type Post = {
+  id: string;
+  content: string;
+  created_at: string;
+  user_id: string;
+};
+
+type Comment = {
+  id: string;
+  post_id: string;
+  user_id: string;
+  content: string;
+  created_at: string;
+  parent_comment_id: string | null;
+};
+
+type CommentLike = {
+  comment_id: string;
+  user_id: string;
+};
+
+type PostLike = {
+  post_id: string;
+  user_id: string;
+};
+
+type Profile = {
+  id: string;
+  username: string | null;
+  avatar_url: string | null;
+};
+
+// ---- Layout + typography tokens (MATCH POST/HOME) ----
+const LAYOUT = {
+  pageMaxWidth: "80rem",
+  pagePaddingY: "2rem",
+  pagePaddingX: "1.5rem",
+  columnGap: "1rem",
+  mainWidth: "41rem",
+  sidebarWidth: "19rem",
+};
+
+const TYPO = {
+  base: "1rem",
+  small: "0.9rem",
+};
+
+// ---------- Helpers ----------
+
+function formatRelativeTime(dateString: string) {
+  const target = new Date(dateString).getTime();
+  if (Number.isNaN(target)) return "";
+
+  const now = Date.now();
+  const diff = Math.max(0, now - target);
+
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  const weeks = Math.floor(days / 7);
+  const months = Math.floor(days / 30);
+  const years = Math.floor(days / 365);
+
+  if (seconds < 60) return `${seconds || 1}s`;
+  if (minutes < 60) return `${minutes}m`;
+  if (hours < 24) return `${hours}h`;
+  if (days < 7) return `${days}d`;
+  if (weeks < 4) return `${weeks}w`;
+  if (months < 12) return `${months}mo`;
+  return `${years}y`;
+}
+
+function ShareArrowIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 2v13" />
+      <path d="m16 6-4-4-4 4" />
+      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+    </svg>
+  );
+}
+
+// ---------- ThreadRow (top section) ----------
+
+type ThreadRowProps = {
+  id: string;
+  userId: string;
+  createdAt: string;
+  content: string;
+
+  displayName: string; // already includes @ when handle exists
+  initial: string;
+  username?: string; // canonical handle without @
+  avatarUrl?: string;
+
+  isMain?: boolean;
+  isOwner?: boolean;
+  replyCount?: number;
+  likeCount?: number;
+  likedByMe?: boolean;
+
+  href?: string;
+
+  showConnectorAbove?: boolean;
+  showConnectorBelow?: boolean;
+
+  onReplyClick?: (id: string, e: any) => void;
+  onToggleLike?: (id: string, e: any) => void;
+  onBookmarkClick?: (id: string, e: any) => void;
+  onShareClick?: (id: string, e: any) => void;
+  onEdit?: (id: string, e: any) => void;
+  onDelete?: (id: string, e: any) => void;
+  isMenuOpen?: boolean;
+  onToggleMenu?: (id: string, e: any) => void;
+
+  onRowClick?: (id: string, e: any) => void;
+};
+
+function ThreadRow(props: ThreadRowProps) {
+  const router = useRouter();
+
+  const {
+    id,
+    createdAt,
+    content,
+    displayName,
+    initial,
+    username,
+    avatarUrl,
+    isMain = false,
+    isOwner = false,
+    replyCount = 0,
+    likeCount = 0,
+    likedByMe = false,
+    href,
+    showConnectorAbove = false,
+    showConnectorBelow = false,
+    onReplyClick,
+    onToggleLike,
+    onBookmarkClick,
+    onShareClick,
+    onEdit,
+    onDelete,
+    isMenuOpen,
+    onToggleMenu,
+    onRowClick,
+  } = props;
+
+  const iconSize = isMain ? 22 : 20;
+  const avatarCircleSize = isMain ? 52 : 45;
+  const avatarWrapperSize = 52;
+
+  const nameFontSize = isMain ? "1.05rem" : "0.95rem";
+  const contentFontSize = isMain ? "1.1rem" : "1rem";
+
+  const iconButtonBase: CSSProperties = {
+    border: "none",
+    background: "transparent",
+    cursor: "pointer",
+    padding: "4px",
+    borderRadius: 999,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    transition:
+      "background 0.12s ease, transform 0.12s ease, color 0.12s ease",
+  };
+
+  const countStyle: CSSProperties = {
+    fontSize: "0.9rem",
+    color: "inherit",
+  };
+
+  const actionSlotStyle: CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.25rem",
+    minWidth: "0",
+  };
+
+  const isClickable = !!(href || onRowClick);
+  const [isHovered, setIsHovered] = useState(false);
+
+  function handleRowClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (!isClickable) return;
+    if (onRowClick) {
+      onRowClick(id, e);
+      return;
+    }
+    if (href) {
+      router.push(href);
+    }
+  }
+
+  const avatarBubble = (
+    <div
+      style={{
+        width: avatarCircleSize,
+        height: avatarCircleSize,
+        borderRadius: "999px",
+        background: "#e5e5e5",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: isMain ? "1rem" : "0.95rem",
+        fontWeight: 600,
+        color: "#333",
+        flexShrink: 0,
+        position: "relative",
+        overflow: "hidden",
+        zIndex: 1,
+      }}
+    >
+      {avatarUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={avatarUrl}
+          alt={displayName}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            display: "block",
+          }}
+        />
+      ) : (
+        initial
+      )}
+    </div>
+  );
+
+  const avatarWithOptionalLink = username ? (
+    <Link
+      href={`/${username}`}
+      onClick={(e) => e.stopPropagation()}
+      style={{ display: "inline-flex" }}
+    >
+      {avatarBubble}
+    </Link>
+  ) : (
+    avatarBubble
+  );
+
+  const body = (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: "0.75rem",
+        padding: "0.7rem 0.8rem 0.3rem 0.8rem",
+      }}
+    >
+      {/* avatar + vertical connector */}
+      <div
+        style={{
+          position: "relative",
+          width: avatarWrapperSize,
+          display: "flex",
+          justifyContent: "center",
+          marginRight: "0.4rem",
+        }}
+      >
+        {(showConnectorAbove || showConnectorBelow) && (
+          <div
+            style={{
+              position: "absolute",
+              top: showConnectorAbove ? -36 : avatarCircleSize / 2,
+              bottom: showConnectorBelow ? -36 : avatarCircleSize / 2,
+              left: "50%",
+              transform: "translateX(-50%)",
+              borderLeft: "1px solid #e0e0e0",
+              pointerEvents: "none",
+              zIndex: 0,
+            }}
+          />
+        )}
+
+        {/* avatar bubble (clickable to profile if username exists) */}
+        {avatarWithOptionalLink}
+      </div>
+
+      {/* text */}
+      <div style={{ flex: 1 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.4rem",
+            marginBottom: "0.15rem",
+          }}
+        >
+          {username ? (
+            <Link
+              href={`/${username}`}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                fontSize: nameFontSize,
+                fontWeight: 500,
+                color: "#333",
+                textDecoration: "none",
+              }}
+            >
+              {displayName}
+            </Link>
+          ) : (
+            <span
+              style={{
+                fontSize: nameFontSize,
+                fontWeight: 500,
+                color: "#333",
+              }}
+            >
+              {displayName}
+            </span>
+          )}
+
+          <span
+            style={{
+              color: "#777",
+              fontSize: "0.8rem",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.25rem",
+            }}
+          >
+            <span
+              style={{
+                display: "inline-block",
+                width: 3,
+                height: 3,
+                borderRadius: "999px",
+                backgroundColor: "#999",
+              }}
+            />
+            {formatRelativeTime(createdAt)}
+          </span>
+        </div>
+
+        <p
+          style={{
+            margin: 0,
+            fontSize: contentFontSize,
+            fontWeight: 400,
+            lineHeight: 1.5,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+          }}
+        >
+          {content}
+        </p>
+      </div>
+    </div>
+  );
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        border: "none",
+        background: isClickable && isHovered ? "#f7f9fb" : "#ffffff",
+        cursor: isClickable ? "pointer" : "default",
+        transition: "background 0.12s ease",
+      }}
+      onClick={handleRowClick}
+      onMouseEnter={() => {
+        if (isClickable) setIsHovered(true);
+      }}
+      onMouseLeave={() => {
+        if (isClickable) setIsHovered(false);
+      }}
+    >
+      {/* owner menu */}
+      {isOwner && onToggleMenu && (
+        <div
+          style={{
+            position: "absolute",
+            top: "0.55rem",
+            right: "0.5rem",
+            zIndex: 10,
+          }}
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleMenu(id, e);
+            }}
+            style={{
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              padding: "0 0.3rem",
+              fontSize: "1.1rem",
+              lineHeight: 1,
+              color: "#555",
+            }}
+          >
+            ⋯
+          </button>
+
+          {isMenuOpen && (
+            <div
+              style={{
+                position: "absolute",
+                top: "1.5rem",
+                right: 0,
+                background: "#fff",
+                border: "1px solid #ddd",
+                borderRadius: "4px",
+                boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+                minWidth: "130px",
+                zIndex: 20,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {onEdit && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit(id, e);
+                  }}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "0.4rem 0.7rem",
+                    border: "none",
+                    background: "transparent",
+                    cursor: "pointer",
+                    fontSize: "0.9rem",
+                    color: "#333",
+                  }}
+                >
+                  Edit
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(id, e);
+                  }}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "0.4rem 0.7rem",
+                    borderTop: "1px solid #eee",
+                    background: "transparent",
+                    cursor: "pointer",
+                    fontSize: "0.9rem",
+                    color: "#b00000",
+                  }}
+                >
+                  Delete
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {body}
+
+      {/* full action bar */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          maxWidth: "90%",
+          padding: "0.35rem 0 0.65rem 3.25rem",
+          marginLeft: ".25rem",
+          marginRight: "auto",
+        }}
+      >
+        {/* Reply */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onReplyClick?.(id, e);
+          }}
+          style={{
+            ...iconButtonBase,
+            ...actionSlotStyle,
+            padding: "4px 10px",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = "translateY(-1px)";
+            e.currentTarget.style.color = "#1d9bf0";
+            e.currentTarget.style.background = "#1d9bf01a";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = "translateY(0)";
+            e.currentTarget.style.color = "#555";
+            e.currentTarget.style.background = "transparent";
+          }}
+        >
+          <MessageCircle
+            width={iconSize}
+            height={iconSize}
+            strokeWidth={1.7}
+          />
+          <span style={countStyle}>{replyCount}</span>
+        </button>
+
+        {/* Like */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleLike?.(id, e);
+          }}
+          style={{
+            ...iconButtonBase,
+            ...actionSlotStyle,
+            padding: "4px 10px",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = "translateY(-1px)";
+            e.currentTarget.style.color = "#f91880";
+            e.currentTarget.style.background = "#f918801a";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = "translateY(0)";
+            e.currentTarget.style.color = "#555";
+            e.currentTarget.style.background = "transparent";
+          }}
+        >
+          <Heart
+            width={iconSize}
+            height={iconSize}
+            strokeWidth={1.7}
+            fill={likedByMe ? "currentColor" : "none"}
+          />
+          <span style={countStyle}>{likeCount}</span>
+        </button>
+
+        {/* Bookmark */}
+        <div style={actionSlotStyle}>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onBookmarkClick?.(id, e);
+            }}
+            style={iconButtonBase}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = "translateY(-1px)";
+              e.currentTarget.style.color = "#00ba7c";
+              e.currentTarget.style.background = "#00ba7c1a";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "translateY(0)";
+              e.currentTarget.style.color = "#555";
+              e.currentTarget.style.background = "transparent";
+            }}
+          >
+            <Bookmark width={iconSize} height={iconSize} strokeWidth={1.7} />
+          </button>
+        </div>
+
+        {/* Share */}
+        <div style={actionSlotStyle}>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onShareClick?.(id, e);
+            }}
+            style={iconButtonBase}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = "translateY(-1px)";
+              e.currentTarget.style.color = "#1d9bf0";
+              e.currentTarget.style.background = "#1d9bf01a";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "translateY(0)";
+              e.currentTarget.style.color = "#555";
+              e.currentTarget.style.background = "transparent";
+            }}
+          >
+            <ShareArrowIcon size={iconSize} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Main Page ----------
+
+export default function CommentPage() {
+  const router = useRouter();
+  const { id } = router.query;
+
+  const [user, setUser] = useState<any>(null);
+
+  const [post, setPost] = useState<Post | null>(null);
+  const [mainComment, setMainComment] = useState<Comment | null>(null);
+  const [ancestors, setAncestors] = useState<Comment[]>([]);
+  const [replies, setReplies] = useState<Comment[]>([]);
+
+  const [loading, setLoading] = useState(true);
+  const [repliesLoading, setRepliesLoading] = useState(true);
+
+  const [replyInput, setReplyInput] = useState("");
+  const [addingReply, setAddingReply] = useState(false);
+  const [replyActive, setReplyActive] = useState(false);
+  const replyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const [openMenuCommentId, setOpenMenuCommentId] = useState<string | null>(
+    null
+  );
+
+  const [commentLikeCounts, setCommentLikeCounts] = useState<
+    Record<string, number>
+  >({});
+
+  const [commentLikedByMe, setCommentLikedByMe] = useState<
+    Record<string, boolean>
+  >({});
+
+  const [commentReplyCounts, setCommentReplyCounts] = useState<
+    Record<string, number>
+  >({});
+
+  const [postLikeCount, setPostLikeCount] = useState(0);
+  const [postLikedByMe, setPostLikedByMe] = useState(false);
+  const [postReplyCount, setPostReplyCount] = useState(0);
+
+  // map of user_id -> canonical handle (no @)
+  const [usernamesById, setUsernamesById] = useState<Record<string, string>>(
+    {}
+  );
+
+  // map of user_id -> avatar_url
+  const [avatarUrlsById, setAvatarUrlsById] = useState<
+    Record<string, string | null>
+  >({});
+
+  // current user avatar + username for reply composer
+  const [currentUserAvatarUrl, setCurrentUserAvatarUrl] = useState<
+    string | null
+  >(null);
+  const [currentUserUsername, setCurrentUserUsername] = useState<string | null>(
+    null
+  );
+
+  // ---------- auth ----------
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      setUser(data.user);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null);
+      }
+    );
+
+    return () => {
+      listener?.subscription.unsubscribe();
+    };
+  }, []);
+
+  // load current user's avatar + username for reply composer
+  useEffect(() => {
+    if (!user || !user.id) {
+      setCurrentUserAvatarUrl(null);
+      setCurrentUserUsername(null);
+      return;
+    }
+
+    async function loadSelfProfile() {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("avatar_url, username")
+        .eq("id", user.id)
+        .single();
+
+      if (error) {
+        console.error("Error loading current user profile:", error);
+        setCurrentUserAvatarUrl(null);
+        setCurrentUserUsername(null);
+        return;
+      }
+
+      setCurrentUserAvatarUrl(data?.avatar_url ?? null);
+      const uname =
+        data?.username && data.username.trim()
+          ? data.username.trim()
+          : null;
+      setCurrentUserUsername(uname);
+    }
+
+    loadSelfProfile();
+  }, [user]);
+
+  // ---------- close menu on outside click ----------
+
+  useEffect(() => {
+    if (!openMenuCommentId) return;
+
+    function handleDocumentClick() {
+      setOpenMenuCommentId(null);
+    }
+
+    document.addEventListener("click", handleDocumentClick);
+    return () => document.removeEventListener("click", handleDocumentClick);
+  }, [openMenuCommentId]);
+
+  // ---------- load context ----------
+
+  useEffect(() => {
+    if (!id) return;
+    const commentId = id as string;
+    loadCommentAndContext(commentId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, user]);
+
+  async function loadCommentAndContext(commentId: string) {
+    setLoading(true);
+
+    // main comment
+    const { data: commentData, error: commentError } = await supabase
+      .from("comments")
+      .select(
+        "id, post_id, user_id, content, created_at, parent_comment_id"
+      )
+      .eq("id", commentId)
+      .single();
+
+    if (commentError || !commentData) {
+      console.error("Error loading comment:", commentError);
+      setLoading(false);
+      return;
+    }
+
+    const main = commentData as Comment;
+    setMainComment(main);
+
+    // post
+    const { data: postData, error: postError } = await supabase
+      .from("posts")
+      .select("id, content, created_at, user_id")
+      .eq("id", main.post_id)
+      .single();
+
+    if (postError || !postData) {
+      console.error("Error loading post:", postError);
+      setLoading(false);
+      return;
+    }
+
+    const postRecord = postData as Post;
+    setPost(postRecord);
+
+    // post likes
+    const { data: postLikes, error: postLikesError } = await supabase
+      .from("likes")
+      .select("post_id, user_id")
+      .eq("post_id", postRecord.id);
+
+    if (postLikesError) {
+      console.error("Error loading post likes:", postLikesError);
+      setPostLikeCount(0);
+      setPostLikedByMe(false);
+    } else {
+      const likes = (postLikes || []) as PostLike[];
+      setPostLikeCount(likes.length);
+      setPostLikedByMe(
+        user ? likes.some((l) => l.user_id === user.id) : false
+      );
+    }
+
+    // post reply count (root-level comments)
+    const { data: postComments, error: postCommentsError } = await supabase
+      .from("comments")
+      .select("id")
+      .eq("post_id", postRecord.id)
+      .is("parent_comment_id", null);
+
+    if (postCommentsError) {
+      console.error("Error loading post reply count:", postCommentsError);
+      setPostReplyCount(0);
+    } else {
+      setPostReplyCount((postComments || []).length);
+    }
+
+    // ancestor chain
+    const chain: Comment[] = [];
+    let currentParentId = main.parent_comment_id;
+
+    while (currentParentId) {
+      const { data: parentData, error: parentError } = await supabase
+        .from("comments")
+        .select(
+          "id, post_id, user_id, content, created_at, parent_comment_id"
+        )
+        .eq("id", currentParentId)
+        .single();
+
+      if (parentError || !parentData) {
+        console.error("Error loading parent comment:", parentError);
+        break;
+      }
+
+      const parent = parentData as Comment;
+      chain.push(parent);
+      currentParentId = parent.parent_comment_id;
+    }
+
+    chain.reverse();
+    setAncestors(chain);
+
+    // replies to main comment
+    const replyList = await loadReplies(main.id);
+
+    // counts/likes for all visible comments
+    const ids: string[] = [
+      main.id,
+      ...chain.map((c) => c.id),
+      ...replyList.map((c) => c.id),
+    ];
+
+    if (ids.length > 0) {
+      // reply counts
+      const { data: replyRows, error: replyError } = await supabase
+        .from("comments")
+        .select("id, parent_comment_id")
+        .in("parent_comment_id", ids);
+
+      if (replyError) {
+        console.error("Error loading reply counts:", replyError);
+      } else {
+        const replyMap: Record<string, number> = {};
+        (replyRows || []).forEach((row) => {
+          if (row.parent_comment_id) {
+            replyMap[row.parent_comment_id] =
+              (replyMap[row.parent_comment_id] || 0) + 1;
+          }
+        });
+        setCommentReplyCounts(replyMap);
+      }
+
+      // likes for comments
+      const { data: likeRows, error: likeError } = await supabase
+        .from("comment_likes")
+        .select("comment_id, user_id")
+        .in("comment_id", ids);
+
+      if (likeError) {
+        console.error("Error loading comment likes:", likeError);
+      } else {
+        const counts: Record<string, number> = {};
+        const likedMap: Record<string, boolean> = {};
+
+        (likeRows || []).forEach((row: CommentLike) => {
+          counts[row.comment_id] = (counts[row.comment_id] || 0) + 1;
+          if (user && row.user_id === user.id) {
+            likedMap[row.comment_id] = true;
+          }
+        });
+
+        setCommentLikeCounts(counts);
+        setCommentLikedByMe(likedMap);
+      }
+    } else {
+      setCommentReplyCounts({});
+      setCommentLikeCounts({});
+      setCommentLikedByMe({});
+    }
+
+    // load profiles for everyone in this thread
+    const userIdSet = new Set<string>();
+    userIdSet.add(postRecord.user_id);
+    userIdSet.add(main.user_id);
+    chain.forEach((c) => userIdSet.add(c.user_id));
+    replyList.forEach((c) => userIdSet.add(c.user_id));
+
+    const userIds = Array.from(userIdSet);
+    if (userIds.length > 0) {
+      const { data: profileRows, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, username, avatar_url")
+        .in("id", userIds);
+
+      if (profileError) {
+        console.error("Error loading profiles:", profileError);
+      } else {
+        const unameMap: Record<string, string> = {};
+        const avatarMap: Record<string, string | null> = {};
+
+        (profileRows || []).forEach((p: Profile) => {
+          if (p.username && p.username.trim()) {
+            unameMap[p.id] = p.username.trim();
+          }
+          avatarMap[p.id] = p.avatar_url ?? null;
+        });
+
+        setUsernamesById(unameMap);
+        setAvatarUrlsById(avatarMap);
+      }
+    } else {
+      setUsernamesById({});
+      setAvatarUrlsById({});
+    }
+
+    setLoading(false);
+  }
+
+  async function loadReplies(commentId: string): Promise<Comment[]> {
+    setRepliesLoading(true);
+
+    const { data, error } = await supabase
+      .from("comments")
+      .select(
+        "id, post_id, user_id, content, created_at, parent_comment_id"
+      )
+      .eq("parent_comment_id", commentId)
+      .order("created_at", { ascending: true });
+
+    setRepliesLoading(false);
+
+    if (error) {
+      console.error("Error loading replies:", error);
+      setReplies([]);
+      return [];
+    }
+
+    const list = (data || []) as Comment[];
+    setReplies(list);
+    return list;
+  }
+
+  // ---------- textarea auto-grow ----------
+
+  function autoGrow(el: HTMLTextAreaElement) {
+    el.style.height = "auto";
+    const maxHeight = 20 * 24;
+    const newHeight = Math.min(el.scrollHeight, maxHeight);
+    el.style.height = `${newHeight}px`;
+    el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
+  }
+
+  // ---------- add reply (to main comment) ----------
+
+  async function handleAddReply() {
+    if (!user || !mainComment) return;
+
+    const text = replyInput.trim();
+    if (!text) return;
+
+    setAddingReply(true);
+
+    const { error } = await supabase.from("comments").insert({
+      post_id: mainComment.post_id,
+      user_id: user.id,
+      content: text,
+      parent_comment_id: mainComment.id,
+    });
+
+    setAddingReply(false);
+
+    if (error) {
+      console.error("Error adding reply:", error);
+      return;
+    }
+
+    setReplyInput("");
+    setReplyActive(false);
+
+    if (replyTextareaRef.current) {
+      replyTextareaRef.current.style.height = "24px";
+      replyTextareaRef.current.style.overflowY = "hidden";
+    }
+
+    await loadCommentAndContext(mainComment.id);
+  }
+
+  // ---------- edit / delete ----------
+
+  async function handleEditComment(id: string, e: any) {
+    e.stopPropagation();
+    if (!user) return;
+
+    const allComments: Comment[] = [
+      ...(ancestors || []),
+      ...(mainComment ? [mainComment] : []),
+      ...(replies || []),
+    ];
+
+    const c = allComments.find((cm) => cm.id === id);
+    if (!c || user.id !== c.user_id) return;
+
+    const next = window.prompt("Edit comment:", c.content);
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (!trimmed) return;
+
+    const { error } = await supabase
+      .from("comments")
+      .update({ content: trimmed })
+      .eq("id", c.id)
+      .eq("user_id", user.id);
+
+    if (error) {
+      console.error("Error updating comment:", error);
+      return;
+    }
+
+    setMainComment((prev) =>
+      prev && prev.id === c.id ? { ...prev, content: trimmed } : prev
+    );
+    setAncestors((prev) =>
+      prev.map((cm) => (cm.id === c.id ? { ...cm, content: trimmed } : cm))
+    );
+    setReplies((prev) =>
+      prev.map((cm) => (cm.id === c.id ? { ...cm, content: trimmed } : cm))
+    );
+
+    setOpenMenuCommentId(null);
+  }
+
+  async function handleDeleteComment(id: string, e: any) {
+    e.stopPropagation();
+    if (!user) return;
+
+    const allComments: Comment[] = [
+      ...(ancestors || []),
+      ...(mainComment ? [mainComment] : []),
+      ...(replies || []),
+    ];
+
+    const c = allComments.find((cm) => cm.id === id);
+    if (!c || user.id !== c.user_id) return;
+
+    const ok = window.confirm("Delete this comment?");
+    if (!ok) return;
+
+    const { error } = await supabase
+      .from("comments")
+      .delete()
+      .eq("id", c.id)
+      .eq("user_id", user.id);
+
+    if (error) {
+      console.error("Error deleting comment:", error);
+      return;
+    }
+
+    setOpenMenuCommentId(null);
+
+    if (mainComment && c.id === mainComment.id) {
+      if (post) {
+        router.push(`/posts/${post.id}`);
+      } else {
+        router.push("/");
+      }
+      return;
+    }
+
+    if (mainComment) {
+      await loadCommentAndContext(mainComment.id);
+    }
+  }
+
+  // ---------- like toggle for comments ----------
+
+  async function toggleCommentLike(commentId: string, e: any) {
+    e.stopPropagation();
+
+    if (!user) {
+      openAuthModal();
+      return;
+    }
+
+    const alreadyLiked = commentLikedByMe[commentId];
+
+    if (alreadyLiked) {
+      const { error } = await supabase
+        .from("comment_likes")
+        .delete()
+        .eq("comment_id", commentId)
+        .eq("user_id", user.id);
+
+      if (error) {
+        console.error("Error unliking comment:", error);
+        return;
+      }
+
+      setCommentLikedByMe((prev) => ({ ...prev, [commentId]: false }));
+      setCommentLikeCounts((prev) => ({
+        ...prev,
+        [commentId]: Math.max(0, (prev[commentId] || 1) - 1),
+      }));
+    } else {
+      const { error } = await supabase.from("comment_likes").insert({
+        comment_id: commentId,
+        user_id: user.id,
+      });
+
+      if (error) {
+        console.error("Error liking comment:", error);
+        return;
+      }
+
+      setCommentLikedByMe((prev) => ({ ...prev, [commentId]: true }));
+      setCommentLikeCounts((prev) => ({
+        ...prev,
+        [commentId]: (prev[commentId] || 0) + 1,
+      }));
+    }
+  }
+
+  // ---------- like toggle for origin post ----------
+
+  async function handleTogglePostLike(postId: string, e: any) {
+    e.stopPropagation();
+
+    if (!user) {
+      openAuthModal();
+      return;
+    }
+
+    if (!post || postId !== post.id) return;
+
+    if (postLikedByMe) {
+      const { error } = await supabase
+        .from("likes")
+        .delete()
+        .eq("post_id", post.id)
+        .eq("user_id", user.id);
+
+      if (error) {
+        console.error("Error unliking post:", error);
+        return;
+      }
+
+      setPostLikedByMe(false);
+      setPostLikeCount((prev) => Math.max(0, prev - 1));
+    } else {
+      const { error } = await supabase.from("likes").insert({
+        post_id: post.id,
+        user_id: user.id,
+      });
+
+      if (error) {
+        console.error("Error liking post:", error);
+        return;
+      }
+
+      setPostLikedByMe(true);
+      setPostLikeCount((prev) => prev + 1);
+    }
+  }
+
+  // ---------- menu helper ----------
+
+  function toggleCommentMenu(commentId: string, e: any) {
+    e.stopPropagation();
+    setOpenMenuCommentId((prev) =>
+      prev === commentId ? null : prev ? null : commentId
+    );
+  }
+
+  // ---------- navigation helpers ----------
+
+  function openCommentFromIcon(commentId: string, e: any) {
+    e.stopPropagation();
+    router.push(`/comments/${commentId}`);
+  }
+
+  function handleReplyClick(commentId: string, e: any) {
+    openCommentFromIcon(commentId, e);
+  }
+
+  function handleMainReplyClick(_id: string, e: any) {
+    e.stopPropagation();
+    setReplyActive(true);
+    if (replyTextareaRef.current) {
+      replyTextareaRef.current.focus();
+      replyTextareaRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+  }
+
+  // ---------- identity helpers (handles + @display) ----------
+
+  function getHandle(userId: string): string | null {
+    const u = usernamesById[userId];
+    if (u && u.trim()) return u.trim();
+    return null;
+  }
+
+  function getAvatarUrl(userId: string): string | undefined {
+    const url = avatarUrlsById[userId];
+    return url ?? undefined;
+  }
+
+  function getDisplayName(userId: string): string {
+    const handle = getHandle(userId);
+    if (handle) {
+      return `@${handle}`;
+    }
+    return `User-${userId.slice(0, 4)}`;
+  }
+
+  function getInitial(userId: string): string {
+    const handle = getHandle(userId);
+    if (handle) {
+      return handle.charAt(0).toUpperCase();
+    }
+    return getDisplayName(userId).charAt(0).toUpperCase();
+  }
+
+  function getInitialFromUser(userObj: any) {
+    if (!userObj) return "U";
+    const email: string = userObj.email || "";
+    const c = email.trim()[0];
+    if (c) return c.toUpperCase();
+    return "U";
+  }
+
+  const currentUserInitial = getInitialFromUser(user);
+  const replyDisabled = addingReply || !replyInput.trim();
+  const isCollapsed = !replyActive && !replyInput.trim();
+
+  function handleReplyInputChange(e: any) {
+    setReplyInput(e.target.value);
+    if (replyTextareaRef.current) {
+      autoGrow(replyTextareaRef.current);
+    }
+  }
+
+  function handleReplyBlur() {
+    if (!replyInput.trim()) {
+      setReplyActive(false);
+      if (replyTextareaRef.current) {
+        replyTextareaRef.current.style.height = "24px";
+        replyTextareaRef.current.style.overflowY = "hidden";
+      }
+    }
+  }
+
+  // ---------- thread items ----------
+
+  const threadItems =
+    post && mainComment
+      ? [
+          { type: "post" as const, item: post },
+          ...ancestors.map((c) => ({ type: "comment" as const, item: c })),
+          { type: "comment" as const, item: mainComment },
+        ]
+      : [];
+
+  // ---------- back link ----------
+
+  function handleBackClick(
+    e: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement>
+  ) {
+    e.preventDefault();
+
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+      return;
+    }
+
+    if (post) {
+      router.push(`/posts/${post.id}`);
+    } else {
+      router.push("/");
+    }
+  }
+
+  // composer avatar node
+  const composerAvatarNode = (
+    <div
+      style={{
+        width: 45,
+        height: 45,
+        borderRadius: "999px",
+        background: "#e5e5e5",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: "0.95rem",
+        fontWeight: 600,
+        color: "#333",
+        flexShrink: 0,
+        overflow: "hidden",
+      }}
+    >
+      {currentUserAvatarUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={currentUserAvatarUrl}
+          alt="Your avatar"
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            display: "block",
+          }}
+        />
+      ) : (
+        currentUserInitial
+      )}
+    </div>
+  );
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#f5f5f5",
+        fontFamily: "system-ui, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: LAYOUT.pageMaxWidth,
+          margin: "0 auto",
+          padding: `${LAYOUT.pagePaddingY} ${LAYOUT.pagePaddingX}`,
+        }}
+      >
+        {/* ONE FLEX ROW: left | center | right — same as PostPage/Home */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            gap: LAYOUT.columnGap,
+          }}
+        >
+          {/* LEFT SIDEBAR (sticky) */}
+          <aside
+            style={{
+              flex: `0 0 ${LAYOUT.sidebarWidth}`,
+              maxWidth: LAYOUT.sidebarWidth,
+              position: "sticky",
+              top: "1.5rem",
+              alignSelf: "flex-start",
+              height: "fit-content",
+            }}
+          >
+            <LeftSidebar />
+          </aside>
+
+          {/* CENTER COLUMN – thread + replies */}
+          <main
+            style={{
+              flex: `0 0 ${LAYOUT.mainWidth}`,
+              maxWidth: LAYOUT.mainWidth,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "0.6rem",
+              }}
+            >
+              <a
+                href={post ? `/posts/${post.id}` : "/"}
+                onClick={handleBackClick}
+                style={{ fontSize: TYPO.small, cursor: "pointer" }}
+              >
+                ← Back
+              </a>
+              {post && (
+                <Link
+                  href={`/posts/${post.id}`}
+                  style={{ fontSize: TYPO.small, color: "#555" }}
+                >
+                  View post
+                </Link>
+              )}
+            </div>
+
+            {loading || !post || !mainComment ? (
+              <p style={{ marginTop: "1rem" }}>Loading thread…</p>
+            ) : (
+              <>
+                {/* TOP: thread */}
+                <section style={{ marginBottom: "0.85rem" }}>
+                  <div
+                    style={{
+                      border: "1px solid #11111111",
+                      borderRadius: 0,
+                      background: "#ffffff",
+                    }}
+                  >
+                    {threadItems.map((entry, index) => {
+                      const isFirst = index === 0;
+                      const isLast = index === threadItems.length - 1;
+
+                      const showConnectorAbove = !isFirst;
+                      const showConnectorBelow = !isLast;
+
+                      if (entry.type === "post") {
+                        const p = entry.item as Post;
+                        const handle = getHandle(p.user_id);
+                        const avatarUrl = getAvatarUrl(p.user_id);
+                        return (
+                          <ThreadRow
+                            key={`post-${p.id}`}
+                            id={p.id}
+                            userId={p.user_id}
+                            createdAt={p.created_at}
+                            content={p.content}
+                            displayName={getDisplayName(p.user_id)}
+                            initial={getInitial(p.user_id)}
+                            username={handle ?? undefined}
+                            avatarUrl={avatarUrl}
+                            href={`/posts/${p.id}`}
+                            showConnectorAbove={showConnectorAbove}
+                            showConnectorBelow={showConnectorBelow}
+                            isOwner={false}
+                            replyCount={postReplyCount}
+                            likeCount={postLikeCount}
+                            likedByMe={postLikedByMe}
+                            onToggleLike={handleTogglePostLike}
+                          />
+                        );
+                      }
+
+                      const c = entry.item as Comment;
+                      const isOwner = !!(user && user.id === c.user_id);
+                      const isMainRow = mainComment && c.id === mainComment.id;
+                      const handle = getHandle(c.user_id);
+                      const avatarUrl = getAvatarUrl(c.user_id);
+
+                      return (
+                        <ThreadRow
+                          key={c.id}
+                          id={c.id}
+                          userId={c.user_id}
+                          createdAt={c.created_at}
+                          content={c.content}
+                          displayName={getDisplayName(c.user_id)}
+                          initial={getInitial(c.user_id)}
+                          username={handle ?? undefined}
+                          avatarUrl={avatarUrl}
+                          isMain={!!isMainRow}
+                          isOwner={isOwner}
+                          href={isMainRow ? undefined : `/comments/${c.id}`}
+                          replyCount={
+                            isMainRow
+                              ? replies.length
+                              : commentReplyCounts[c.id] || 0
+                          }
+                          likeCount={commentLikeCounts[c.id] || 0}
+                          likedByMe={!!commentLikedByMe[c.id]}
+                          onReplyClick={
+                            isMainRow ? handleMainReplyClick : handleReplyClick
+                          }
+                          onToggleLike={toggleCommentLike}
+                          onEdit={handleEditComment}
+                          onDelete={handleDeleteComment}
+                          isMenuOpen={openMenuCommentId === c.id}
+                          onToggleMenu={toggleCommentMenu}
+                          showConnectorAbove={showConnectorAbove}
+                          showConnectorBelow={showConnectorBelow}
+                        />
+                      );
+                    })}
+                  </div>
+                </section>
+
+                {/* BOTTOM: composer + replies */}
+                {user ? (
+                  <div
+                    style={{
+                      marginTop: "0.4rem",
+                    }}
+                  >
+                    <div
+                      style={{
+                        border: "1px solid #11111111",
+                        borderRadius: 0,
+                        background: "#ffffff",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: replyActive ? "flex-start" : "center",
+                          gap: "0.6rem",
+                          padding: replyActive
+                            ? "0.5rem 0.75rem 0.3rem 0.75rem"
+                            : "0.35rem 0.75rem",
+                        }}
+                      >
+                        {/* avatar – clickable to profile if username exists */}
+                        {currentUserUsername ? (
+                          <Link
+                            href={`/${currentUserUsername}`}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              display: "inline-block",
+                              textDecoration: "none",
+                            }}
+                          >
+                            {composerAvatarNode}
+                          </Link>
+                        ) : (
+                          composerAvatarNode
+                        )}
+
+                        {/* textarea */}
+                        <div style={{ flex: 1 }}>
+                          <textarea
+                            id="comment-reply-input"
+                            ref={replyTextareaRef}
+                            value={replyInput}
+                            onChange={handleReplyInputChange}
+                            onFocus={() => setReplyActive(true)}
+                            onBlur={handleReplyBlur}
+                            placeholder={
+                              !replyActive ? "Post your reply" : ""
+                            }
+                            rows={1}
+                            style={{
+                              width: "100%",
+                              border: "none",
+                              outline: "none",
+                              resize: "none",
+                              background: "transparent",
+                              padding: isCollapsed ? "0" : "0.6rem 0",
+                              height: isCollapsed ? "26px" : "auto",
+                              minHeight: isCollapsed ? "26px" : "36px",
+                              fontSize: "1rem",
+                              fontFamily: "inherit",
+                              lineHeight: isCollapsed ? "30px" : 1.5,
+                              overflowY: "hidden",
+                            }}
+                          />
+                        </div>
+
+                        {/* inline Reply button when collapsed */}
+                        {isCollapsed && (
+                          <button
+                            onClick={handleAddReply}
+                            disabled={replyDisabled}
+                            style={{
+                              padding: "0.4rem 0.95rem",
+                              borderRadius: "999px",
+                              border: "none",
+                              background: replyDisabled ? "#a0a0a0" : "#000",
+                              color: "#fff",
+                              cursor: replyDisabled ? "default" : "pointer",
+                              fontSize: "0.9rem",
+                              fontWeight: 500,
+                            }}
+                          >
+                            Reply
+                          </button>
+                        )}
+                      </div>
+
+                      {/* under-text Reply button when expanded / typing */}
+                      {!isCollapsed && (
+                        <div
+                          style={{
+                            padding: "0 0.75rem 0.45rem 0.75rem",
+                            display: "flex",
+                            justifyContent: "flex-end",
+                          }}
+                        >
+                          <button
+                            onClick={handleAddReply}
+                            disabled={replyDisabled}
+                            style={{
+                              padding: "0.4rem 0.95rem",
+                              borderRadius: "999px",
+                              border: "none",
+                              background: replyDisabled ? "#a0a0a0" : "#000",
+                              color: "#fff",
+                              cursor: replyDisabled ? "default" : "pointer",
+                              fontSize: "0.9rem",
+                              fontWeight: 500,
+                            }}
+                          >
+                            {addingReply ? "Replying…" : "Reply"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p style={{ color: "#666", marginTop: "0.6rem" }}>
+                    Log in to reply.
+                  </p>
+                )}
+
+                {/* Replies list */}
+                <section style={{ marginTop: 0 }}>
+                  {repliesLoading ? (
+                    <p>Loading replies…</p>
+                  ) : replies.length === 0 ? (
+                    <p style={{ fontSize: "0.9rem", color: "#666" }}>
+                      No replies yet.
+                    </p>
+                  ) : (
+                    <div>
+                      {replies.map((c) => {
+                        const isOwner = user && user.id === c.user_id;
+                        const handle = getHandle(c.user_id);
+                        const avatarUrl = getAvatarUrl(c.user_id);
+
+                        return (
+                          <CommentRow
+                            key={c.id}
+                            id={c.id}
+                            userId={c.user_id}
+                            createdAt={c.created_at}
+                            content={c.content}
+                            displayName={getDisplayName(c.user_id)}
+                            initial={getInitial(c.user_id)}
+                            username={handle ?? undefined}
+                            avatarUrl={avatarUrl}
+                            isOwner={!!isOwner}
+                            href={`/comments/${c.id}`}
+                            replyCount={commentReplyCounts[c.id] || 0}
+                            likeCount={commentLikeCounts[c.id] || 0}
+                            likedByMe={!!commentLikedByMe[c.id]}
+                            onReplyClick={handleReplyClick}
+                            onToggleLike={toggleCommentLike}
+                            onEdit={handleEditComment}
+                            onDelete={handleDeleteComment}
+                            isMenuOpen={openMenuCommentId === c.id}
+                            onToggleMenu={toggleCommentMenu}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
+          </main>
+
+          {/* RIGHT SIDEBAR (sticky) */}
+          <aside
+            style={{
+              flex: `0 0 ${LAYOUT.sidebarWidth}`,
+              maxWidth: LAYOUT.sidebarWidth,
+              position: "sticky",
+              top: "1.5rem",
+              alignSelf: "flex-start",
+              height: "fit-content",
+            }}
+          >
+            <RightSidebar />
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}
