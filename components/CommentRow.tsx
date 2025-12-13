@@ -43,6 +43,14 @@ export type CommentRowProps = {
 
   // let pages force-disable the hover highlight even if clickable
   disableHoverHighlight?: boolean;
+
+  // main origin pill (anime series) under username
+  originLabel?: string;
+  originHref?: string;
+
+  // secondary pill for episode
+  episodeLabel?: string;
+  episodeHref?: string;
 };
 
 function formatRelativeTime(dateString: string) {
@@ -91,6 +99,7 @@ function ShareArrowIcon({ size = 20 }: { size?: number }) {
 
 export default function CommentRow(props: CommentRowProps) {
   const router = useRouter();
+  const [isHovered, setIsHovered] = React.useState(false);
 
   const {
     id,
@@ -116,6 +125,10 @@ export default function CommentRow(props: CommentRowProps) {
     onToggleMenu,
     onRowClick,
     disableHoverHighlight = false,
+    originLabel,
+    originHref,
+    episodeLabel,
+    episodeHref,
   } = props;
 
   const iconSize = isMain ? 22 : 20;
@@ -149,8 +162,38 @@ export default function CommentRow(props: CommentRowProps) {
     minWidth: 0,
   };
 
+  // Base pill style (no hover baked in)
+  const baseOriginPillStyle: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: ".8px 6px",
+    borderRadius: 999,
+    fontSize: "0.76rem",
+    fontWeight: 500,
+    background: "#fefeffff",
+    border: "1.5px solid #abb3f0ff",
+    color: "#6d7ae0",
+    maxWidth: "100%",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    cursor: "default",
+    transition:
+      "background 0.12s ease, border-color 0.12s ease, color 0.12s ease",
+  };
+
+  const originPillStyle: React.CSSProperties = {
+    ...baseOriginPillStyle,
+    cursor: originHref ? "pointer" : "default",
+  };
+
+  const episodePillStyle: React.CSSProperties = {
+    ...baseOriginPillStyle,
+    cursor: episodeHref ? "pointer" : "default",
+  };
+
   const isClickable = !!(href || onRowClick);
-  const [isHovered, setIsHovered] = React.useState(false);
 
   function handleRowClick(e: React.MouseEvent<HTMLDivElement>) {
     if (onRowClick) {
@@ -204,7 +247,7 @@ export default function CommentRow(props: CommentRowProps) {
         padding: "0.8rem 0.8rem 0.4rem 0.8rem",
       }}
     >
-      {/* Avatar: now clickable to profile if we have a username */}
+      {/* Avatar: clickable to profile if we have a username */}
       {username ? (
         <Link
           href={`/${username}`}
@@ -224,53 +267,192 @@ export default function CommentRow(props: CommentRowProps) {
         <div
           style={{
             display: "flex",
-            alignItems: "center",
-            gap: "0.35rem",
+            flexDirection: "column",
+            gap: "0.1rem",
             marginBottom: "0.15rem",
           }}
         >
-          {/* clickable display name if we have a handle */}
-          {username ? (
-            <Link
-              href={`/${username}`}
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                fontSize: nameFontSize,
-                fontWeight: 500,
-                color: "#333",
-                textDecoration: "none",
-              }}
-            >
-              {displayName}
-            </Link>
-          ) : (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.35rem",
+            }}
+          >
+            {/* display name / handle */}
+            {username ? (
+              <Link
+                href={`/${username}`}
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  fontSize: nameFontSize,
+                  fontWeight: 500,
+                  color: "#333",
+                  textDecoration: "none",
+                }}
+              >
+                {displayName}
+              </Link>
+            ) : (
+              <span
+                style={{
+                  fontSize: nameFontSize,
+                  fontWeight: 500,
+                  color: "#333",
+                }}
+              >
+                {displayName}
+              </span>
+            )}
+
             <span
               style={{
-                fontSize: nameFontSize,
-                fontWeight: 500,
-                color: "#333",
+                color: "#aaa",
+                fontSize: "0.8rem",
               }}
             >
-              {displayName}
+              ·
             </span>
-          )}
+            <small
+              style={{
+                color: "#777",
+                fontSize: "0.8rem",
+              }}
+            >
+              {formatRelativeTime(createdAt)}
+            </small>
+          </div>
 
-          <span
-            style={{
-              color: "#aaa",
-              fontSize: "0.8rem",
-            }}
-          >
-            ·
-          </span>
-          <small
-            style={{
-              color: "#777",
-              fontSize: "0.8rem",
-            }}
-          >
-            {formatRelativeTime(createdAt)}
-          </small>
+          {/* Series + Episode pills under username */}
+          {(originLabel || episodeLabel) && (
+            <div
+              style={{
+                marginTop: "1px",
+                marginLeft: "-4px",
+                display: "flex",
+                gap: "4px",
+                flexWrap: "wrap",
+              }}
+            >
+              {originLabel &&
+                (originHref ? (
+                  <Link
+                    href={originHref}
+                    onClick={(e) => e.stopPropagation()}
+                    style={originPillStyle}
+                    onMouseEnter={(e) => {
+                      const el = e.currentTarget as HTMLAnchorElement;
+                      el.style.background = "#e1e4ff";
+                      el.style.borderColor = "#5a69d4";
+                      el.style.color = "#5a69d4";
+                    }}
+                    onMouseLeave={(e) => {
+                      const el = e.currentTarget as HTMLAnchorElement;
+                      el.style.background = "#fefeffff";
+                      el.style.borderColor = "#abb3f0ff";
+                      el.style.color = "#6d7ae0";
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "inline-block",
+                        maxWidth: "100%",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {originLabel}
+                    </span>
+                  </Link>
+                ) : (
+                  <span
+                    style={originPillStyle}
+                    onMouseEnter={(e) => {
+                      const el = e.currentTarget as HTMLSpanElement;
+                      el.style.background = "#e1e4ff";
+                      el.style.borderColor = "#5a69d4";
+                      el.style.color = "#5a69d4";
+                    }}
+                    onMouseLeave={(e) => {
+                      const el = e.currentTarget as HTMLSpanElement;
+                      el.style.background = "#fefeffff";
+                      el.style.borderColor = "#abb3f0ff";
+                      el.style.color = "#6d7ae0";
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "inline-block",
+                        maxWidth: "100%",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {originLabel}
+                    </span>
+                  </span>
+                ))}
+
+              {episodeLabel &&
+                (episodeHref ? (
+                  <Link
+                    href={episodeHref}
+                    onClick={(e) => e.stopPropagation()}
+                    style={episodePillStyle}
+                    onMouseEnter={(e) => {
+                      const el = e.currentTarget as HTMLAnchorElement;
+                      el.style.background = "#e1e4ff";
+                      el.style.borderColor = "#5a69d4";
+                      el.style.color = "#5a69d4";
+                    }}
+                    onMouseLeave={(e) => {
+                      const el = e.currentTarget as HTMLAnchorElement;
+                      el.style.background = "#fefeffff";
+                      el.style.borderColor = "#abb3f0ff";
+                      el.style.color = "#6d7ae0";
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "inline-block",
+                        maxWidth: "100%",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {episodeLabel}
+                    </span>
+                  </Link>
+                ) : (
+                  <span
+                    style={episodePillStyle}
+                    onMouseEnter={(e) => {
+                      const el = e.currentTarget as HTMLSpanElement;
+                      el.style.background = "#e1e4ff";
+                      el.style.borderColor = "#5a69d4";
+                      el.style.color = "#5a69d4";
+                    }}
+                    onMouseLeave={(e) => {
+                      const el = e.currentTarget as HTMLSpanElement;
+                      el.style.background = "#fefeffff";
+                      el.style.borderColor = "#abb3f0ff";
+                      el.style.color = "#6d7ae0";
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "inline-block",
+                        maxWidth: "100%",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {episodeLabel}
+                    </span>
+                  </span>
+                ))}
+            </div>
+          )}
         </div>
 
         <p
@@ -309,13 +491,13 @@ export default function CommentRow(props: CommentRowProps) {
         if (canHighlight) setIsHovered(false);
       }}
     >
-      {/* top-right edit / delete menu */}
+      {/* bottom-right edit / delete menu */}
       {isOwner && onToggleMenu && (
         <div
           style={{
             position: "absolute",
-            top: "0.6rem",
-            right: "0.5rem",
+            bottom: "1rem",
+            right: ".9rem",
             zIndex: 10,
           }}
         >
@@ -341,7 +523,7 @@ export default function CommentRow(props: CommentRowProps) {
             <div
               style={{
                 position: "absolute",
-                top: "1.6rem",
+                bottom: "1.6rem",
                 right: 0,
                 background: "#fff",
                 border: "1px solid #ddd",
@@ -435,11 +617,7 @@ export default function CommentRow(props: CommentRowProps) {
             e.currentTarget.style.background = "transparent";
           }}
         >
-          <MessageCircle
-            width={iconSize}
-            height={iconSize}
-            strokeWidth={1.7}
-          />
+          <MessageCircle width={iconSize} height={iconSize} strokeWidth={1.7} />
           <span style={countStyle}>{replyCount}</span>
         </button>
 

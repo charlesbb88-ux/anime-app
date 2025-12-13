@@ -27,15 +27,15 @@ export type AniListTag = {
 
 export type AniListTrailer = {
   id: string | null;
-  site: string | null;      // "youtube", etc.
+  site: string | null; // "youtube", etc.
   thumbnail: string | null;
 };
 
 export type AniListNextAiringEpisode = {
   id: number;
   episode: number;
-  airingAt: number;         // UNIX timestamp (seconds)
-  timeUntilAiring: number;  // seconds
+  airingAt: number; // UNIX seconds
+  timeUntilAiring: number; // seconds
 };
 
 export type AniListStudio = {
@@ -47,8 +47,10 @@ export type AniListStudio = {
 export type AniListExternalLink = {
   id: number;
   url: string;
-  site: string;             // "Official Site", "Twitter", "Crunchyroll", etc.
+  site: string; // "Official Site", "Twitter", etc.
 };
+
+// ---------- Anime (type: ANIME) ----------
 
 export type AniListAnime = {
   id: number;
@@ -56,10 +58,10 @@ export type AniListAnime = {
   description: string | null;
 
   episodes: number | null;
-  duration: number | null;  // mins per ep
-  format: string | null;    // TV, MOVIE, OVA...
-  status: string | null;    // FINISHED, RELEASING...
-  season: string | null;    // WINTER, SPRING...
+  duration: number | null;
+  format: string | null;
+  status: string | null;
+  season: string | null;
   seasonYear: number | null;
 
   startDate: AniListFuzzyDate | null;
@@ -74,7 +76,7 @@ export type AniListAnime = {
 
   averageScore: number | null;
   popularity: number | null;
-  source: string | null;    // ORIGINAL, MANGA, etc.
+  source: string | null;
 
   genres: string[] | null;
   tags: AniListTag[] | null;
@@ -85,6 +87,43 @@ export type AniListAnime = {
   studios: AniListStudio[] | null;
   externalLinks: AniListExternalLink[] | null;
 };
+
+// ---------- Manga (type: MANGA) ----------
+
+export type AniListManga = {
+  id: number;
+  title: AniListTitle;
+  description: string | null;
+
+  chapters: number | null;
+  volumes: number | null;
+  format: string | null; // MANGA, NOVEL, ONE_SHOT...
+  status: string | null;
+  season: string | null;
+  seasonYear: number | null;
+
+  startDate: AniListFuzzyDate | null;
+  endDate: AniListFuzzyDate | null;
+
+  coverImage: {
+    large: string | null;
+    medium: string | null;
+  } | null;
+
+  bannerImage: string | null;
+
+  averageScore: number | null;
+  popularity: number | null;
+  source: string | null;
+
+  genres: string[] | null;
+  tags: AniListTag[] | null;
+
+  trailer: AniListTrailer | null;
+  externalLinks: AniListExternalLink[] | null;
+};
+
+// ---------- GraphQL response shapes ----------
 
 type AniListSearchResult = {
   Page: {
@@ -143,12 +182,8 @@ async function callAniList<T>(
   }
 }
 
-// ============ Public helpers ============
+// ============ Anime helpers ============
 
-/**
- * Search AniList for anime by title text.
- * Used by your dev search page.
- */
 export async function searchAniListAnime(
   search: string,
   page: number = 1,
@@ -270,10 +305,6 @@ export async function searchAniListAnime(
   return { data: mapped, error: null };
 }
 
-/**
- * Fetch a single AniList anime by its ID.
- * Used by your import API (/api/admin/import-anime-from-anilist).
- */
 export async function getAniListAnimeById(
   id: number
 ): Promise<{ data: AniListAnime | null; error: string | null }> {
@@ -386,4 +417,205 @@ export async function getAniListAnimeById(
   };
 
   return { data: anime, error: null };
+}
+
+// ============ Manga helpers ============
+
+export async function searchAniListManga(
+  search: string,
+  page: number = 1,
+  perPage: number = 10
+): Promise<{ data: AniListManga[]; error: string | null }> {
+  const query = `
+    query ($search: String, $page: Int, $perPage: Int) {
+      Page(page: $page, perPage: $perPage) {
+        media(search: $search, type: MANGA) {
+          id
+          title {
+            romaji
+            english
+            native
+            userPreferred
+          }
+          description(asHtml: false)
+          chapters
+          volumes
+          format
+          status
+          season
+          seasonYear
+          startDate { year month day }
+          endDate { year month day }
+          coverImage {
+            large
+            medium
+          }
+          bannerImage
+          averageScore
+          popularity
+          source
+          genres
+          tags {
+            name
+            description
+            rank
+            isAdult
+            isGeneralSpoiler
+            isMediaSpoiler
+            category
+          }
+          trailer {
+            id
+            site
+            thumbnail
+          }
+          externalLinks {
+            id
+            url
+            site
+          }
+        }
+      }
+    }
+  `;
+
+  const { data, error } = await callAniList<AniListSearchResult>(query, {
+    search,
+    page,
+    perPage,
+  });
+
+  if (error || !data) {
+    return { data: [], error };
+  }
+
+  const media = data.Page.media ?? [];
+
+  const mapped: AniListManga[] = media.map((m) => {
+    return {
+      id: m.id,
+      title: {
+        romaji: m.title?.romaji ?? null,
+        english: m.title?.english ?? null,
+        native: m.title?.native ?? null,
+        userPreferred: m.title?.userPreferred ?? null,
+      },
+      description: m.description ?? null,
+      chapters: m.chapters ?? null,
+      volumes: m.volumes ?? null,
+      format: m.format ?? null,
+      status: m.status ?? null,
+      season: m.season ?? null,
+      seasonYear: m.seasonYear ?? null,
+      startDate: m.startDate ?? null,
+      endDate: m.endDate ?? null,
+      coverImage: m.coverImage ?? null,
+      bannerImage: m.bannerImage ?? null,
+      averageScore: m.averageScore ?? null,
+      popularity: m.popularity ?? null,
+      source: m.source ?? null,
+      genres: m.genres ?? null,
+      tags: m.tags ?? null,
+      trailer: m.trailer ?? null,
+      externalLinks: m.externalLinks ?? null,
+    };
+  });
+
+  return { data: mapped, error: null };
+}
+
+export async function getAniListMangaById(
+  id: number
+): Promise<{ data: AniListManga | null; error: string | null }> {
+  const query = `
+    query ($id: Int) {
+      Media(id: $id, type: MANGA) {
+        id
+        title {
+          romaji
+          english
+          native
+          userPreferred
+        }
+        description(asHtml: false)
+        chapters
+        volumes
+        format
+        status
+        season
+        seasonYear
+        startDate { year month day }
+        endDate { year month day }
+        coverImage {
+          large
+          medium
+        }
+        bannerImage
+        averageScore
+        popularity
+        source
+        genres
+        tags {
+          name
+          description
+          rank
+          isAdult
+          isGeneralSpoiler
+          isMediaSpoiler
+          category
+        }
+        trailer {
+          id
+          site
+          thumbnail
+        }
+        externalLinks {
+          id
+          url
+          site
+        }
+      }
+    }
+  `;
+
+  const { data, error } = await callAniList<AniListSingleResult>(query, { id });
+
+  if (error) {
+    return { data: null, error };
+  }
+
+  const m = data?.Media;
+  if (!m) {
+    return { data: null, error: null };
+  }
+
+  const manga: AniListManga = {
+    id: m.id,
+    title: {
+      romaji: m.title?.romaji ?? null,
+      english: m.title?.english ?? null,
+      native: m.title?.native ?? null,
+      userPreferred: m.title?.userPreferred ?? null,
+    },
+    description: m.description ?? null,
+    chapters: m.chapters ?? null,
+    volumes: m.volumes ?? null,
+    format: m.format ?? null,
+    status: m.status ?? null,
+    season: m.season ?? null,
+    seasonYear: m.seasonYear ?? null,
+    startDate: m.startDate ?? null,
+    endDate: m.endDate ?? null,
+    coverImage: m.coverImage ?? null,
+    bannerImage: m.bannerImage ?? null,
+    averageScore: m.averageScore ?? null,
+    popularity: m.popularity ?? null,
+    source: m.source ?? null,
+    genres: m.genres ?? null,
+    tags: m.tags ?? null,
+    trailer: m.trailer ?? null,
+    externalLinks: m.externalLinks ?? null,
+  };
+
+  return { data: manga, error: null };
 }

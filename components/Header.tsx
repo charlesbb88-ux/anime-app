@@ -152,21 +152,67 @@ export default function Header() {
           zIndex: 50,
         }}
       >
-        {/* Brand → click to go home */}
-        <Link
-          href="/"
+        {/* Left: brand + nav links */}
+        <div
           style={{
-            fontWeight: 700,
-            fontSize: "1.1rem",
-            textDecoration: "none",
-            color: "#000",
-            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "1.5rem",
           }}
         >
-          AnimeApp
-        </Link>
+          {/* Brand → home */}
+          <Link
+            href="/"
+            style={{
+              fontWeight: 700,
+              fontSize: "1.1rem",
+              textDecoration: "none",
+              color: "#000",
+              cursor: "pointer",
+            }}
+          >
+            AnimeApp
+          </Link>
 
-        <div style={{ position: "relative", minWidth: "2.5rem" }} ref={menuRef}>
+          {/* Simple nav links */}
+          <nav
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.75rem",
+              fontSize: "0.95rem",
+            }}
+          >
+            <Link
+              href="/anime"
+              style={{
+                textDecoration: "none",
+                color: "#333",
+                padding: "0.2rem 0.45rem",
+                borderRadius: 6,
+              }}
+            >
+              Anime
+            </Link>
+            <Link
+              href="/manga"
+              style={{
+                textDecoration: "none",
+                color: "#333",
+                padding: "0.2rem 0.45rem",
+                borderRadius: 6,
+              }}
+            >
+              Manga
+            </Link>
+          </nav>
+        </div>
+
+        {/* Right: auth / user menu */}
+        <div
+          style={{ position: "relative", minWidth: "2.5rem" }}
+          ref={menuRef}
+        >
           {/* While auth is still checking, render nothing on the right to avoid flicker */}
           {authChecking ? null : user ? (
             // USER MENU BUTTON (avatar + name)

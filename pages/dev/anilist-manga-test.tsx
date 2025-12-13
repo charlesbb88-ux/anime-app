@@ -1,8 +1,8 @@
-// pages/dev/anilist-test.tsx
+// pages/dev/anilist-manga-test.tsx
 
 import { useState } from "react";
 import type { NextPage } from "next";
-import { searchAniListAnime, type AniListAnime } from "@/lib/anilist";
+import { searchAniListManga, type AniListManga } from "@/lib/anilist";
 
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
@@ -11,10 +11,10 @@ function truncate(text: string, max: number): string {
 
 type ImportState = "idle" | "loading" | "success" | "error";
 
-const AniListTestPage: NextPage = () => {
+const AniListMangaTestPage: NextPage = () => {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<AniListAnime[]>([]);
+  const [results, setResults] = useState<AniListManga[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [importStates, setImportStates] = useState<Record<number, ImportState>>(
     {}
@@ -31,7 +31,7 @@ const AniListTestPage: NextPage = () => {
     setImportStates({});
     setImportErrors({});
 
-    const { data, error } = await searchAniListAnime(query.trim(), 1, 10);
+    const { data, error } = await searchAniListManga(query.trim(), 1, 10);
 
     if (error) {
       setError(error);
@@ -42,24 +42,41 @@ const AniListTestPage: NextPage = () => {
     setLoading(false);
   }
 
-  async function handleImport(anime: AniListAnime) {
-    const id = anime.id;
+  async function handleImport(manga: AniListManga) {
+    const id = manga.id;
 
     setImportStates((prev) => ({ ...prev, [id]: "loading" }));
     setImportErrors((prev) => ({ ...prev, [id]: "" }));
 
     try {
-      const res = await fetch("/api/admin/import-anime-from-anilist", {
+      const res = await fetch("/api/admin/import-manga-from-anilist", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          // If you set ANILIST_IMPORT_SECRET, you can also send it here:
-          // "x-import-secret": "your-secret",
+          // Optional: "x-import-secret": "your-secret" if you're using one
         },
         body: JSON.stringify({ anilistId: id }),
       });
 
-      const json = await res.json();
+      const contentType = res.headers.get("content-type") || "";
+      let json: any = null;
+
+      if (contentType.includes("application/json")) {
+        json = await res.json();
+      } else {
+        const text = await res.text();
+        console.error(
+          "Unexpected non-JSON response from /api/admin/import-manga-from-anilist:",
+          res.status,
+          text
+        );
+        setImportStates((prev) => ({ ...prev, [id]: "error" }));
+        setImportErrors((prev) => ({
+          ...prev,
+          [id]: `Unexpected response (status ${res.status}). Check console/server logs.`,
+        }));
+        return;
+      }
 
       if (!res.ok || !json.success) {
         const msg = json.error || "Import failed";
@@ -73,20 +90,20 @@ const AniListTestPage: NextPage = () => {
       setImportStates((prev) => ({ ...prev, [id]: "error" }));
       setImportErrors((prev) => ({
         ...prev,
-        [id]: "Network error importing anime",
+        [id]: "Network error importing manga",
       }));
     }
   }
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold mb-4">AniList Search (dev test)</h1>
+      <h1 className="text-2xl font-bold mb-4">AniList Manga Search (dev test)</h1>
 
       <form onSubmit={handleSearch} className="mb-4 flex gap-2">
         <input
           type="text"
           className="flex-1 rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
-          placeholder="Search for an anime (e.g. Attack on Titan)"
+          placeholder="Search for a manga (e.g. Berserk)"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -107,67 +124,60 @@ const AniListTestPage: NextPage = () => {
 
       {results.length > 0 && (
         <div className="space-y-5">
-          {results.map((anime) => {
+          {results.map((manga) => {
             const displayTitle =
-              anime.title.romaji ||
-              anime.title.english ||
-              anime.title.native ||
+              manga.title.romaji ||
+              manga.title.english ||
+              manga.title.native ||
               "Untitled";
 
-            const year = anime.seasonYear ?? "?";
-            const season = anime.season ?? "?";
-            const episodes = anime.episodes ?? null;
+            const year = manga.seasonYear ?? "?";
+            const season = manga.season ?? "?";
+            const chapters = manga.chapters ?? null;
+            const volumes = manga.volumes ?? null;
 
-            const genres = anime.genres ?? [];
+            const genres = manga.genres ?? [];
             const genreText = genres.join(", ");
 
             const nonSpoilerTags =
-              anime.tags?.filter((t) => !t.isMediaSpoiler) ?? [];
+              manga.tags?.filter((t) => !t.isMediaSpoiler) ?? [];
             const tagNames = nonSpoilerTags.map((t) => t.name);
             const tagText = tagNames.join(", ");
 
-            const description = anime.description
-              ? truncate(anime.description.replace(/\s+/g, " "), 260)
+            const description = manga.description
+              ? truncate(manga.description.replace(/\s+/g, " "), 260)
               : "No description.";
 
-            let trailerUrl: string | null = null;
-            if (anime.trailer?.site === "youtube" && anime.trailer.id) {
-              trailerUrl = `https://www.youtube.com/watch?v=${anime.trailer.id}`;
-            }
-
             const score =
-              typeof anime.averageScore === "number"
-                ? (anime.averageScore / 10).toFixed(1)
+              typeof manga.averageScore === "number"
+                ? (manga.averageScore / 10).toFixed(1)
                 : null;
 
-            const importState = importStates[anime.id] ?? "idle";
-            const importError = importErrors[anime.id];
-
-            // ✅ ONLY ADDED LINE:
-            console.log("TRAILER DATA", anime.trailer);
+            const importState = importStates[manga.id] ?? "idle";
+            const importError = importErrors[manga.id];
 
             return (
               <div
-                key={anime.id}
+                key={manga.id}
                 className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/70"
               >
                 {/* Banner (if available) */}
-                {anime.bannerImage && (
+                {manga.bannerImage && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={anime.bannerImage}
+                    src={manga.bannerImage}
                     alt={`${displayTitle} banner`}
                     className="h-32 w-full object-cover"
                   />
                 )}
 
                 <div className="flex gap-3 p-3">
-                  {/* Poster */}
+                  {/* Cover */}
                   <div className="h-28 w-20 flex-shrink-0 overflow-hidden rounded-md bg-gray-800">
-                    {anime.coverImage?.medium ? (
+                    {manga.coverImage?.medium ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={anime.coverImage.medium}
+                        src={manga.coverImage.medium}
                         alt={displayTitle}
                         className="h-full w-full object-cover"
                       />
@@ -189,27 +199,35 @@ const AniListTestPage: NextPage = () => {
                       </span>
                     </div>
 
-                    {/* Meta row: episodes / format / status / score */}
+                    {/* Meta row: chapters / volumes / format / status / score */}
                     <div className="mb-2 flex flex-wrap gap-3 text-[11px] text-gray-400">
                       <span>
-                        Episodes:{" "}
+                        Chapters:{" "}
                         <span className="font-semibold text-gray-200">
-                          {episodes ?? "Unknown"}
+                          {chapters ?? "Unknown"}
                         </span>
                       </span>
-                      {anime.format && (
+                      {volumes !== null && (
                         <span>
-                          Format:{" "}
+                          Volumes:{" "}
                           <span className="font-semibold text-gray-200">
-                            {anime.format}
+                            {volumes}
                           </span>
                         </span>
                       )}
-                      {anime.status && (
+                      {manga.format && (
+                        <span>
+                          Format:{" "}
+                          <span className="font-semibold text-gray-200">
+                            {manga.format}
+                          </span>
+                        </span>
+                      )}
+                      {manga.status && (
                         <span>
                           Status:{" "}
                           <span className="font-semibold text-gray-200">
-                            {anime.status}
+                            {manga.status}
                           </span>
                         </span>
                       )}
@@ -242,29 +260,17 @@ const AniListTestPage: NextPage = () => {
                       )}
                     </div>
 
-                    {/* Trailer link */}
-                    {trailerUrl && (
-                      <a
-                        href={trailerUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center text-[11px] text-blue-400 hover:text-blue-300"
-                      >
-                        Watch trailer on YouTube ↗
-                      </a>
-                    )}
-
                     {/* Import button + status */}
                     <div className="mt-3 flex items-center gap-3">
                       <button
                         type="button"
-                        onClick={() => handleImport(anime)}
+                        onClick={() => handleImport(manga)}
                         disabled={importState === "loading"}
                         className="rounded-md bg-emerald-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-600/60"
                       >
                         {importState === "loading"
                           ? "Importing..."
-                          : "Import into catalog"}
+                          : "Import into manga catalog"}
                       </button>
 
                       {importState === "success" && (
@@ -283,7 +289,7 @@ const AniListTestPage: NextPage = () => {
                     {/* Footer ID for debugging */}
                     <p className="mt-2 text-[10px] text-gray-500">
                       AniList ID:{" "}
-                      <span className="font-mono">{anime.id}</span>
+                      <span className="font-mono">{manga.id}</span>
                     </p>
                   </div>
                 </div>
@@ -295,11 +301,11 @@ const AniListTestPage: NextPage = () => {
 
       {!loading && !error && results.length === 0 && (
         <p className="text-sm text-gray-500 mt-4">
-          Try searching for something to see AniList results.
+          Try searching for something to see AniList manga results.
         </p>
       )}
     </div>
   );
 };
 
-export default AniListTestPage;
+export default AniListMangaTestPage;

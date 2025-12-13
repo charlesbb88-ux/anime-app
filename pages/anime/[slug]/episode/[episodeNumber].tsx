@@ -2,9 +2,16 @@
 
 import { useRouter } from "next/router";
 import type { NextPage } from "next";
+import Link from "next/link";
 import { useEffect, useState } from "react";
+
 import type { Anime, AnimeEpisode } from "@/lib/types";
 import { getAnimeBySlug, getAnimeEpisode } from "@/lib/anime";
+
+import EpisodeNavigator from "@/components/EpisodeNavigator";
+import LeftSidebar from "@/components/LeftSidebar";
+import RightSidebar from "@/components/RightSidebar";
+import PostFeed from "@/components/PostFeed";
 
 const AnimeEpisodePage: NextPage = () => {
   const router = useRouter();
@@ -25,8 +32,7 @@ const AnimeEpisodePage: NextPage = () => {
     : episodeNumber ?? "";
 
   const episodeNum = Number(episodeNumberString);
-  const isValidEpisodeNumber =
-    Number.isInteger(episodeNum) && episodeNum > 0;
+  const isValidEpisodeNumber = Number.isInteger(episodeNum) && episodeNum > 0;
 
   // Load anime by slug once the router is ready and slug is valid
   useEffect(() => {
@@ -114,7 +120,7 @@ const AnimeEpisodePage: NextPage = () => {
   if (!slugString || !isValidEpisodeNumber) {
     return (
       <main className="min-h-screen px-4 py-8">
-        <h1 className="text-xl font-semibold mb-2">
+        <h1 className="text-xl font-semibold mb-2 text-gray-100">
           Invalid episode URL
         </h1>
         <p className="text-sm text-gray-500">
@@ -124,112 +130,164 @@ const AnimeEpisodePage: NextPage = () => {
     );
   }
 
+  const a: any = anime;
+
   return (
-    <main className="min-h-screen px-4 py-8">
-      <header className="mb-6">
-        <p className="text-sm text-gray-500 mb-1">Anime episode page</p>
-        <h1 className="text-2xl font-bold">
-          {anime?.title ?? slugString} — Episode {episodeNum}
-        </h1>
-
-        {isAnimeLoading && (
-          <p className="text-xs text-gray-500 mt-1">
-            Loading anime details…
-          </p>
+    <main className="min-h-screen">
+      {/* Header area — matches main anime page vibe */}
+      <div className="mx-auto max-w-5xl px-4 py-8">
+        {/* Banner (if available) */}
+        {a?.banner_image_url && (
+          <img
+            src={a.banner_image_url}
+            alt={`${anime?.title ?? slugString} banner`}
+            className="mb-6 h-40 w-full rounded-lg object-cover"
+          />
         )}
 
-        {!isAnimeLoading && animeError && (
-          <p className="text-xs text-red-500 mt-1">{animeError}</p>
-        )}
-      </header>
+        {/* Top section */}
+        <div className="mb-6 flex flex-col gap-6 md:flex-row">
+          {/* Poster */}
+          <div className="flex-shrink-0">
+            {anime?.image_url ? (
+              <img
+                src={anime.image_url}
+                alt={anime.title}
+                className="h-64 w-44 rounded-lg object-cover"
+              />
+            ) : (
+              <div className="flex h-64 w-44 items-center justify-center rounded-lg bg-gray-800 text-4xl font-bold text-gray-200">
+                {(anime?.title ?? slugString)[0] ?? "?"}
+              </div>
+            )}
+          </div>
 
-      <section className="space-y-4">
-        <div>
-          <p className="text-sm text-gray-600">
-            This is still an early version of the anime episode page.
-          </p>
-          <p className="text-xs text-gray-500">
-            slug: <code className="font-mono">{slugString}</code>
-          </p>
-          <p className="text-xs text-gray-500">
-            episodeNumber: <code className="font-mono">{episodeNum}</code>
-          </p>
+          {/* Title + meta */}
+          <div className="flex-1">
+            <p className="mb-1 text-xs text-gray-500">Anime episode page</p>
+
+            <h1 className="mb-2 text-3xl font-bold text-gray-100">
+              {anime?.title ?? slugString}
+              <span className="text-gray-500"> — </span>
+              <span className="text-gray-100">Episode {episodeNum}</span>
+            </h1>
+
+            {episode?.title && (
+              <p className="mb-2 text-sm text-gray-300">
+                <span className="font-semibold text-gray-200">
+                  Episode title:
+                </span>{" "}
+                {episode.title}
+              </p>
+            )}
+
+            {isAnimeLoading && (
+              <p className="text-xs text-gray-500">Loading anime details…</p>
+            )}
+
+            {!isAnimeLoading && animeError && (
+              <p className="text-xs text-red-400">{animeError}</p>
+            )}
+
+            {isEpisodeLoading && (
+              <p className="text-xs text-gray-500">Loading episode…</p>
+            )}
+
+            {!isEpisodeLoading && episodeError && (
+              <p className="text-xs text-red-400">{episodeError}</p>
+            )}
+
+            {/* Navigator */}
+            <div className="mt-4">
+              <EpisodeNavigator
+                slug={slugString}
+                totalEpisodes={anime?.total_episodes ?? null}
+                currentEpisodeNumber={episodeNum}
+              />
+            </div>
+
+            {/* Back link */}
+            <div className="mt-4">
+              <Link
+                href={`/anime/${slugString}`}
+                className="text-xs text-blue-400 hover:text-blue-300"
+              >
+                ← Back to anime main page
+              </Link>
+            </div>
+          </div>
         </div>
 
-        {anime && (
-          <div className="mt-2 border-t border-gray-200 pt-4 space-y-1">
-            <p className="text-sm font-semibold">Anime details</p>
-            <p className="text-sm text-gray-700">
-              Title: <span className="font-medium">{anime.title}</span>
-            </p>
-            {anime.title_english && (
-              <p className="text-xs text-gray-600">
-                English: {anime.title_english}
-              </p>
-            )}
-            {anime.title_native && (
-              <p className="text-xs text-gray-600">
-                Native: {anime.title_native}
-              </p>
-            )}
-            {typeof anime.total_episodes === "number" && (
-              <p className="text-xs text-gray-600">
-                Total episodes: {anime.total_episodes}
-              </p>
-            )}
-          </div>
-        )}
-
-        <div className="mt-4 border-t border-gray-200 pt-4 space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold">Episode details</p>
-            {isEpisodeLoading && (
+        {/* Episode synopsis/details */}
+        <div className="rounded-lg border border-gray-800 bg-gray-900/30 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold text-gray-200">
+              Episode details
+            </h2>
+            {episode?.air_date && (
               <p className="text-xs text-gray-500">
-                Loading episode…
+                Air date:{" "}
+                <span className="text-gray-300">
+                  {new Date(episode.air_date).toLocaleString()}
+                </span>
               </p>
             )}
           </div>
 
-          {!isEpisodeLoading && episodeError && (
-            <p className="text-xs text-red-500">{episodeError}</p>
-          )}
-
-          {!isEpisodeLoading && !episodeError && !episode && (
-            <p className="text-xs text-gray-500">
+          {!episode && !episodeError && !isEpisodeLoading && (
+            <p className="mt-2 text-sm text-gray-500">
               No episode data found for this episode number.
             </p>
           )}
 
-          {episode && (
-            <div className="space-y-1">
-              {episode.title && (
-                <p className="text-sm text-gray-800">
-                  Episode title:{" "}
-                  <span className="font-medium">{episode.title}</span>
-                </p>
-              )}
-
-              {episode.air_date && (
-                <p className="text-xs text-gray-600">
-                  Air date: {new Date(episode.air_date).toLocaleString()}
-                </p>
-              )}
-
-              {episode.synopsis && (
-                <p className="text-sm text-gray-700 mt-2">
-                  {episode.synopsis}
-                </p>
-              )}
-
-              {!episode.title && !episode.synopsis && (
-                <p className="text-xs text-gray-500">
-                  No title or synopsis has been added for this episode yet.
-                </p>
-              )}
-            </div>
+          {episode?.synopsis ? (
+            <p className="mt-3 whitespace-pre-line text-sm text-gray-200">
+              {episode.synopsis}
+            </p>
+          ) : (
+            episode && (
+              <p className="mt-2 text-sm text-gray-500">
+                No synopsis has been added for this episode yet.
+              </p>
+            )
           )}
         </div>
-      </section>
+      </div>
+
+      {/* ------------------------------------------- */}
+      {/*  DISCUSSION FEED — MATCHES MAIN PAGE LAYOUT */}
+      {/* ------------------------------------------- */}
+      {anime && episode && (
+        <div
+          style={{
+            marginTop: "1.5rem", // small gap (mt-6)
+            maxWidth: "80rem",
+            marginLeft: "auto",
+            marginRight: "auto",
+            padding: "2rem 1.5rem",
+            display: "grid",
+            gridTemplateColumns:
+              "minmax(0, 19rem) minmax(0, 41rem) minmax(0, 19rem)",
+            gap: "1rem",
+          }}
+        >
+          <div>
+            <LeftSidebar />
+          </div>
+
+          <div>
+            <div className="mb-3 text-lg font-semibold text-gray-100">
+              Episode discussion
+            </div>
+
+            <PostFeed animeId={anime.id} animeEpisodeId={episode.id} />
+          </div>
+
+          <div>
+            <RightSidebar />
+          </div>
+        </div>
+      )}
     </main>
   );
 };

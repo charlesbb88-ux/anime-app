@@ -91,6 +91,19 @@ export async function getAnimeEpisode(
   return { data: data as AnimeEpisode | null, error };
 }
 
+// List all episodes for a given anime, ordered by episode_number ascending
+export async function listAnimeEpisodesForAnime(
+  animeId: string
+): Promise<SupabaseListResult<AnimeEpisode>> {
+  const { data, error } = await supabase
+    .from("anime_episodes")
+    .select("*")
+    .eq("anime_id", animeId)
+    .order("episode_number", { ascending: true });
+
+  return { data: (data as AnimeEpisode[]) || [], error };
+}
+
 // ========================================
 // User anime progress helpers
 // ========================================

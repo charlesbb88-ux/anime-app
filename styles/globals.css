@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f0f2f5; /* Facebook-style light gray */
+  --background: #ffffff; /* Facebook-style light gray */
   --foreground: #171717;
 }
 

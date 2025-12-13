@@ -1,10 +1,10 @@
-// pages/api/admin/import-anime-from-anilist.ts
+// pages/api/admin/import-manga-from-anilist.ts
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { getAniListAnimeById } from "@/lib/anilist";
+import { getAniListMangaById } from "@/lib/anilist";
 
-// Simple slugifier: "Attack on Titan" -> "attack-on-titan"
+// Simple slugifier: "Berserk" -> "berserk"
 function slugifyTitle(title: string): string {
   return title
     .toLowerCase()
@@ -28,7 +28,6 @@ function fuzzyDateToString(
 }
 
 // OPTIONAL: simple dev-only secret. For now, you can leave it empty in dev.
-// In production, set ANILIST_IMPORT_SECRET and require it.
 const ADMIN_IMPORT_SECRET = process.env.ANILIST_IMPORT_SECRET || "";
 
 export default async function handler(
@@ -37,6 +36,23 @@ export default async function handler(
 ) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  // Debug: confirm what we actually imported
+  console.log(
+    "[import-manga-from-anilist] typeof getAniListMangaById:",
+    typeof getAniListMangaById
+  );
+
+  if (typeof getAniListMangaById !== "function") {
+    console.error(
+      "[import-manga-from-anilist] getAniListMangaById is not a function at runtime:",
+      getAniListMangaById
+    );
+    return res.status(500).json({
+      error:
+        "Server misconfiguration: getAniListMangaById is not a function. Check lib/anilist.ts exports.",
+    });
   }
 
   // Optional protection: require a secret token in header or body
@@ -63,23 +79,22 @@ export default async function handler(
     return res.status(400).json({ error: "Invalid anilistId" });
   }
 
-  // 1) Fetch from AniList (rich data)
-  const { data: anime, error: aniError } = await getAniListAnimeById(idNum);
+  // 1) Fetch from AniList (MANGA)
+  const { data: manga, error: aniError } = await getAniListMangaById(idNum);
 
-  if (aniError || !anime) {
-    console.error("AniList fetch error:", aniError);
+  if (aniError || !manga) {
+    console.error("AniList manga fetch error:", aniError);
     return res.status(500).json({
-      error: aniError || "Failed to fetch anime from AniList",
+      error: aniError || "Failed to fetch manga from AniList",
     });
   }
 
   // 2) Titles
-  const titleRomaji = anime.title.romaji ?? null;
-  const titleEnglish = anime.title.english ?? null;
-  const titleNative = anime.title.native ?? null;
-  const titlePreferred = anime.title.userPreferred ?? null;
+  const titleRomaji = manga.title.romaji ?? null;
+  const titleEnglish = manga.title.english ?? null;
+  const titleNative = manga.title.native ?? null;
+  const titlePreferred = manga.title.userPreferred ?? null;
 
-  // Main display title for our DB "title" column
   const mainTitle =
     titlePreferred ||
     titleEnglish ||
@@ -90,41 +105,37 @@ export default async function handler(
   const slug = slugifyTitle(mainTitle);
 
   // 3) Core fields
-  const totalEpisodes = anime.episodes ?? null;
-  const imageUrl = anime.coverImage?.large || anime.coverImage?.medium || null;
-  const bannerImageUrl = anime.bannerImage ?? null;
+  const totalChapters = manga.chapters ?? null;
+  const totalVolumes = manga.volumes ?? null;
 
-  const startDate = fuzzyDateToString(anime.startDate);
-  const endDate = fuzzyDateToString(anime.endDate);
+  const imageUrl =
+    manga.coverImage?.large || manga.coverImage?.medium || null;
+  const bannerImageUrl = manga.bannerImage ?? null;
 
-  const description = anime.description ?? null;
-  const format = anime.format ?? null; // TV, MOVIE, etc.
-  const status = anime.status ?? null; // FINISHED, RELEASING, etc.
-  const season = anime.season ?? null; // WINTER, SPRING...
-  const seasonYear = anime.seasonYear ?? null;
-  const averageScore = anime.averageScore ?? null; // 0–100
-  const source = anime.source ?? null; // ORIGINAL, MANGA, etc.
+  const startDate = fuzzyDateToString(manga.startDate);
+  const endDate = fuzzyDateToString(manga.endDate);
 
-  const genres = anime.genres ?? null;
-  const trailerSite = anime.trailer?.site ?? null;
-  const trailerId = anime.trailer?.id ?? null;
-  const trailerThumbnailUrl = anime.trailer?.thumbnail ?? null;
+  const description = manga.description ?? null;
+  const format = manga.format ?? null; // MANGA, NOVEL, etc.
+  const status = manga.status ?? null; // FINISHED, RELEASING...
+  const season = manga.season ?? null;
+  const seasonYear = manga.seasonYear ?? null;
+  const averageScore = manga.averageScore ?? null;
+  const source = manga.source ?? null;
 
+  const genres = manga.genres ?? null;
 
-  // 4) Upsert into public.anime table
+  // 4) Upsert into public.manga table
   const { data: upserted, error: dbError } = await supabaseAdmin
-    .from("anime")
+    .from("manga")
     .upsert(
       {
         title: mainTitle,
         slug,
-        total_episodes: totalEpisodes,
+        total_chapters: totalChapters,
+        total_volumes: totalVolumes,
         image_url: imageUrl,
         banner_image_url: bannerImageUrl,
-        trailer_site: trailerSite,
-        trailer_id: trailerId,
-        trailer_thumbnail_url: trailerThumbnailUrl,
-
 
         // extra titles
         title_english: titleEnglish,
@@ -143,14 +154,15 @@ export default async function handler(
         source,
         genres,
       },
-      { onConflict: "slug" } // uses the unique constraint on slug
+      { onConflict: "slug" }
     )
     .select(
       `
       id,
       title,
       slug,
-      total_episodes,
+      total_chapters,
+      total_volumes,
       image_url,
       banner_image_url,
       title_english,
@@ -172,62 +184,65 @@ export default async function handler(
     .single();
 
   if (dbError || !upserted) {
-    console.error("Error inserting anime into Supabase:", dbError);
-    return res.status(500).json({ error: "Failed to insert anime into DB" });
+    console.error("Error inserting manga into Supabase:", dbError);
+    // IMPORTANT: expose the actual DB error message in the JSON
+    return res.status(500).json({
+      error:
+        dbError?.message ||
+        "Failed to insert manga into DB (no further error message).",
+    });
   }
 
-  const animeId = upserted.id as string;
-  const finalTotalEpisodes =
-    typeof upserted.total_episodes === "number" &&
-    upserted.total_episodes > 0
-      ? upserted.total_episodes
+  // 5) Auto-create manga_chapters rows for this manga (1..total_chapters)
+  const mangaId = upserted.id as string;
+  const finalTotalChapters =
+    typeof upserted.total_chapters === "number" &&
+    upserted.total_chapters > 0
+      ? upserted.total_chapters
       : null;
 
-  // 5) Auto-create anime_episodes rows for this anime (1..total_episodes)
-  if (finalTotalEpisodes) {
-    const episodesPayload = Array.from(
-      { length: finalTotalEpisodes },
+  if (finalTotalChapters) {
+    const chaptersPayload = Array.from(
+      { length: finalTotalChapters },
       (_, idx) => ({
-        anime_id: animeId,
-        episode_number: idx + 1,
+        manga_id: mangaId,
+        chapter_number: idx + 1,
       })
     );
 
-    const { error: episodesError } = await supabaseAdmin
-      .from("anime_episodes")
-      .upsert(episodesPayload, {
-        onConflict: "anime_id,episode_number",
+    const { error: chaptersError } = await supabaseAdmin
+      .from("manga_chapters")
+      .upsert(chaptersPayload, {
+        onConflict: "manga_id,chapter_number",
       });
 
-    if (episodesError) {
+    if (chaptersError) {
       console.error(
-        "Error upserting anime_episodes for anime",
-        animeId,
-        episodesError
+        "Error upserting manga_chapters for manga",
+        mangaId,
+        chaptersError
       );
-      // We log this but don't fail the whole request;
-      // the anime itself is still imported even if episode generation hiccups.
+      // Same as anime: we log this but don't fail the whole request
     }
   }
 
-  // 6) Sync tags into anime_tags table (delete old, insert new)
+  // 6) Sync tags into manga_tags table (if you have one)
   try {
-    // Clear existing tags for this anime
+    const rawTags = manga.tags ?? [];
+
     const { error: deleteError } = await supabaseAdmin
-      .from("anime_tags")
+      .from("manga_tags")
       .delete()
-      .eq("anime_id", animeId);
+      .eq("manga_id", mangaId);
 
     if (deleteError) {
-      console.error("Error clearing existing anime_tags:", deleteError);
+      console.error("Error clearing existing manga_tags:", deleteError);
     }
-
-    const rawTags = anime.tags ?? [];
 
     const tagRows = rawTags
       .filter((t) => t && t.name)
       .map((t) => ({
-        anime_id: animeId,
+        manga_id: mangaId,
         name: t.name,
         description: t.description ?? null,
         rank: t.rank ?? null,
@@ -239,19 +254,19 @@ export default async function handler(
 
     if (tagRows.length > 0) {
       const { error: insertError } = await supabaseAdmin
-        .from("anime_tags")
+        .from("manga_tags")
         .insert(tagRows);
 
       if (insertError) {
-        console.error("Error inserting anime_tags:", insertError);
+        console.error("Error inserting manga_tags:", insertError);
       }
     }
   } catch (err) {
-    console.error("Unexpected error syncing anime_tags:", err);
+    console.error("Unexpected error syncing manga_tags:", err);
   }
 
   return res.status(200).json({
     success: true,
-    anime: upserted,
+    manga: upserted,
   });
 }
