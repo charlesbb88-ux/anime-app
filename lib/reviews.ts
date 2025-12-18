@@ -1,71 +1,272 @@
 // lib/reviews.ts
+"use client";
+
 import { supabase } from "@/lib/supabaseClient";
 
-export type UpsertAnimeSeriesReviewInput = {
+export type ReviewRow = {
+  id: string;
+  user_id: string;
+
+  anime_id: string | null;
+  anime_episode_id: string | null;
+
+  // ✅ NEW: manga support
+  manga_id: string | null;
+  manga_chapter_id: string | null;
+
+  rating: number | null;
+  content: string | null;
+  contains_spoilers: boolean | null;
+
+  created_at: string;
+  updated_at: string | null;
+};
+
+export type CreateAnimeSeriesReviewInput = {
   anime_id: string;
-  rating: number; // 0–100
+  rating: number | null;
   content: string;
   contains_spoilers?: boolean;
 };
 
-export async function upsertAnimeSeriesReview(
-  input: UpsertAnimeSeriesReviewInput
-) {
-  const { data: auth } = await supabase.auth.getUser();
-  const user = auth?.user;
+export type CreateAnimeEpisodeReviewInput = {
+  anime_id: string;
+  anime_episode_id: string; // ✅ required for episode reviews
+  rating: number | null;
+  content: string;
+  contains_spoilers?: boolean;
+};
 
-  if (!user) {
-    return { data: null, error: new Error("Not authenticated") };
-  }
+// ✅ NEW: Manga series review
+export type CreateMangaSeriesReviewInput = {
+  manga_id: string;
+  rating: number | null;
+  content: string;
+  contains_spoilers?: boolean;
+};
 
-  // 1) Do I already have a SERIES review for this anime?
-  //    (anime_episode_id must be NULL for series reviews)
-  const { data: existing, error: findError } = await supabase
+// ✅ NEW: Manga chapter review
+export type CreateMangaChapterReviewInput = {
+  manga_id: string;
+  manga_chapter_id: string; // ✅ required for chapter reviews
+  rating: number | null;
+  content: string;
+  contains_spoilers?: boolean;
+};
+
+// ------------------------------------------------------------
+// ANIME: Series Review
+// ------------------------------------------------------------
+export async function createAnimeSeriesReview(
+  input: CreateAnimeSeriesReviewInput
+): Promise<{ data: ReviewRow | null; error: any }> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError) return { data: null, error: userError };
+  if (!user) return { data: null, error: new Error("Not authenticated") };
+
+  const { data: review, error: reviewError } = await supabase
     .from("reviews")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("anime_id", input.anime_id)
-    .is("anime_episode_id", null)
-    .maybeSingle();
+    .insert({
+      user_id: user.id,
 
-  if (findError) return { data: null, error: findError };
+      anime_id: input.anime_id,
+      anime_episode_id: null,
 
-  const payload = {
+      // ✅ keep manga fields null for anime reviews
+      manga_id: null,
+      manga_chapter_id: null,
+
+      rating: input.rating,
+      content: input.content,
+      contains_spoilers: input.contains_spoilers ?? false,
+    })
+    .select("*")
+    .single();
+
+  if (reviewError || !review) return { data: null, error: reviewError };
+
+  const { error: postError } = await supabase.from("posts").insert({
     user_id: user.id,
     anime_id: input.anime_id,
-    anime_episode_id: null as null,
-    rating: input.rating,
+    anime_episode_id: null,
+
+    // ✅ keep manga fields null for anime posts
+    manga_id: null,
+    manga_chapter_id: null,
+
     content: input.content,
-    contains_spoilers: !!input.contains_spoilers,
-  };
+    review_id: review.id,
+  });
 
-  // 2) Update if exists, else insert
-  if (existing?.id) {
-    const { data, error } = await supabase
-      .from("reviews")
-      .update({
-        rating: payload.rating,
-        content: payload.content,
-        contains_spoilers: payload.contains_spoilers,
-      })
-      .eq("id", existing.id)
-      .select(
-        "id, user_id, anime_id, anime_episode_id, rating, content, contains_spoilers, created_at, updated_at"
-      )
-      .single();
+  if (postError) return { data: null, error: postError };
 
-    if (error) return { data: null, error };
-    return { data, error: null };
-  } else {
-    const { data, error } = await supabase
-      .from("reviews")
-      .insert(payload)
-      .select(
-        "id, user_id, anime_id, anime_episode_id, rating, content, contains_spoilers, created_at, updated_at"
-      )
-      .single();
+  return { data: review as ReviewRow, error: null };
+}
 
-    if (error) return { data: null, error };
-    return { data, error: null };
-  }
+// ------------------------------------------------------------
+// ANIME: Episode Review
+// ------------------------------------------------------------
+export async function createAnimeEpisodeReview(
+  input: CreateAnimeEpisodeReviewInput
+): Promise<{ data: ReviewRow | null; error: any }> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError) return { data: null, error: userError };
+  if (!user) return { data: null, error: new Error("Not authenticated") };
+
+  const { data: review, error: reviewError } = await supabase
+    .from("reviews")
+    .insert({
+      user_id: user.id,
+
+      anime_id: input.anime_id,
+      anime_episode_id: input.anime_episode_id,
+
+      // ✅ keep manga fields null for anime reviews
+      manga_id: null,
+      manga_chapter_id: null,
+
+      rating: input.rating,
+      content: input.content,
+      contains_spoilers: input.contains_spoilers ?? false,
+    })
+    .select("*")
+    .single();
+
+  if (reviewError || !review) return { data: null, error: reviewError };
+
+  const { error: postError } = await supabase.from("posts").insert({
+    user_id: user.id,
+
+    anime_id: input.anime_id,
+    anime_episode_id: input.anime_episode_id,
+
+    // ✅ keep manga fields null for anime posts
+    manga_id: null,
+    manga_chapter_id: null,
+
+    content: input.content,
+    review_id: review.id,
+  });
+
+  if (postError) return { data: null, error: postError };
+
+  return { data: review as ReviewRow, error: null };
+}
+
+// ------------------------------------------------------------
+// MANGA: Series Review (✅ NEW)
+// ------------------------------------------------------------
+export async function createMangaSeriesReview(
+  input: CreateMangaSeriesReviewInput
+): Promise<{ data: ReviewRow | null; error: any }> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError) return { data: null, error: userError };
+  if (!user) return { data: null, error: new Error("Not authenticated") };
+
+  const { data: review, error: reviewError } = await supabase
+    .from("reviews")
+    .insert({
+      user_id: user.id,
+
+      // ✅ manga fields
+      manga_id: input.manga_id,
+      manga_chapter_id: null,
+
+      // ✅ keep anime fields null for manga reviews
+      anime_id: null,
+      anime_episode_id: null,
+
+      rating: input.rating,
+      content: input.content,
+      contains_spoilers: input.contains_spoilers ?? false,
+    })
+    .select("*")
+    .single();
+
+  if (reviewError || !review) return { data: null, error: reviewError };
+
+  const { error: postError } = await supabase.from("posts").insert({
+    user_id: user.id,
+
+    // ✅ manga context for feeds
+    manga_id: input.manga_id,
+    manga_chapter_id: null,
+
+    // ✅ keep anime fields null for manga posts
+    anime_id: null,
+    anime_episode_id: null,
+
+    content: input.content,
+    review_id: review.id,
+  });
+
+  if (postError) return { data: null, error: postError };
+
+  return { data: review as ReviewRow, error: null };
+}
+
+// ------------------------------------------------------------
+// MANGA: Chapter Review (✅ NEW)
+// ------------------------------------------------------------
+export async function createMangaChapterReview(
+  input: CreateMangaChapterReviewInput
+): Promise<{ data: ReviewRow | null; error: any }> {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError) return { data: null, error: userError };
+  if (!user) return { data: null, error: new Error("Not authenticated") };
+
+  const { data: review, error: reviewError } = await supabase
+    .from("reviews")
+    .insert({
+      user_id: user.id,
+
+      manga_id: input.manga_id,
+      manga_chapter_id: input.manga_chapter_id,
+
+      // ✅ keep anime fields null for manga reviews
+      anime_id: null,
+      anime_episode_id: null,
+
+      rating: input.rating,
+      content: input.content,
+      contains_spoilers: input.contains_spoilers ?? false,
+    })
+    .select("*")
+    .single();
+
+  if (reviewError || !review) return { data: null, error: reviewError };
+
+  const { error: postError } = await supabase.from("posts").insert({
+    user_id: user.id,
+
+    manga_id: input.manga_id,
+    manga_chapter_id: input.manga_chapter_id,
+
+    // ✅ keep anime fields null for manga posts
+    anime_id: null,
+    anime_episode_id: null,
+
+    content: input.content,
+    review_id: review.id,
+  });
+
+  if (postError) return { data: null, error: postError };
+
+  return { data: review as ReviewRow, error: null };
 }

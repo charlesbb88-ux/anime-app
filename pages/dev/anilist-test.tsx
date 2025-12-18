@@ -53,8 +53,6 @@ const AniListTestPage: NextPage = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          // If you set ANILIST_IMPORT_SECRET, you can also send it here:
-          // "x-import-secret": "your-secret",
         },
         body: JSON.stringify({ anilistId: id }),
       });
@@ -143,15 +141,17 @@ const AniListTestPage: NextPage = () => {
             const importState = importStates[anime.id] ?? "idle";
             const importError = importErrors[anime.id];
 
-            // ✅ ONLY ADDED LINE:
-            console.log("TRAILER DATA", anime.trailer);
+            const posterUrl =
+              anime.coverImage?.extraLarge ||
+              anime.coverImage?.large ||
+              anime.coverImage?.medium ||
+              null;
 
             return (
               <div
                 key={anime.id}
                 className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/70"
               >
-                {/* Banner (if available) */}
                 {anime.bannerImage && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -162,12 +162,11 @@ const AniListTestPage: NextPage = () => {
                 )}
 
                 <div className="flex gap-3 p-3">
-                  {/* Poster */}
                   <div className="h-28 w-20 flex-shrink-0 overflow-hidden rounded-md bg-gray-800">
-                    {anime.coverImage?.medium ? (
+                    {posterUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={anime.coverImage.medium}
+                        src={posterUrl}
                         alt={displayTitle}
                         className="h-full w-full object-cover"
                       />
@@ -178,7 +177,6 @@ const AniListTestPage: NextPage = () => {
                     )}
                   </div>
 
-                  {/* Main info */}
                   <div className="flex-1">
                     <div className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
                       <p className="text-sm font-semibold text-gray-100">
@@ -189,7 +187,6 @@ const AniListTestPage: NextPage = () => {
                       </span>
                     </div>
 
-                    {/* Meta row: episodes / format / status / score */}
                     <div className="mb-2 flex flex-wrap gap-3 text-[11px] text-gray-400">
                       <span>
                         Episodes:{" "}
@@ -223,12 +220,10 @@ const AniListTestPage: NextPage = () => {
                       )}
                     </div>
 
-                    {/* Description */}
                     <p className="mb-2 text-[11px] leading-snug text-gray-300">
                       {description}
                     </p>
 
-                    {/* Genres & tags */}
                     <div className="mb-2 flex flex-wrap gap-2">
                       {genreText && (
                         <span className="rounded-full bg-gray-800 px-2 py-1 text-[10px] text-gray-200">
@@ -242,7 +237,6 @@ const AniListTestPage: NextPage = () => {
                       )}
                     </div>
 
-                    {/* Trailer link */}
                     {trailerUrl && (
                       <a
                         href={trailerUrl}
@@ -254,7 +248,6 @@ const AniListTestPage: NextPage = () => {
                       </a>
                     )}
 
-                    {/* Import button + status */}
                     <div className="mt-3 flex items-center gap-3">
                       <button
                         type="button"
@@ -280,7 +273,6 @@ const AniListTestPage: NextPage = () => {
                       )}
                     </div>
 
-                    {/* Footer ID for debugging */}
                     <p className="mt-2 text-[10px] text-gray-500">
                       AniList ID:{" "}
                       <span className="font-mono">{anime.id}</span>

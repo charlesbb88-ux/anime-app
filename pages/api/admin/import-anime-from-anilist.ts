@@ -91,7 +91,14 @@ export default async function handler(
 
   // 3) Core fields
   const totalEpisodes = anime.episodes ?? null;
-  const imageUrl = anime.coverImage?.large || anime.coverImage?.medium || null;
+
+  // ✅ CHANGED: prefer the largest cover image AniList provides
+  const imageUrl =
+    (anime.coverImage as any)?.extraLarge ||
+    anime.coverImage?.large ||
+    anime.coverImage?.medium ||
+    null;
+
   const bannerImageUrl = anime.bannerImage ?? null;
 
   const startDate = fuzzyDateToString(anime.startDate);
@@ -110,7 +117,6 @@ export default async function handler(
   const trailerId = anime.trailer?.id ?? null;
   const trailerThumbnailUrl = anime.trailer?.thumbnail ?? null;
 
-
   // 4) Upsert into public.anime table
   const { data: upserted, error: dbError } = await supabaseAdmin
     .from("anime")
@@ -124,7 +130,6 @@ export default async function handler(
         trailer_site: trailerSite,
         trailer_id: trailerId,
         trailer_thumbnail_url: trailerThumbnailUrl,
-
 
         // extra titles
         title_english: titleEnglish,

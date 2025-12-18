@@ -68,6 +68,7 @@ export type AniListAnime = {
   endDate: AniListFuzzyDate | null;
 
   coverImage: {
+    extraLarge: string | null; // ✅ NEW
     large: string | null;
     medium: string | null;
   } | null;
@@ -106,6 +107,7 @@ export type AniListManga = {
   endDate: AniListFuzzyDate | null;
 
   coverImage: {
+    extraLarge: string | null; // ✅ NEW
     large: string | null;
     medium: string | null;
   } | null;
@@ -210,6 +212,7 @@ export async function searchAniListAnime(
           startDate { year month day }
           endDate { year month day }
           coverImage {
+            extraLarge
             large
             medium
           }
@@ -328,6 +331,7 @@ export async function getAniListAnimeById(
         startDate { year month day }
         endDate { year month day }
         coverImage {
+          extraLarge
           large
           medium
         }
@@ -447,6 +451,7 @@ export async function searchAniListManga(
           startDate { year month day }
           endDate { year month day }
           coverImage {
+            extraLarge
             large
             medium
           }
@@ -547,6 +552,7 @@ export async function getAniListMangaById(
         startDate { year month day }
         endDate { year month day }
         coverImage {
+          extraLarge
           large
           medium
         }

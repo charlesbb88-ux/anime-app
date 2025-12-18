@@ -11,14 +11,20 @@ import { getAnimeBySlug } from "@/lib/anime";
 import type { Anime } from "@/lib/types";
 import { supabase } from "@/lib/supabaseClient";
 
-// ✅ NEW: review upsert helper (Step 2 file)
-import { upsertAnimeSeriesReview } from "@/lib/reviews";
+// ✅ review INSERT helper (Letterboxd-style: multiple reviews allowed)
+import { createAnimeSeriesReview } from "@/lib/reviews";
 
 import EpisodeNavigator from "@/components/EpisodeNavigator";
 
 import LeftSidebar from "../../components/LeftSidebar";
 import RightSidebar from "../../components/RightSidebar";
 import PostFeed from "../../components/PostFeed";
+
+// ✅ Global Log modal
+import GlobalLogModal from "@/components/reviews/GlobalLogModal";
+
+// ✅ Letterboxd-style action box (reusable)
+import ActionBox from "@/components/actions/ActionBox";
 
 type AnimeTag = {
   id: number;
@@ -53,6 +59,18 @@ const AnimePage: NextPage = () => {
   // ✅ NEW (temporary): save review test state
   const [savingReview, setSavingReview] = useState(false);
   const [reviewSaveMsg, setReviewSaveMsg] = useState<string | null>(null);
+
+  // ✅ NEW: force PostFeed to remount so it refetches immediately (no page refresh)
+  const [feedNonce, setFeedNonce] = useState(0);
+
+  // ✅ NEW: force ActionBox to remount so marks refresh immediately (no page refresh)
+  const [actionBoxNonce, setActionBoxNonce] = useState(0);
+
+  // ✅ open/close the log modal
+  const [logOpen, setLogOpen] = useState(false);
+
+  // ✅ my series log count
+  const [mySeriesLogCount, setMySeriesLogCount] = useState<number | null>(null);
 
   // Normalize slug from router.query
   useEffect(() => {
@@ -106,13 +124,13 @@ const AnimePage: NextPage = () => {
 
   // Fetch tags
   useEffect(() => {
-    if (!anime?.id) {
+    const animeId = anime?.id;
+    if (!animeId) {
       setTags([]);
       return;
     }
 
     let isMounted = true;
-    const animeId = anime.id;
 
     async function run() {
       setTagsLoading(true);
@@ -161,18 +179,20 @@ const AnimePage: NextPage = () => {
     setTrailerSrc(hi || base);
   }, [anime]);
 
-  // ✅ NEW (temporary): test write a series review
+  // ✅ NEW (temporary): test write a series review (INSERT ONLY)
   async function handleTestSaveReview() {
-    if (!anime?.id) return;
+    const animeId = anime?.id;
+    const animeTitle = anime?.title;
+    if (!animeId || !animeTitle) return;
 
     setSavingReview(true);
     setReviewSaveMsg(null);
 
     try {
-      const result = await upsertAnimeSeriesReview({
-        anime_id: anime.id,
+      const result = await createAnimeSeriesReview({
+        anime_id: animeId,
         rating: 87,
-        content: `Test review for ${anime.title} @ ${new Date().toLocaleString()}`,
+        content: `Test review for ${animeTitle} @ ${new Date().toLocaleString()}`,
         contains_spoilers: false,
       });
 
@@ -185,10 +205,60 @@ const AnimePage: NextPage = () => {
       }
 
       setReviewSaveMsg(`Saved ✅ (review id: ${result.data?.id})`);
+
+      // ✅ Force PostFeed to refetch immediately (no manual refresh)
+      setFeedNonce((n) => n + 1);
     } finally {
       setSavingReview(false);
     }
   }
+
+  // ✅ fetch my series log count (soft-fail)
+  useEffect(() => {
+    const animeId = anime?.id;
+    if (!animeId) {
+      setMySeriesLogCount(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function run() {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (cancelled) return;
+
+      if (userError || !user) {
+        setMySeriesLogCount(null);
+        return;
+      }
+
+      const { count, error } = await supabase
+        .from("anime_series_logs")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("anime_id", animeId);
+
+      if (cancelled) return;
+
+      if (error) {
+        console.error("Error fetching series log count:", error);
+        setMySeriesLogCount(null);
+        return;
+      }
+
+      setMySeriesLogCount(count ?? 0);
+    }
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [anime?.id]);
 
   // ------------------------
   // Loading / Not Found
@@ -273,7 +343,7 @@ const AnimePage: NextPage = () => {
                   backgroundImage: `url(${overlayMaskUrl})`,
                   backgroundRepeat: "no-repeat",
                   backgroundPosition: "center",
-                  backgroundSize: "100% 100%", // <-- key: makes 1900x400 work on any container
+                  backgroundSize: "100% 100%",
                   pointerEvents: "none",
                 }}
               />
@@ -342,8 +412,8 @@ const AnimePage: NextPage = () => {
               <p className="mb-1 text-sm text-gray-400">
                 Aired:{" "}
                 <span className="font-semibold text-gray-100">
-                  {a.start_date ?? "?"} {(a.start_date || a.end_date) && " – "}{" "}
-                  {a.end_date ?? "?"}
+                  {a.start_date ?? "?"}{" "}
+                  {(a.start_date || a.end_date) && " – "} {a.end_date ?? "?"}
                 </span>
               </p>
             )}
@@ -389,7 +459,7 @@ const AnimePage: NextPage = () => {
             </p>
 
             {/* ✅ NEW (temporary): test save review button + tiny status */}
-            <div className="mt-2 flex items-center gap-2">
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={handleTestSaveReview}
@@ -399,9 +469,40 @@ const AnimePage: NextPage = () => {
                 {savingReview ? "Saving…" : "Test: Save review"}
               </button>
 
+              {/* ✅ Existing: opens your modal */}
+              <button
+                type="button"
+                onClick={() => setLogOpen(true)}
+                className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-1 text-xs font-medium text-gray-200 hover:bg-gray-900/60"
+              >
+                Log
+              </button>
+
+              {typeof mySeriesLogCount === "number" && (
+                <span className="text-xs text-gray-400">
+                  You logged this{" "}
+                  <span className="font-semibold text-gray-200">
+                    {mySeriesLogCount}
+                  </span>{" "}
+                  time{mySeriesLogCount === 1 ? "" : "s"}
+                </span>
+              )}
+
               {reviewSaveMsg && (
                 <span className="text-xs text-gray-400">{reviewSaveMsg}</span>
               )}
+            </div>
+
+            {/* ✅ NEW: Letterboxd-style action box (reusable) */}
+            <div className="mt-3">
+              <ActionBox
+                key={actionBoxNonce}
+                animeId={anime.id}
+                onOpenLog={() => setLogOpen(true)}
+                onShowActivity={() =>
+                  router.push(`/anime/${anime.slug}/activity`)
+                }
+              />
             </div>
           </div>
         </div>
@@ -462,7 +563,10 @@ const AnimePage: NextPage = () => {
 
                     let percent: number | null = null;
                     if (typeof tag.rank === "number") {
-                      percent = Math.max(0, Math.min(100, Math.round(tag.rank)));
+                      percent = Math.max(
+                        0,
+                        Math.min(100, Math.round(tag.rank))
+                      );
                     }
 
                     return (
@@ -561,7 +665,8 @@ const AnimePage: NextPage = () => {
         </div>
 
         <div>
-          <PostFeed animeId={anime!.id} />
+          {/* ✅ key forces PostFeed remount so the new review appears immediately */}
+          <PostFeed key={feedNonce} animeId={anime.id} />
         </div>
 
         <div>
@@ -598,7 +703,6 @@ const AnimePage: NextPage = () => {
               src={trailerSrc}
               alt={`${anime.title} trailer thumbnail`}
               onError={() => {
-                // fallback chain: maxres -> sd -> hq
                 if (trailerThumbHi && trailerSrc === trailerThumbHi) {
                   setTrailerSrc(trailerThumbMd || trailerThumbBase);
                   return;
@@ -614,7 +718,6 @@ const AnimePage: NextPage = () => {
               }}
             />
 
-            {/* ✅ SAME overlay mask, stretched to fit any aspect */}
             <div
               className="pointer-events-none absolute inset-0"
               style={{
@@ -627,6 +730,33 @@ const AnimePage: NextPage = () => {
           </div>
         </div>
       )}
+
+      <GlobalLogModal
+        open={logOpen}
+        onClose={() => setLogOpen(false)}
+        title={anime.title}
+        posterUrl={anime.image_url}
+        animeId={anime.id}
+        onSuccess={async () => {
+          const {
+            data: { user },
+            error: userError,
+          } = await supabase.auth.getUser();
+
+          if (userError || !user) return;
+
+          const { count, error } = await supabase
+            .from("anime_series_logs")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", user.id)
+            .eq("anime_id", anime.id);
+
+          if (!error) setMySeriesLogCount(count ?? 0);
+
+          // ✅ NEW: refresh ActionBox immediately (watched/liked/watchlist/rating)
+          setActionBoxNonce((n) => n + 1);
+        }}
+      />
     </>
   );
 };

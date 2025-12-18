@@ -1,15 +1,35 @@
 // pages/manga/[slug]/chapter/[chapterNumber].tsx
+"use client";
 
 import { useRouter } from "next/router";
 import type { NextPage } from "next";
+import Link from "next/link";
 import { useEffect, useState } from "react";
+
 import type { Manga, MangaChapter } from "@/lib/types";
 import { getMangaBySlug, getMangaChapter } from "@/lib/manga";
 
-// ⭐ ADD
+// ✅ chapter review helper
+import { createMangaChapterReview } from "@/lib/reviews";
+
+// ✅ chapter log helpers
+import {
+  createMangaChapterLog,
+  getMyMangaChapterLogCount,
+} from "@/lib/logs";
+
+// ✅ navigator
+import ChapterNavigator from "@/components/ChapterNavigator";
+
 import LeftSidebar from "../../../../components/LeftSidebar";
 import RightSidebar from "../../../../components/RightSidebar";
 import PostFeed from "../../../../components/PostFeed";
+
+// ✅ Global Log modal
+import GlobalLogModal from "@/components/reviews/GlobalLogModal";
+
+// ✅ action box (same entry point as other pages)
+import ActionBox from "@/components/actions/ActionBox";
 
 const MangaChapterPage: NextPage = () => {
   const router = useRouter();
@@ -23,6 +43,21 @@ const MangaChapterPage: NextPage = () => {
   const [isChapterLoading, setIsChapterLoading] = useState(false);
   const [chapterError, setChapterError] = useState<string | null>(null);
 
+  // ✅ review test state
+  const [savingReview, setSavingReview] = useState(false);
+  const [reviewSaveMsg, setReviewSaveMsg] = useState<string | null>(null);
+
+  // ✅ logging state (direct test + count)
+  const [savingLog, setSavingLog] = useState(false);
+  const [logSaveMsg, setLogSaveMsg] = useState<string | null>(null);
+  const [myLogCount, setMyLogCount] = useState<number | null>(null);
+
+  // ✅ modal open/close
+  const [logOpen, setLogOpen] = useState(false);
+
+  // ✅ Force PostFeed refresh after saving review (no PostFeed changes)
+  const [feedNonce, setFeedNonce] = useState(0);
+
   // Normalize slug and chapterNumber to strings
   const slugString = Array.isArray(slug) ? slug[0] : slug ?? "";
   const chapterNumberString = Array.isArray(chapterNumber)
@@ -32,7 +67,7 @@ const MangaChapterPage: NextPage = () => {
   const chapterNum = Number(chapterNumberString);
   const isValidChapterNumber = Number.isInteger(chapterNum) && chapterNum > 0;
 
-  // Load manga by slug once the router is ready and slug is valid
+  // Load manga by slug
   useEffect(() => {
     if (!router.isReady) return;
     if (!slugString) return;
@@ -69,7 +104,7 @@ const MangaChapterPage: NextPage = () => {
     };
   }, [router.isReady, slugString]);
 
-  // Load chapter once we know the manga (to get manga.id) and have a valid chapter number
+  // Load chapter after manga + valid chapter number
   useEffect(() => {
     if (!manga) return;
     if (!isValidChapterNumber) return;
@@ -107,6 +142,97 @@ const MangaChapterPage: NextPage = () => {
     };
   }, [manga, chapterNum, isValidChapterNumber]);
 
+  // ✅ fetch my log count when chapter loads
+  useEffect(() => {
+    if (!chapter?.id) {
+      setMyLogCount(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const run = async () => {
+      const { count, error } = await getMyMangaChapterLogCount(chapter.id);
+      if (cancelled) return;
+
+      if (error) {
+        console.error("Error fetching chapter log count:", error);
+        setMyLogCount(null);
+        return;
+      }
+
+      setMyLogCount(count);
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chapter?.id]);
+
+  // ✅ TEMP: test save chapter review
+  async function handleTestSaveReview() {
+    if (!manga?.id || !chapter?.id) return;
+
+    setSavingReview(true);
+    setReviewSaveMsg(null);
+
+    try {
+      const result = await createMangaChapterReview({
+        manga_id: manga.id,
+        manga_chapter_id: chapter.id,
+        rating: 87,
+        content: `Test review for ${manga.title} - Chapter ${chapterNum} @ ${new Date().toLocaleString()}`,
+        contains_spoilers: false,
+      });
+
+      if (result.error) {
+        console.error("Error saving review:", result.error);
+        setReviewSaveMsg(
+          String((result.error as any)?.message || "Failed to save review.")
+        );
+        return;
+      }
+
+      setReviewSaveMsg(`Saved ✅ (review id: ${result.data?.id})`);
+      setFeedNonce((n) => n + 1);
+    } finally {
+      setSavingReview(false);
+    }
+  }
+
+  // ✅ TEMP: test log chapter directly (INSERT ONLY)
+  async function handleTestLogChapter() {
+    if (!manga?.id || !chapter?.id) return;
+
+    setSavingLog(true);
+    setLogSaveMsg(null);
+
+    try {
+      const result = await createMangaChapterLog({
+        manga_id: manga.id,
+        manga_chapter_id: chapter.id,
+      });
+
+      if (result.error) {
+        console.error("Error logging chapter:", result.error);
+        setLogSaveMsg(
+          String((result.error as any)?.message || "Failed to log chapter.")
+        );
+        return;
+      }
+
+      setLogSaveMsg(`Logged ✅ (log id: ${result.data?.id})`);
+
+      // refresh count
+      const { count, error } = await getMyMangaChapterLogCount(chapter.id);
+      if (!error) setMyLogCount(count);
+    } finally {
+      setSavingLog(false);
+    }
+  }
+
   if (!router.isReady) {
     return (
       <main className="min-h-screen px-4 py-8">
@@ -126,10 +252,20 @@ const MangaChapterPage: NextPage = () => {
     );
   }
 
+  const m: any = manga;
+
   return (
     <>
-      {/* TOP SECTION (your existing content) */}
       <main className="min-h-screen px-4 py-8">
+        {m?.banner_image_url && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={m.banner_image_url}
+            alt={`${manga?.title ?? slugString} banner`}
+            className="mb-6 h-40 w-full rounded-lg object-cover"
+          />
+        )}
+
         <header className="mb-6">
           <p className="text-sm text-gray-500 mb-1">Manga chapter page</p>
           <h1 className="text-2xl font-bold">
@@ -143,45 +279,78 @@ const MangaChapterPage: NextPage = () => {
           {!isMangaLoading && mangaError && (
             <p className="text-xs text-red-500 mt-1">{mangaError}</p>
           )}
-        </header>
 
-        <section className="space-y-4">
-          <div>
-            <p className="text-sm text-gray-600">
-              This is still an early version of the manga chapter page.
-            </p>
-            <p className="text-xs text-gray-500">
-              slug: <code className="font-mono">{slugString}</code>
-            </p>
-            <p className="text-xs text-gray-500">
-              chapterNumber: <code className="font-mono">{chapterNum}</code>
-            </p>
+          <div className="mt-4">
+            <ChapterNavigator
+              slug={slugString}
+              totalChapters={manga?.total_chapters ?? null}
+              currentChapterNumber={chapterNum}
+            />
           </div>
 
-          {manga && (
-            <div className="mt-2 border-t border-gray-200 pt-4 space-y-1">
-              <p className="text-sm font-semibold">Manga details</p>
-              <p className="text-sm text-gray-700">
-                Title: <span className="font-medium">{manga.title}</span>
-              </p>
-              {manga.title_english && (
-                <p className="text-xs text-gray-600">
-                  English: {manga.title_english}
-                </p>
+          <div className="mt-4">
+            <Link
+              href={`/manga/${slugString}`}
+              className="text-xs text-blue-400 hover:text-blue-300"
+            >
+              ← Back to manga main page
+            </Link>
+          </div>
+
+          {manga && chapter && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleTestSaveReview}
+                disabled={savingReview}
+                className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-1 text-xs font-medium text-gray-200 hover:bg-gray-900/60 disabled:opacity-60"
+              >
+                {savingReview ? "Saving…" : "Test: Save chapter review"}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleTestLogChapter}
+                disabled={savingLog}
+                className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-1 text-xs font-medium text-gray-200 hover:bg-gray-900/60 disabled:opacity-60"
+              >
+                {savingLog ? "Logging…" : "Test: Log chapter"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setLogOpen(true)}
+                className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-1 text-xs font-medium text-gray-200 hover:bg-gray-900/60"
+              >
+                Log
+              </button>
+
+              {typeof myLogCount === "number" && (
+                <span className="text-xs text-gray-400">
+                  You logged this{" "}
+                  <span className="font-semibold text-gray-200">
+                    {myLogCount}
+                  </span>{" "}
+                  time{myLogCount === 1 ? "" : "s"}
+                </span>
               )}
-              {manga.title_native && (
-                <p className="text-xs text-gray-600">
-                  Native: {manga.title_native}
-                </p>
+
+              {reviewSaveMsg && (
+                <span className="text-xs text-gray-400">{reviewSaveMsg}</span>
               )}
-              {typeof manga.total_chapters === "number" && (
-                <p className="text-xs text-gray-600">
-                  Total chapters: {manga.total_chapters}
-                </p>
+              {logSaveMsg && (
+                <span className="text-xs text-gray-400">{logSaveMsg}</span>
               )}
             </div>
           )}
 
+          {/* ✅ same entry point style as other pages */}
+          <div className="mt-3">
+            <ActionBox onOpenLog={() => setLogOpen(true)} />
+          </div>
+        </header>
+
+        <section className="space-y-4">
           <div className="mt-4 border-t border-gray-200 pt-4 space-y-2">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold">Chapter details</p>
@@ -209,23 +378,23 @@ const MangaChapterPage: NextPage = () => {
                   </p>
                 )}
 
-                {chapter.release_date && (
+                {(chapter as any).release_date && (
                   <p className="text-xs text-gray-600">
                     Release date:{" "}
-                    {new Date(chapter.release_date).toLocaleString()}
+                    {new Date((chapter as any).release_date).toLocaleString()}
                   </p>
                 )}
 
-                {chapter.synopsis && (
+                {(chapter as any).synopsis ? (
                   <p className="text-sm text-gray-700 mt-2">
-                    {chapter.synopsis}
+                    {(chapter as any).synopsis}
                   </p>
-                )}
-
-                {!chapter.title && !chapter.synopsis && (
-                  <p className="text-xs text-gray-500">
-                    No title or synopsis has been added for this chapter yet.
-                  </p>
+                ) : (
+                  !chapter.title && (
+                    <p className="text-xs text-gray-500">
+                      No title or synopsis has been added for this chapter yet.
+                    </p>
+                  )
                 )}
               </div>
             )}
@@ -233,7 +402,7 @@ const MangaChapterPage: NextPage = () => {
         </section>
       </main>
 
-      {/* DISCUSSION / FEED SECTION (same layout style as anime pages) */}
+      {/* DISCUSSION / FEED SECTION */}
       <div
         style={{
           marginTop: "1.5rem",
@@ -252,9 +421,12 @@ const MangaChapterPage: NextPage = () => {
         </div>
 
         <div>
-          {/* Only render the feed once we have the chapter id */}
           {manga?.id && chapter?.id ? (
-            <PostFeed mangaId={manga.id} mangaChapterId={chapter.id} />
+            <PostFeed
+              key={feedNonce}
+              mangaId={manga.id}
+              mangaChapterId={chapter.id}
+            />
           ) : (
             <p className="text-sm text-gray-500">Loading discussion…</p>
           )}
@@ -264,6 +436,21 @@ const MangaChapterPage: NextPage = () => {
           <RightSidebar />
         </div>
       </div>
+
+      {/* ✅ Global log modal (manga chapter) */}
+      <GlobalLogModal
+        open={logOpen}
+        onClose={() => setLogOpen(false)}
+        title={manga?.title ?? null}
+        posterUrl={(manga as any)?.image_url ?? null}
+        mangaId={manga?.id ?? null}
+        mangaChapterId={chapter?.id ?? null}
+        onSuccess={async () => {
+          if (!chapter?.id) return;
+          const { count, error } = await getMyMangaChapterLogCount(chapter.id);
+          if (!error) setMyLogCount(count);
+        }}
+      />
     </>
   );
 };
