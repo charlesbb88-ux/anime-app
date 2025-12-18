@@ -10,7 +10,7 @@ export type ReviewRow = {
   anime_id: string | null;
   anime_episode_id: string | null;
 
-  // ✅ NEW: manga support
+  // ✅ manga support
   manga_id: string | null;
   manga_chapter_id: string | null;
 
@@ -37,7 +37,7 @@ export type CreateAnimeEpisodeReviewInput = {
   contains_spoilers?: boolean;
 };
 
-// ✅ NEW: Manga series review
+// ✅ Manga series review
 export type CreateMangaSeriesReviewInput = {
   manga_id: string;
   rating: number | null;
@@ -45,7 +45,7 @@ export type CreateMangaSeriesReviewInput = {
   contains_spoilers?: boolean;
 };
 
-// ✅ NEW: Manga chapter review
+// ✅ Manga chapter review
 export type CreateMangaChapterReviewInput = {
   manga_id: string;
   manga_chapter_id: string; // ✅ required for chapter reviews
@@ -162,7 +162,7 @@ export async function createAnimeEpisodeReview(
 }
 
 // ------------------------------------------------------------
-// MANGA: Series Review (✅ NEW)
+// MANGA: Series Review
 // ------------------------------------------------------------
 export async function createMangaSeriesReview(
   input: CreateMangaSeriesReviewInput
@@ -218,7 +218,7 @@ export async function createMangaSeriesReview(
 }
 
 // ------------------------------------------------------------
-// MANGA: Chapter Review (✅ NEW)
+// MANGA: Chapter Review
 // ------------------------------------------------------------
 export async function createMangaChapterReview(
   input: CreateMangaChapterReviewInput

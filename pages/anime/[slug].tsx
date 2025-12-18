@@ -753,8 +753,11 @@ const AnimePage: NextPage = () => {
 
           if (!error) setMySeriesLogCount(count ?? 0);
 
-          // ✅ NEW: refresh ActionBox immediately (watched/liked/watchlist/rating)
+          // ✅ Refresh ActionBox immediately (watched/liked/watchlist/rating)
           setActionBoxNonce((n) => n + 1);
+
+          // ✅ NEW: Refresh PostFeed immediately (so the new review shows without reload)
+          setFeedNonce((n) => n + 1);
         }}
       />
     </>

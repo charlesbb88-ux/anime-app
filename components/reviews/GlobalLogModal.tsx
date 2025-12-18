@@ -15,6 +15,9 @@ import {
   setMyAnimeLikedMark,
 } from "@/lib/marks";
 
+// ✅ NEW: review INSERT helper (same one your test button uses)
+import { createAnimeSeriesReview } from "@/lib/reviews";
+
 import { Heart } from "lucide-react";
 
 type Visibility = "public" | "friends" | "private";
@@ -84,6 +87,14 @@ function formatWatchedOn(d: Date) {
     day: "numeric",
     year: "numeric",
   });
+}
+
+// ✅ Map modal half-stars (1..10) to a 0..100 review rating (10 steps).
+// If untouched, return null (so we don't force a rating).
+function halfStarsTo100(halfStars: number | null): number | null {
+  if (halfStars === null) return null;
+  const hs = clampInt(halfStars, 1, 10); // 1..10
+  return Math.round((hs / 10) * 100); // 10..100
 }
 
 export default function GlobalLogModal({
@@ -230,23 +241,43 @@ export default function GlobalLogModal({
           if (error) throw error;
         }
 
-        // ✅ unchecked (NOT journal): apply marks like ActionBox
+        // ✅ unchecked (NOT journal): apply marks + INSERT REVIEW
         if (!logWatchToActivity) {
-          // rating (only if user touched stars in this modal)
+          // rating mark (only if user touched stars in this modal)
           if (halfStars !== null) {
             const nextValue = clampInt(halfStars, 1, 10);
             const { error } = await setMyAnimeRatingMark(animeId, nextValue);
             if (error) throw error;
           }
 
-          // like (only if user touched heart in this modal)
+          // like mark (only if user touched heart in this modal)
           if (likeChoice !== null) {
             const { error } = await setMyAnimeLikedMark(animeId, likeChoice);
             if (error) throw error;
           }
+
+          // ✅ NEW: insert a SERIES REVIEW like the test button does
+          // Only insert if they actually wrote something (so saving marks doesn't create blank reviews).
+          const trimmed = content.trim();
+          if (trimmed) {
+            const reviewRating = halfStarsTo100(halfStars);
+
+            const result = await createAnimeSeriesReview({
+              anime_id: animeId,
+              rating: reviewRating, // null if untouched
+              content: trimmed,
+              contains_spoilers: containsSpoilers,
+            });
+
+            if (result.error) throw result.error;
+          }
+
+          onClose();
+          onSuccess?.();
+          return;
         }
 
-        // ✅ checked (journal): create a series log row (activity entry)
+        // ✅ checked (journal): create a series log row (activity entry) — unchanged FOR NOW
         if (logWatchToActivity) {
           const { error } = await createAnimeSeriesLog({
             anime_id: animeId,
@@ -256,11 +287,11 @@ export default function GlobalLogModal({
             contains_spoilers: containsSpoilers,
           });
           if (error) throw error;
-        }
 
-        onClose();
-        onSuccess?.();
-        return;
+          onClose();
+          onSuccess?.();
+          return;
+        }
       }
 
       // ✅ MANGA CHAPTER (unchanged)
@@ -409,7 +440,7 @@ export default function GlobalLogModal({
               </div>
             ) : null}
 
-            {/* ✅ STARS (below review box) — unchanged layout + working clicks */}
+            {/* ✅ STARS (below review box) */}
             {target === "animeSeries" && animeId ? (
               <div className="pt-1">
                 <div className="mb-1 text-center text-xs font-semibold text-zinc-300">

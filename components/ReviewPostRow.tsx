@@ -17,7 +17,7 @@ export type ReviewPostRowProps = {
   createdAt: string;
 
   content: string;
-  rating: number | null;
+  rating: number | null; // reviews.rating: 0..100 (or null)
   containsSpoilers?: boolean;
 
   displayName: string;
@@ -81,15 +81,108 @@ function formatRelativeTime(dateString: string) {
   return `${years}y`;
 }
 
-function renderStars(rating: number): string {
-  const fullStars = Math.floor(rating);
-  const halfStar = rating - fullStars >= 0.5;
+/* -------------------- Stars (NO placeholder/backing row) -------------------- */
 
-  let result = "★★★★★".slice(0, fullStars);
-  if (halfStar && fullStars < 5) result += "½";
-
-  return result.padEnd(5, "☆");
+function clampInt(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, Math.round(n)));
 }
+
+// reviews.rating is 0..100 -> halfStars 0..10 (0.5 steps)
+function rating100ToHalfStars(rating100: number): number {
+  const r = Math.max(0, Math.min(100, rating100));
+  return clampInt((r / 100) * 10, 0, 10);
+}
+
+// halfStars is 0..10
+// starIndex is 1..5
+// returns 0, 50, or 100
+function computeStarFillPercent(shownHalfStars: number, starIndex: number) {
+  const starHalfStart = (starIndex - 1) * 2; // 0,2,4,6,8
+  const remaining = shownHalfStars - starHalfStart;
+
+  if (remaining >= 2) return 100 as const;
+  if (remaining === 1) return 50 as const;
+  return 0 as const;
+}
+
+/**
+ * Only draws the filled part (no gray/outline star behind it).
+ * - 100% => full star
+ * - 50%  => half star (clipped)
+ */
+function FilledStarOnly({
+  filledPercent,
+  size = 14,
+}: {
+  filledPercent: 50 | 100;
+  size?: number;
+}) {
+  return (
+    <span
+      className="inline-block overflow-hidden align-middle text-emerald-500 leading-none"
+      style={{ width: `${filledPercent}%`, fontSize: size }}
+      aria-hidden="true"
+    >
+      ★
+    </span>
+  );
+}
+
+function ReviewStarsRow({
+  halfStars,
+  size = 14,
+}: {
+  halfStars: number;
+  size?: number;
+}) {
+  const hs = clampInt(halfStars, 0, 10);
+
+  const nodes: React.ReactNode[] = [];
+  for (let i = 1; i <= 5; i++) {
+    const fill = computeStarFillPercent(hs, i);
+    if (fill === 0) continue;
+
+    nodes.push(
+      <span
+        key={i}
+        className="relative inline-block align-middle"
+        style={{ width: size, height: size }}
+      >
+        {/* one consistent glyph, always identical positioning */}
+        <span
+          className="absolute left-0 top-0 leading-none text-emerald-500"
+          style={{
+            fontSize: size,
+            lineHeight: `${size}px`, // keeps baseline consistent
+            display: "block",
+          }}
+          aria-hidden="true"
+        >
+          {/* clip only when half */}
+          <span
+            style={{
+              display: "block",
+              width: fill === 100 ? "100%" : "50%",
+              overflow: "hidden",
+            }}
+          >
+            ★
+          </span>
+        </span>
+      </span>
+    );
+  }
+
+  if (nodes.length === 0) return null;
+
+  return (
+    <span className="inline-flex items-center gap-[2px]" aria-label={`${hs / 2} stars`}>
+      {nodes}
+    </span>
+  );
+}
+
+/* -------------------- Icons -------------------- */
 
 function ShareArrowIcon({ size = 20 }: { size?: number }) {
   return (
@@ -303,7 +396,7 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
   const contentFontSize = isMain ? "1.1rem" : "1rem";
 
   const animeTitle = originLabel ?? "";
-  const stars = rating != null ? renderStars(rating) : "";
+  const halfStarsForReview = rating != null ? rating100ToHalfStars(rating) : null;
 
   const iconButtonBase: React.CSSProperties = {
     border: "none",
@@ -610,15 +703,12 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
                 {animeTitle}
               </span>
 
-              <span
-                style={{
-                  fontSize: "0.76rem",
-                  color: "#777",
-                  lineHeight: 1.1,
-                }}
-              >
-                {stars}
-              </span>
+              {/* ✅ ONLY the real stars (no placeholder/back row) */}
+              <div style={{ marginTop: 2, display: "flex", justifyContent: "flex-end" }}>
+                {halfStarsForReview != null ? (
+                  <ReviewStarsRow halfStars={halfStarsForReview} size={14} />
+                ) : null}
+              </div>
             </div>
           </div>
 

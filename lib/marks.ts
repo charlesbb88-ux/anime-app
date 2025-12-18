@@ -1,14 +1,4 @@
-// lib/marks.ts
 import { supabase } from "@/lib/supabaseClient";
-
-/* ======================================================
-   Helpers
-====================================================== */
-
-function isDuplicateKeyError(err: any) {
-  // Postgres unique violation
-  return Boolean(err && (err.code === "23505" || err?.details?.includes("duplicate key")));
-}
 
 /* ======================================================
    WATCHED (anime series)
@@ -49,20 +39,9 @@ export async function setMyAnimeWatchedMark(anime_id: string, watched: boolean) 
     return { error: userErr ?? new Error("Not authenticated.") };
   }
 
-  if (watched) {
-    const { error } = await supabase.from("user_marks").insert({
-      user_id: user.id,
-      kind: "watched",
-      anime_id,
-    });
-
-    // ✅ Make "set watched" idempotent (safe to call even if it already exists)
-    if (error && isDuplicateKeyError(error)) return { error: null };
-
-    return { error };
-  }
-
-  const { error } = await supabase
+  // ✅ always remove any existing row first (prevents duplicate unique errors
+  //    and refreshes created_at when we re-insert)
+  const del = await supabase
     .from("user_marks")
     .delete()
     .eq("user_id", user.id)
@@ -71,6 +50,16 @@ export async function setMyAnimeWatchedMark(anime_id: string, watched: boolean) 
     .is("anime_episode_id", null)
     .is("manga_id", null)
     .is("manga_chapter_id", null);
+
+  if (del.error) return { error: del.error };
+
+  if (!watched) return { error: null };
+
+  const { error } = await supabase.from("user_marks").insert({
+    user_id: user.id,
+    kind: "watched",
+    anime_id,
+  });
 
   return { error };
 }
@@ -114,20 +103,7 @@ export async function setMyAnimeLikedMark(anime_id: string, liked: boolean) {
     return { error: userErr ?? new Error("Not authenticated.") };
   }
 
-  if (liked) {
-    const { error } = await supabase.from("user_marks").insert({
-      user_id: user.id,
-      kind: "liked",
-      anime_id,
-    });
-
-    // ✅ idempotent
-    if (error && isDuplicateKeyError(error)) return { error: null };
-
-    return { error };
-  }
-
-  const { error } = await supabase
+  const del = await supabase
     .from("user_marks")
     .delete()
     .eq("user_id", user.id)
@@ -136,6 +112,16 @@ export async function setMyAnimeLikedMark(anime_id: string, liked: boolean) {
     .is("anime_episode_id", null)
     .is("manga_id", null)
     .is("manga_chapter_id", null);
+
+  if (del.error) return { error: del.error };
+
+  if (!liked) return { error: null };
+
+  const { error } = await supabase.from("user_marks").insert({
+    user_id: user.id,
+    kind: "liked",
+    anime_id,
+  });
 
   return { error };
 }
@@ -182,20 +168,7 @@ export async function setMyAnimeWatchlistMark(
     return { error: userErr ?? new Error("Not authenticated.") };
   }
 
-  if (in_watchlist) {
-    const { error } = await supabase.from("user_marks").insert({
-      user_id: user.id,
-      kind: "watchlist",
-      anime_id,
-    });
-
-    // ✅ idempotent
-    if (error && isDuplicateKeyError(error)) return { error: null };
-
-    return { error };
-  }
-
-  const { error } = await supabase
+  const del = await supabase
     .from("user_marks")
     .delete()
     .eq("user_id", user.id)
@@ -204,6 +177,16 @@ export async function setMyAnimeWatchlistMark(
     .is("anime_episode_id", null)
     .is("manga_id", null)
     .is("manga_chapter_id", null);
+
+  if (del.error) return { error: del.error };
+
+  if (!in_watchlist) return { error: null };
+
+  const { error } = await supabase.from("user_marks").insert({
+    user_id: user.id,
+    kind: "watchlist",
+    anime_id,
+  });
 
   return { error };
 }
@@ -242,12 +225,11 @@ export async function getMyAnimeRatingMark(anime_id: string) {
 
   return {
     exists: Boolean(data?.id),
-    halfStars: (data?.stars ?? null) as number | null, // 1..10
+    halfStars: (data?.stars ?? null) as number | null,
     error: null,
   };
 }
 
-// halfStars: number|null (null deletes rating). Expected 1..10.
 export async function setMyAnimeRatingMark(
   anime_id: string,
   halfStars: number | null
@@ -261,7 +243,6 @@ export async function setMyAnimeRatingMark(
     return { error: userErr ?? new Error("Not authenticated.") };
   }
 
-  // delete existing first (simple + updates created_at on re-insert)
   const del = await supabase
     .from("user_marks")
     .delete()
@@ -282,7 +263,7 @@ export async function setMyAnimeRatingMark(
     user_id: user.id,
     kind: "rating",
     anime_id,
-    stars: clamped, // 1..10 half-stars
+    stars: clamped,
   });
 
   return { error };

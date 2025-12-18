@@ -21,6 +21,16 @@ type ActivityItem =
     }
   | {
       id: string;
+      kind: "review";
+      type: "anime_series_review";
+      title: string;
+      logged_at: string; // created_at from reviews
+      rating: number | null; // 0..100
+      content: string | null;
+      contains_spoilers: boolean;
+    }
+  | {
+      id: string;
       kind: "mark";
       type: "watched" | "liked" | "watchlist" | "rating";
       title: string;
@@ -169,6 +179,7 @@ const AnimeActivityPage: NextPage = () => {
       const [
         seriesLogs,
         episodeLogs,
+        seriesReviews, // ✅ NEW
         watchedMark,
         likedMark,
         watchlistMark,
@@ -191,6 +202,15 @@ const AnimeActivityPage: NextPage = () => {
           .eq("user_id", user.id)
           .eq("anime_id", anime.id)
           .order("logged_at", { ascending: false }),
+
+        // ✅ Reviews table: series review = anime_id set AND anime_episode_id null
+        supabase
+          .from("reviews")
+          .select("id, created_at, rating, content, contains_spoilers")
+          .eq("user_id", user.id)
+          .eq("anime_id", anime.id)
+          .is("anime_episode_id", null)
+          .order("created_at", { ascending: false }),
 
         supabase
           .from("user_marks")
@@ -239,17 +259,17 @@ const AnimeActivityPage: NextPage = () => {
 
       if (!mounted) return;
 
-      if (seriesLogs.error)
-        console.error("Activity: seriesLogs error", seriesLogs.error);
-      if (episodeLogs.error)
-        console.error("Activity: episodeLogs error", episodeLogs.error);
+      if (seriesLogs.error) console.error("Activity: seriesLogs error", seriesLogs.error);
+      if (episodeLogs.error) console.error("Activity: episodeLogs error", episodeLogs.error);
+      if (seriesReviews.error) console.error("Activity: seriesReviews error", seriesReviews.error);
 
       const merged: ActivityItem[] = [];
 
       const hasAnySeriesLogs = (seriesLogs.data?.length ?? 0) > 0;
+      const hasAnySeriesReviews = (seriesReviews.data?.length ?? 0) > 0;
 
-      // Only show watched MARK if there are NO series logs
-      if (watchedMark.data?.id && !hasAnySeriesLogs) {
+      // Only show watched MARK if there are NO series logs AND NO series reviews
+      if (watchedMark.data?.id) {
         merged.push({
           id: watchedMark.data.id,
           kind: "mark",
@@ -290,6 +310,21 @@ const AnimeActivityPage: NextPage = () => {
         });
       }
 
+      // ✅ Reviews
+      seriesReviews.data?.forEach((row: any) => {
+        merged.push({
+          id: row.id,
+          kind: "review",
+          type: "anime_series_review",
+          title: animeTitle,
+          logged_at: row.created_at,
+          rating: typeof row.rating === "number" ? row.rating : null,
+          content: row.content ?? null,
+          contains_spoilers: Boolean(row.contains_spoilers),
+        });
+      });
+
+      // ✅ Series logs
       seriesLogs.data?.forEach((row: any) => {
         merged.push({
           id: row.id,
@@ -303,6 +338,7 @@ const AnimeActivityPage: NextPage = () => {
         });
       });
 
+      // ✅ Episode logs
       episodeLogs.data?.forEach((row: any) => {
         const rowTitle = getAnimeDisplayTitle(row?.anime) || animeTitle;
         merged.push({
@@ -441,10 +477,29 @@ const AnimeActivityPage: NextPage = () => {
               );
             }
 
+            // ✅ REVIEW card
+            if (item.kind === "review") {
+              return (
+                <li
+                  key={`review-${item.id}`}
+                  className="rounded-md border border-neutral-800 p-4"
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="text-sm font-medium">
+                      You reviewed{" "}
+                      <span className="font-bold text-black">{item.title}</span>
+                    </div>
+
+                    <div className="text-xs text-neutral-500 whitespace-nowrap">
+                      {formatRelativeShort(item.logged_at)}
+                    </div>
+                  </div>
+                </li>
+              );
+            }
+
             if (item.kind !== "log") return null;
 
-            // ✅ SPECIAL: anime series logs keep "on Month d, yyyy" inline,
-            // AND also show right-side relative time.
             if (item.type === "anime_series") {
               return (
                 <li
@@ -476,7 +531,7 @@ const AnimeActivityPage: NextPage = () => {
               );
             }
 
-            // anime episode logs (keep your existing style, just change date placement/format)
+            // anime episode logs
             return (
               <li
                 key={`log-${item.type}-${item.id}`}

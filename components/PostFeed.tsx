@@ -72,6 +72,9 @@ type ReviewRow = {
   content: string | null;
   contains_spoilers: boolean | null;
   created_at: string | null;
+
+  // ✅ NEW: snapshot heart-on-save
+  author_liked?: boolean | null;
 };
 
 const TYPO = {
@@ -222,7 +225,7 @@ export default function PostFeed({
     async function loadReviewsById() {
       const { data, error } = await supabase
         .from("reviews")
-        .select("id, rating, content, contains_spoilers, created_at")
+        .select("id, rating, content, contains_spoilers, created_at, author_liked")
         .in("id", uniqueReviewIds);
 
       if (error) {
@@ -240,6 +243,7 @@ export default function PostFeed({
           content: r.content ?? null,
           contains_spoilers: r.contains_spoilers ?? null,
           created_at: r.created_at ?? null,
+          author_liked: r.author_liked ?? null,
         };
       });
 
@@ -978,6 +982,7 @@ export default function PostFeed({
                 episodeLabel={episodeLabel} // ✅ NOW PASSED
                 episodeHref={episodeHref} // ✅ NOW PASSED
                 posterUrl={posterUrl ?? null}
+                reviewAuthorLiked={!!review.author_liked}
                 href={`/posts/${p.id}`}
                 isOwner={!!isOwner}
                 replyCount={replyCount}
