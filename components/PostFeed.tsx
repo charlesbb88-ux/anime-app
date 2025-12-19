@@ -58,7 +58,7 @@ type MangaMeta = {
   titleEnglish: string | null;
   title: string | null;
 
-  // ✅ ADD: poster support for manga (matches AnimeMeta pattern)
+  // ✅ poster support for manga
   imageUrl: string | null;
 };
 
@@ -73,8 +73,8 @@ type ReviewRow = {
   contains_spoilers: boolean | null;
   created_at: string | null;
 
-  // ✅ NEW: snapshot heart-on-save
-  author_liked?: boolean | null;
+  // ✅ NEW: snapshot like stored on review
+  author_liked: boolean | null;
 };
 
 const TYPO = {
@@ -225,6 +225,7 @@ export default function PostFeed({
     async function loadReviewsById() {
       const { data, error } = await supabase
         .from("reviews")
+        // ✅ include author_liked
         .select("id, rating, content, contains_spoilers, created_at, author_liked")
         .in("id", uniqueReviewIds);
 
@@ -448,7 +449,6 @@ export default function PostFeed({
         if (uniqueMangaIds.length > 0) {
           const { data: mangaRows, error: mangaError } = await supabase
             .from("manga")
-            // ✅ CHANGE: include image_url
             .select("id, slug, title, title_english, image_url")
             .in("id", uniqueMangaIds);
 
@@ -463,7 +463,6 @@ export default function PostFeed({
                 slug: row.slug ?? null,
                 titleEnglish: row.title_english ?? null,
                 title: row.title ?? null,
-                // ✅ NEW
                 imageUrl: row.image_url ?? null,
               };
             });
@@ -936,8 +935,6 @@ export default function PostFeed({
                   english && english.length > 0 ? english : meta.title || undefined;
 
                 if (meta.slug) originHref = `/manga/${meta.slug}`;
-
-                // ✅ NEW: make manga posts/reviews actually have a poster
                 posterUrl = meta.imageUrl ?? null;
 
                 if (p.manga_chapter_id) {
@@ -973,16 +970,17 @@ export default function PostFeed({
                 content={(review.content ?? p.content) as string}
                 rating={review.rating}
                 containsSpoilers={!!review.contains_spoilers}
+                // ✅ NEW: pass snapshot heart state to ReviewPostRow
+                authorLiked={!!review.author_liked}
                 displayName={displayName}
                 initial={initial}
                 username={handle ?? undefined}
                 avatarUrl={avatarUrl ?? null}
                 originLabel={originLabel}
                 originHref={originHref}
-                episodeLabel={episodeLabel} // ✅ NOW PASSED
-                episodeHref={episodeHref} // ✅ NOW PASSED
+                episodeLabel={episodeLabel}
+                episodeHref={episodeHref}
                 posterUrl={posterUrl ?? null}
-                reviewAuthorLiked={!!review.author_liked}
                 href={`/posts/${p.id}`}
                 isOwner={!!isOwner}
                 replyCount={replyCount}

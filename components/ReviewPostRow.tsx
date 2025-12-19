@@ -20,6 +20,9 @@ export type ReviewPostRowProps = {
   rating: number | null; // reviews.rating: 0..100 (or null)
   containsSpoilers?: boolean;
 
+  // ✅ NEW: author-like snapshot from reviews.author_liked
+  authorLiked?: boolean;
+
   displayName: string;
   username?: string;
   avatarUrl?: string | null;
@@ -105,29 +108,6 @@ function computeStarFillPercent(shownHalfStars: number, starIndex: number) {
   return 0 as const;
 }
 
-/**
- * Only draws the filled part (no gray/outline star behind it).
- * - 100% => full star
- * - 50%  => half star (clipped)
- */
-function FilledStarOnly({
-  filledPercent,
-  size = 14,
-}: {
-  filledPercent: 50 | 100;
-  size?: number;
-}) {
-  return (
-    <span
-      className="inline-block overflow-hidden align-middle text-emerald-500 leading-none"
-      style={{ width: `${filledPercent}%`, fontSize: size }}
-      aria-hidden="true"
-    >
-      ★
-    </span>
-  );
-}
-
 function ReviewStarsRow({
   halfStars,
   size = 14,
@@ -148,17 +128,15 @@ function ReviewStarsRow({
         className="relative inline-block align-middle"
         style={{ width: size, height: size }}
       >
-        {/* one consistent glyph, always identical positioning */}
         <span
           className="absolute left-0 top-0 leading-none text-emerald-500"
           style={{
             fontSize: size,
-            lineHeight: `${size}px`, // keeps baseline consistent
+            lineHeight: `${size}px`,
             display: "block",
           }}
           aria-hidden="true"
         >
-          {/* clip only when half */}
           <span
             style={{
               display: "block",
@@ -222,7 +200,7 @@ function PosterBox({
 
   const showImage = !!url && !hasError;
 
-  const EXT_H = 22; // how far the extension sticks out
+  const EXT_H = 22;
 
   const extensionNode = episodeLabel ? (
     episodeHref ? (
@@ -274,15 +252,11 @@ function PosterBox({
         borderRadius: 6,
         border: "1px solid #11111122",
         background: "#f5f5f5",
-
-        // makes the “background” extend downward
         paddingBottom: episodeLabel ? EXT_H : 0,
-
         position: "relative",
         overflow: "hidden",
       }}
     >
-      {/* Poster covers the top portion */}
       <div
         style={{
           width: "100%",
@@ -326,7 +300,6 @@ function PosterBox({
         )}
       </div>
 
-      {/* Extension lives inside same wrapper */}
       {episodeLabel && (
         <div
           style={{
@@ -353,6 +326,10 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
     createdAt,
     content,
     rating,
+    containsSpoilers = false,
+
+    // ✅ NEW
+    authorLiked = false,
 
     displayName,
     username,
@@ -513,6 +490,7 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
               lineHeight: 1,
               color: "#555",
             }}
+            aria-label="Open menu"
           >
             ⋯
           </button>
@@ -677,6 +655,27 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
               <small style={{ color: "#777", fontSize: "0.8rem" }}>
                 {formatRelativeTime(createdAt)}
               </small>
+
+              {/* ✅ Optional spoiler chip (doesn't affect layout if false) */}
+              {containsSpoilers ? (
+                <>
+                  <span style={{ color: "#aaa", fontSize: "0.8rem" }}>·</span>
+                  <span
+                    style={{
+                      fontSize: "0.72rem",
+                      fontWeight: 600,
+                      color: "#b45309",
+                      background: "#fffbeb",
+                      border: "1px solid #fcd34d",
+                      padding: "1px 6px",
+                      borderRadius: 999,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    Spoilers
+                  </span>
+                </>
+              ) : null}
             </div>
 
             <div
@@ -703,8 +702,27 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
                 {animeTitle}
               </span>
 
-              {/* ✅ ONLY the real stars (no placeholder/back row) */}
-              <div style={{ marginTop: 2, display: "flex", justifyContent: "flex-end" }}>
+              {/* ✅ Stars + author-liked snapshot heart (does NOT touch action bar) */}
+              <div
+                style={{
+                  marginTop: 2,
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                {authorLiked ? (
+                  <Heart
+                    width={14}
+                    height={14}
+                    strokeWidth={1.7}
+                    fill="currentColor"
+                    style={{ color: "#f91880" }}
+                    aria-label="Author liked"
+                  />
+                ) : null}
+
                 {halfStarsForReview != null ? (
                   <ReviewStarsRow halfStars={halfStarsForReview} size={14} />
                 ) : null}

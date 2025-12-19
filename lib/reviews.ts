@@ -18,6 +18,9 @@ export type ReviewRow = {
   content: string | null;
   contains_spoilers: boolean | null;
 
+  // ✅ NEW: heart snapshot from modal
+  author_liked: boolean | null;
+
   created_at: string;
   updated_at: string | null;
 };
@@ -27,6 +30,9 @@ export type CreateAnimeSeriesReviewInput = {
   rating: number | null;
   content: string;
   contains_spoilers?: boolean;
+
+  // ✅ NEW
+  author_liked?: boolean;
 };
 
 export type CreateAnimeEpisodeReviewInput = {
@@ -35,6 +41,9 @@ export type CreateAnimeEpisodeReviewInput = {
   rating: number | null;
   content: string;
   contains_spoilers?: boolean;
+
+  // ✅ NEW
+  author_liked?: boolean;
 };
 
 // ✅ Manga series review
@@ -43,6 +52,9 @@ export type CreateMangaSeriesReviewInput = {
   rating: number | null;
   content: string;
   contains_spoilers?: boolean;
+
+  // ✅ NEW
+  author_liked?: boolean;
 };
 
 // ✅ Manga chapter review
@@ -52,6 +64,9 @@ export type CreateMangaChapterReviewInput = {
   rating: number | null;
   content: string;
   contains_spoilers?: boolean;
+
+  // ✅ NEW
+  author_liked?: boolean;
 };
 
 // ------------------------------------------------------------
@@ -83,6 +98,9 @@ export async function createAnimeSeriesReview(
       rating: input.rating,
       content: input.content,
       contains_spoilers: input.contains_spoilers ?? false,
+
+      // ✅ NEW
+      author_liked: input.author_liked ?? false,
     })
     .select("*")
     .single();
@@ -136,6 +154,9 @@ export async function createAnimeEpisodeReview(
       rating: input.rating,
       content: input.content,
       contains_spoilers: input.contains_spoilers ?? false,
+
+      // ✅ NEW
+      author_liked: input.author_liked ?? false,
     })
     .select("*")
     .single();
@@ -191,6 +212,9 @@ export async function createMangaSeriesReview(
       rating: input.rating,
       content: input.content,
       contains_spoilers: input.contains_spoilers ?? false,
+
+      // ✅ NEW
+      author_liked: input.author_liked ?? false,
     })
     .select("*")
     .single();
@@ -246,6 +270,9 @@ export async function createMangaChapterReview(
       rating: input.rating,
       content: input.content,
       contains_spoilers: input.contains_spoilers ?? false,
+
+      // ✅ NEW
+      author_liked: input.author_liked ?? false,
     })
     .select("*")
     .single();
