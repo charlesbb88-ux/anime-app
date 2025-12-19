@@ -213,7 +213,7 @@ export async function getTmdbTvDetails(tvId: number) {
 
 export async function getTmdbTvImages(tvId: number) {
   // TV series images endpoint :contentReference[oaicite:3]{index=3}
-  const path = `/tv/${tvId}/images?include_image_language=en,null`;
+  const path = `/tv/${tvId}/images`;
   return tmdbGet<TmdbImagesResponse>(path);
 }
 
@@ -224,11 +224,11 @@ export async function getTmdbSeasonDetails(tvId: number, seasonNumber: number) {
 }
 
 export async function getTmdbSeasonImages(tvId: number, seasonNumber: number) {
-  const path = `/tv/${tvId}/season/${seasonNumber}/images?include_image_language=en,null`;
+  const path = `/tv/${tvId}/season/${seasonNumber}/images`;
   return tmdbGet<TmdbImagesResponse>(path);
 }
 
 export async function getTmdbEpisodeImages(tvId: number, seasonNumber: number, episodeNumber: number) {
-  const path = `/tv/${tvId}/season/${seasonNumber}/episode/${episodeNumber}/images?include_image_language=en,null`;
+  const path = `/tv/${tvId}/season/${seasonNumber}/episode/${episodeNumber}/images`;
   return tmdbGet<TmdbImagesResponse>(path);
 }
