@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { NextPage } from "next";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import { Heart, Star, MessageSquare } from "lucide-react";
+import { Heart, MessageSquare } from "lucide-react";
 
 import { supabase } from "@/lib/supabaseClient";
 import {
@@ -21,7 +21,7 @@ import {
 /* ---------------------- small helpers ---------------------- */
 
 function monthLabel(d: Date) {
-  const months = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+  const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
   return `${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
@@ -137,10 +137,18 @@ async function hydrateMediaForRows(rows: JournalEntryRow[]): Promise<MediaMaps> 
   const chIds = Array.from(new Set(rows.map((r) => r.manga_chapter_id).filter(Boolean) as string[]));
 
   const [animeRes, mangaRes, epRes, chRes] = await Promise.all([
-    animeIds.length ? supabase.from("anime").select("*").in("id", animeIds) : Promise.resolve({ data: [], error: null } as any),
-    mangaIds.length ? supabase.from("manga").select("*").in("id", mangaIds) : Promise.resolve({ data: [], error: null } as any),
-    epIds.length ? supabase.from("anime_episodes").select("*").in("id", epIds) : Promise.resolve({ data: [], error: null } as any),
-    chIds.length ? supabase.from("manga_chapters").select("*").in("id", chIds) : Promise.resolve({ data: [], error: null } as any),
+    animeIds.length
+      ? supabase.from("anime").select("*").in("id", animeIds)
+      : Promise.resolve({ data: [], error: null } as any),
+    mangaIds.length
+      ? supabase.from("manga").select("*").in("id", mangaIds)
+      : Promise.resolve({ data: [], error: null } as any),
+    epIds.length
+      ? supabase.from("anime_episodes").select("*").in("id", epIds)
+      : Promise.resolve({ data: [], error: null } as any),
+    chIds.length
+      ? supabase.from("manga_chapters").select("*").in("id", chIds)
+      : Promise.resolve({ data: [], error: null } as any),
   ]);
 
   const animeById: Record<string, any> = {};
@@ -159,21 +167,59 @@ async function hydrateMediaForRows(rows: JournalEntryRow[]): Promise<MediaMaps> 
 /* ---------------------- rating UI ---------------------- */
 /**
  * Logs store rating 0..100 (integer-ish).
- * We render 5 stars with HALF steps = 10 points.
+ * We render 5 stars with HALF steps = 10 steps total.
  */
+
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
+// rating(0..100) -> steps(0..10) where 1 step = 0.5 star
 function ratingToStarSteps(rating: number | null) {
-  if (rating == null) return 0; // 0 steps
+  if (rating == null) return 0;
   const r = clamp(Math.round(rating), 0, 100);
-  return Math.round(r / 10); // 0..10 steps (each step=0.5 star)
+  return Math.round(r / 10); // 0..10
 }
 
+// steps(0..10) -> rating(0..100)
 function starStepsToRating(steps: number) {
   const s = clamp(steps, 0, 10);
-  return s * 10; // 0..100
+  return s * 10;
+}
+
+function computeStarFillPercent(steps: number, starIndex: number) {
+  // starIndex: 1..5
+  const start = (starIndex - 1) * 2;
+  const remaining = steps - start;
+
+  if (remaining >= 2) return 100 as const;
+  if (remaining === 1) return 50 as const;
+  return 0 as const;
+}
+
+function StarVisual({
+  filledPercent,
+  disabled,
+}: {
+  filledPercent: 0 | 50 | 100;
+  disabled?: boolean;
+}) {
+  return (
+    <span className={["relative inline-block leading-none", disabled ? "opacity-60" : ""].join(" ")}>
+      <span className="text-white/25" style={{ fontSize: 16 }}>
+        ★
+      </span>
+
+      {filledPercent > 0 && (
+        <span
+          className="pointer-events-none absolute left-0 top-0 overflow-hidden text-yellow-300"
+          style={{ width: `${filledPercent}%`, fontSize: 16 }}
+        >
+          ★
+        </span>
+      )}
+    </span>
+  );
 }
 
 function StarRating({
@@ -185,35 +231,41 @@ function StarRating({
   disabled?: boolean;
   onChange: (next: number | null) => void;
 }) {
-  const steps = ratingToStarSteps(value);
+  const steps = ratingToStarSteps(value); // 0..10
 
-  // show 5 stars; each star has left(half) + right(half)
-  const parts = Array.from({ length: 10 }, (_, i) => i + 1); // 1..10
   return (
-    <div className="flex items-center justify-center gap-[2px]">
-      {parts.map((p) => {
-        const active = p <= steps;
+    <div
+      className="flex items-center justify-center gap-[2px]"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        if (!disabled) onChange(null);
+      }}
+      title="Click to rate (right-click to clear)"
+    >
+      {Array.from({ length: 5 }).map((_, i) => {
+        const starIndex = i + 1;
+        const filled = computeStarFillPercent(steps, starIndex);
+
         return (
-          <button
-            key={p}
-            type="button"
-            disabled={disabled}
-            onClick={() => onChange(starStepsToRating(p))}
-            onContextMenu={(e) => {
-              // right-click = clear (fast)
-              e.preventDefault();
-              if (!disabled) onChange(null);
-            }}
-            className="group relative h-4 w-3"
-            title="Click to rate (right-click to clear)"
-          >
-            <Star
-              className={`h-4 w-3 ${
-                active ? "text-yellow-300" : "text-white/25"
-              }`}
-              fill={active ? "currentColor" : "none"}
+          <div key={starIndex} className="relative h-4 w-4">
+            <StarVisual filledPercent={filled} disabled={disabled} />
+
+            <button
+              type="button"
+              disabled={disabled}
+              className="absolute inset-y-0 left-0 w-1/2"
+              onClick={() => onChange(starStepsToRating(starIndex * 2 - 1))}
+              aria-label={`Rate ${starIndex - 0.5} stars`}
             />
-          </button>
+
+            <button
+              type="button"
+              disabled={disabled}
+              className="absolute inset-y-0 right-0 w-1/2"
+              onClick={() => onChange(starStepsToRating(starIndex * 2))}
+              aria-label={`Rate ${starIndex} stars`}
+            />
+          </div>
         );
       })}
     </div>
@@ -286,10 +338,7 @@ const UsernameJournalPage: NextPage = () => {
 
   const groups = useMemo(() => groupByMonth(rows), [rows]);
 
-  const pageTitle =
-    typeof usernameParam === "string"
-      ? `${usernameParam}'s Journal`
-      : "Journal";
+  const pageTitle = typeof usernameParam === "string" ? `${usernameParam}'s Journal` : "Journal";
 
   function getDisplay(r: JournalEntryRow) {
     const anime = r.anime_id ? media.animeById[r.anime_id] : null;
@@ -424,7 +473,6 @@ const UsernameJournalPage: NextPage = () => {
     setBusyRow(r.log_id);
     setErrorMsg(null);
 
-    // optimistic
     patchRow(r.log_id, { rating: next });
 
     const { error } = await updateLogRating({
@@ -434,7 +482,6 @@ const UsernameJournalPage: NextPage = () => {
     });
 
     if (error) {
-      // rollback
       patchRow(r.log_id, { rating: r.rating });
       setErrorMsg(error.message ?? "Failed to update rating.");
     }
@@ -475,7 +522,6 @@ const UsernameJournalPage: NextPage = () => {
       title: display.title,
 
       reviewId: r.review_id ?? null,
-      // start with log snapshot
       rating: r.rating == null ? null : Math.round(Number(r.rating)),
       containsSpoilers: Boolean(r.contains_spoilers),
       visibility: r.visibility ?? "public",
@@ -483,7 +529,6 @@ const UsernameJournalPage: NextPage = () => {
       content: "",
     });
 
-    // if review exists, load it
     if (r.review_id) {
       const { review, error } = await fetchReviewById(r.review_id);
       if (error) {
@@ -533,7 +578,6 @@ const UsernameJournalPage: NextPage = () => {
       return;
     }
 
-    // attach review_id to log if it was newly created
     if (!reviewModal.reviewId && reviewId) {
       const { error: linkErr } = await setLogReviewId({
         kind: r.kind,
@@ -542,12 +586,15 @@ const UsernameJournalPage: NextPage = () => {
       });
 
       if (linkErr) {
-        setReviewModal((m) => ({ ...m, saving: false, error: linkErr.message ?? "Saved review, but failed to link it." }));
+        setReviewModal((m) => ({
+          ...m,
+          saving: false,
+          error: linkErr.message ?? "Saved review, but failed to link it.",
+        }));
         return;
       }
     }
 
-    // update UI snapshots
     patchRow(r.log_id, {
       review_id: reviewId ?? reviewModal.reviewId ?? null,
       rating: reviewModal.rating,
@@ -589,7 +636,7 @@ const UsernameJournalPage: NextPage = () => {
       )}
 
       <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
-        {/* header row: Letterboxd-ish */}
+        {/* header row */}
         <div className="grid grid-cols-[84px_1fr_90px_140px_70px_70px] gap-0 border-b border-white/10 px-4 py-3 text-xs text-white/60">
           <div>DAY</div>
           <div>TITLE</div>
@@ -602,16 +649,12 @@ const UsernameJournalPage: NextPage = () => {
         {loading ? (
           <div className="px-4 py-8 text-sm text-white/70">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="px-4 py-8 text-sm text-white/70">
-            No journal entries (or they’re private).
-          </div>
+          <div className="px-4 py-8 text-sm text-white/70">No journal entries (or they’re private).</div>
         ) : (
           <div>
             {groups.map((g) => (
               <div key={g.key} className="border-b border-white/10 last:border-b-0">
-                <div className="px-4 py-3 text-xs font-semibold tracking-wide text-white/60">
-                  {g.label}
-                </div>
+                <div className="px-4 py-3 text-xs font-semibold tracking-wide text-white/60">{g.label}</div>
 
                 {g.items.map((r) => {
                   const d = new Date(r.logged_at);
@@ -626,9 +669,7 @@ const UsernameJournalPage: NextPage = () => {
                     >
                       {/* day */}
                       <div className="flex items-center gap-3 text-white/70">
-                        <div className="w-10 text-2xl font-semibold leading-none text-white/60">
-                          {day}
-                        </div>
+                        <div className="w-10 text-2xl font-semibold leading-none text-white/60">{day}</div>
                       </div>
 
                       {/* title cell */}
@@ -660,9 +701,7 @@ const UsernameJournalPage: NextPage = () => {
                             <div className="truncate text-xs text-white/55">{display.subtitle}</div>
                           ) : null}
 
-                          {r.note ? (
-                            <div className="truncate text-xs text-white/40">{r.note}</div>
-                          ) : null}
+                          {/* ✅ REMOVE review/note text from the container */}
                         </div>
                       </div>
 
@@ -671,7 +710,7 @@ const UsernameJournalPage: NextPage = () => {
                         {typeof display.year === "number" ? display.year : "—"}
                       </div>
 
-                      {/* rating stars */}
+                      {/* rating */}
                       <div className="text-center">
                         <StarRating
                           value={r.rating == null ? null : Math.round(Number(r.rating))}
@@ -696,18 +735,22 @@ const UsernameJournalPage: NextPage = () => {
                         </button>
                       </div>
 
-                      {/* review */}
+                      {/* review column: show icon only if review exists */}
                       <div className="text-center">
-                        <button
-                          type="button"
-                          onClick={() => openReviewEditor(r)}
-                          className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/10"
-                          title={r.review_id ? "Edit review" : "Write review"}
-                        >
-                          <MessageSquare
-                            className={`h-4 w-4 ${r.review_id ? "text-white/80" : "text-white/35"}`}
-                          />
-                        </button>
+                        {r.review_id ? (
+                          <button
+                            type="button"
+                            onClick={() => openReviewEditor(r)}
+                            className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/10"
+                            title="Edit review"
+                          >
+                            <MessageSquare className="h-4 w-4 text-white/80" />
+                          </button>
+                        ) : (
+                          <div className="inline-flex items-center justify-center p-1" title="No review">
+                            <MessageSquare className="h-4 w-4 text-white/20" />
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -734,12 +777,8 @@ const UsernameJournalPage: NextPage = () => {
           <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 shadow-xl">
             <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-white">
-                  Review — {reviewModal.title}
-                </div>
-                <div className="text-xs text-white/50">
-                  This review is tied to this specific log entry.
-                </div>
+                <div className="truncate text-sm font-semibold text-white">Review — {reviewModal.title}</div>
+                <div className="text-xs text-white/50">This review is tied to this specific log entry.</div>
               </div>
 
               <button
@@ -765,12 +804,7 @@ const UsernameJournalPage: NextPage = () => {
                   <select
                     className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
                     value={reviewModal.visibility}
-                    onChange={(e) =>
-                      setReviewModal((m) => ({
-                        ...m,
-                        visibility: e.target.value as any,
-                      }))
-                    }
+                    onChange={(e) => setReviewModal((m) => ({ ...m, visibility: e.target.value as any }))}
                     disabled={reviewModal.saving}
                   >
                     <option value="public">public</option>
@@ -785,12 +819,7 @@ const UsernameJournalPage: NextPage = () => {
                     <input
                       type="checkbox"
                       checked={reviewModal.containsSpoilers}
-                      onChange={(e) =>
-                        setReviewModal((m) => ({
-                          ...m,
-                          containsSpoilers: e.target.checked,
-                        }))
-                      }
+                      onChange={(e) => setReviewModal((m) => ({ ...m, containsSpoilers: e.target.checked }))}
                       disabled={reviewModal.saving}
                     />
                     Contains spoilers
@@ -803,9 +832,7 @@ const UsernameJournalPage: NextPage = () => {
                     <StarRating
                       value={reviewModal.rating}
                       disabled={reviewModal.saving}
-                      onChange={(next) =>
-                        setReviewModal((m) => ({ ...m, rating: next }))
-                      }
+                      onChange={(next) => setReviewModal((m) => ({ ...m, rating: next }))}
                     />
                   </div>
                 </div>
@@ -817,12 +844,7 @@ const UsernameJournalPage: NextPage = () => {
                   <input
                     type="checkbox"
                     checked={reviewModal.authorLiked}
-                    onChange={(e) =>
-                      setReviewModal((m) => ({
-                        ...m,
-                        authorLiked: e.target.checked,
-                      }))
-                    }
+                    onChange={(e) => setReviewModal((m) => ({ ...m, authorLiked: e.target.checked }))}
                     disabled={reviewModal.saving}
                   />
                   Mark as liked for this log
@@ -835,14 +857,10 @@ const UsernameJournalPage: NextPage = () => {
                   className="min-h-[180px] w-full resize-y rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/30"
                   placeholder="Write your review…"
                   value={reviewModal.content}
-                  onChange={(e) =>
-                    setReviewModal((m) => ({ ...m, content: e.target.value }))
-                  }
+                  onChange={(e) => setReviewModal((m) => ({ ...m, content: e.target.value }))}
                   disabled={reviewModal.saving}
                 />
-                <div className="mt-1 text-xs text-white/40">
-                  Review text is required (your DB schema enforces this).
-                </div>
+                <div className="mt-1 text-xs text-white/40">Review text is required (your DB schema enforces this).</div>
               </div>
             </div>
 

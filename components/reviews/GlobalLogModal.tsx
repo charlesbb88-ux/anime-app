@@ -24,6 +24,7 @@ import {
 } from "@/lib/reviews";
 
 import { Heart } from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
 
 type Visibility = "public" | "friends" | "private";
 
@@ -100,6 +101,18 @@ function halfStarsTo100(halfStars: number | null): number | null {
   if (halfStars === null) return null;
   const hs = clampInt(halfStars, 1, 10); // 1..10
   return Math.round((hs / 10) * 100); // 10..100
+}
+
+async function getAuthedUserId(): Promise<{ userId: string | null; error: any }> {
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error) return { userId: null, error };
+  if (!user) return { userId: null, error: new Error("Not authenticated") };
+
+  return { userId: user.id, error: null };
 }
 
 export default function GlobalLogModal({
@@ -216,8 +229,10 @@ export default function GlobalLogModal({
     try {
       const trimmed = content.trim();
       const reviewRating = halfStarsTo100(halfStars);
-      const reviewAuthorLiked = likeChoice === true; // ✅ snapshot for review hearts (only true renders)
-      // NOTE: likeChoice null/false => author_liked false in review insert
+
+      // Snapshot booleans (for log + review)
+      const snapshotLiked = likeChoice === true; // only true is "liked"
+      const snapshotRating = reviewRating; // 0..100 or null
 
       // ✅ ANIME EPISODE
       if (target === "animeEpisode") {
@@ -225,32 +240,46 @@ export default function GlobalLogModal({
           throw new Error("Missing animeId or animeEpisodeId.");
         }
 
-        // create activity log (unchanged)
+        let reviewId: string | null = null;
+
+        if (trimmed) {
+          const { userId, error: userErr } = await getAuthedUserId();
+          if (userErr) throw userErr;
+          if (!userId) throw new Error("Not authenticated");
+
+          const { data, error: insErr } = await supabase
+            .from("reviews")
+            .insert({
+              user_id: userId,
+              anime_id: animeId,
+              anime_episode_id: animeEpisodeId,
+              rating: snapshotRating,
+              content: trimmed,
+              contains_spoilers: containsSpoilers,
+              visibility: visibility ?? "public",
+              author_liked: snapshotLiked,
+            })
+            .select("id")
+            .single();
+
+          if (insErr) throw insErr;
+          reviewId = data?.id ?? null;
+        }
+
         const { error } = await createAnimeEpisodeLog({
           anime_id: animeId,
           anime_episode_id: animeEpisodeId,
           visibility: visibility ?? undefined,
-          rating: null,
+
+          rating: snapshotRating,
+          liked: snapshotLiked,
+          review_id: reviewId,
+
           note: trimmed ? trimmed : null,
           contains_spoilers: containsSpoilers,
         });
 
         if (error) throw error;
-
-        // ✅ OPTIONAL: create an episode REVIEW (only if they wrote something)
-        // This does not affect your existing log behavior.
-        if (trimmed) {
-          const result = await createAnimeEpisodeReview({
-            anime_id: animeId,
-            anime_episode_id: animeEpisodeId,
-            rating: reviewRating, // null if untouched
-            content: trimmed,
-            contains_spoilers: containsSpoilers,
-            author_liked: reviewAuthorLiked, // ✅ NEW
-          });
-
-          if (result.error) throw result.error;
-        }
 
         onClose();
         onSuccess?.();
@@ -282,15 +311,14 @@ export default function GlobalLogModal({
             if (error) throw error;
           }
 
-          // ✅ insert a SERIES REVIEW
-          // Only insert if they actually wrote something (so saving marks doesn't create blank reviews).
+          // ✅ insert a SERIES REVIEW (only if they actually wrote something)
           if (trimmed) {
             const result = await createAnimeSeriesReview({
               anime_id: animeId,
-              rating: reviewRating, // null if untouched
+              rating: snapshotRating,
               content: trimmed,
               contains_spoilers: containsSpoilers,
-              author_liked: reviewAuthorLiked, // ✅ NEW
+              author_liked: snapshotLiked,
             });
 
             if (result.error) throw result.error;
@@ -301,18 +329,46 @@ export default function GlobalLogModal({
           return;
         }
 
-        // ✅ checked (journal): create a series log row (activity entry) — unchanged FOR NOW
+        // ✅ checked (journal): create a series log row (activity entry)
         if (logWatchToActivity) {
+          let reviewId: string | null = null;
+
+          if (trimmed) {
+            const { userId, error: userErr } = await getAuthedUserId();
+            if (userErr) throw userErr;
+            if (!userId) throw new Error("Not authenticated");
+
+            const { data, error: insErr } = await supabase
+              .from("reviews")
+              .insert({
+                user_id: userId,
+                anime_id: animeId,
+                rating: snapshotRating,
+                content: trimmed,
+                contains_spoilers: containsSpoilers,
+                visibility: visibility ?? "public",
+                author_liked: snapshotLiked,
+              })
+              .select("id")
+              .single();
+
+            if (insErr) throw insErr;
+            reviewId = data?.id ?? null;
+          }
+
           const { error } = await createAnimeSeriesLog({
             anime_id: animeId,
             visibility: visibility ?? undefined,
-            rating: null,
+
+            rating: snapshotRating,
+            liked: snapshotLiked,
+            review_id: reviewId,
+
             note: trimmed ? trimmed : null,
             contains_spoilers: containsSpoilers,
           });
           if (error) throw error;
 
-          // (No review insert here, unchanged behavior)
           onClose();
           onSuccess?.();
           return;
@@ -325,31 +381,46 @@ export default function GlobalLogModal({
           throw new Error("Missing mangaId or mangaChapterId.");
         }
 
-        // create activity log (unchanged)
+        let reviewId: string | null = null;
+
+        if (trimmed) {
+          const { userId, error: userErr } = await getAuthedUserId();
+          if (userErr) throw userErr;
+          if (!userId) throw new Error("Not authenticated");
+
+          const { data, error: insErr } = await supabase
+            .from("reviews")
+            .insert({
+              user_id: userId,
+              manga_id: mangaId,
+              manga_chapter_id: mangaChapterId,
+              rating: snapshotRating,
+              content: trimmed,
+              contains_spoilers: containsSpoilers,
+              visibility: visibility ?? "public",
+              author_liked: snapshotLiked,
+            })
+            .select("id")
+            .single();
+
+          if (insErr) throw insErr;
+          reviewId = data?.id ?? null;
+        }
+
         const { error } = await createMangaChapterLog({
           manga_id: mangaId,
           manga_chapter_id: mangaChapterId,
           visibility: visibility ?? undefined,
-          rating: null,
+
+          rating: snapshotRating,
+          liked: snapshotLiked,
+          review_id: reviewId,
+
           note: trimmed ? trimmed : null,
           contains_spoilers: containsSpoilers,
         });
 
         if (error) throw error;
-
-        // ✅ OPTIONAL: create a chapter REVIEW (only if they wrote something)
-        if (trimmed) {
-          const result = await createMangaChapterReview({
-            manga_id: mangaId,
-            manga_chapter_id: mangaChapterId,
-            rating: reviewRating,
-            content: trimmed,
-            contains_spoilers: containsSpoilers,
-            author_liked: reviewAuthorLiked, // ✅ NEW
-          });
-
-          if (result.error) throw result.error;
-        }
 
         onClose();
         onSuccess?.();
@@ -360,29 +431,44 @@ export default function GlobalLogModal({
       if (target === "mangaSeries") {
         if (!mangaId) throw new Error("Missing mangaId.");
 
-        // create activity log (unchanged)
+        let reviewId: string | null = null;
+
+        if (trimmed) {
+          const { userId, error: userErr } = await getAuthedUserId();
+          if (userErr) throw userErr;
+          if (!userId) throw new Error("Not authenticated");
+
+          const { data, error: insErr } = await supabase
+            .from("reviews")
+            .insert({
+              user_id: userId,
+              manga_id: mangaId,
+              rating: snapshotRating,
+              content: trimmed,
+              contains_spoilers: containsSpoilers,
+              visibility: visibility ?? "public",
+              author_liked: snapshotLiked,
+            })
+            .select("id")
+            .single();
+
+          if (insErr) throw insErr;
+          reviewId = data?.id ?? null;
+        }
+
         const { error } = await createMangaSeriesLog({
           manga_id: mangaId,
           visibility: visibility ?? undefined,
-          rating: null,
+
+          rating: snapshotRating,
+          liked: snapshotLiked,
+          review_id: reviewId,
+
           note: trimmed ? trimmed : null,
           contains_spoilers: containsSpoilers,
         });
 
         if (error) throw error;
-
-        // ✅ OPTIONAL: create a series REVIEW (only if they wrote something)
-        if (trimmed) {
-          const result = await createMangaSeriesReview({
-            manga_id: mangaId,
-            rating: reviewRating,
-            content: trimmed,
-            contains_spoilers: containsSpoilers,
-            author_liked: reviewAuthorLiked, // ✅ NEW
-          });
-
-          if (result.error) throw result.error;
-        }
 
         onClose();
         onSuccess?.();
@@ -475,17 +561,17 @@ export default function GlobalLogModal({
               />
             </div>
 
-            {/* ✅ LIKE (heart) — its own row so it DOES NOT move the stars */}
+            {/* ✅ LIKE (heart) — now allowed in journal mode */}
             {target === "animeSeries" && animeId ? (
               <div className="flex justify-center">
                 <button
                   type="button"
                   onClick={toggleLike}
-                  disabled={saving || logWatchToActivity}
+                  disabled={saving}
                   aria-pressed={likeChoice === true}
                   className={[
                     "rounded-md px-2 py-1",
-                    saving || logWatchToActivity
+                    saving
                       ? "opacity-60 cursor-not-allowed"
                       : "hover:bg-white/5 active:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/10",
                   ].join(" ")}
@@ -502,7 +588,7 @@ export default function GlobalLogModal({
               </div>
             ) : null}
 
-            {/* ✅ STARS (below review box) */}
+            {/* ✅ STARS (below review box) — now allowed in journal mode */}
             {target === "animeSeries" && animeId ? (
               <div className="pt-1">
                 <div className="mb-1 text-center text-xs font-semibold text-zinc-300">
@@ -519,15 +605,11 @@ export default function GlobalLogModal({
 
                     return (
                       <div key={starIndex} className="relative">
-                        <StarVisual
-                          filledPercent={filled}
-                          dim={saving || logWatchToActivity}
-                          size={34}
-                        />
+                        <StarVisual filledPercent={filled} dim={saving} size={34} />
 
                         <button
                           type="button"
-                          disabled={saving || logWatchToActivity}
+                          disabled={saving}
                           className="absolute inset-y-0 left-0 w-1/2"
                           onMouseEnter={() => setHoverHalfStars(starIndex * 2 - 1)}
                           onFocus={() => setHoverHalfStars(starIndex * 2 - 1)}
@@ -538,7 +620,7 @@ export default function GlobalLogModal({
 
                         <button
                           type="button"
-                          disabled={saving || logWatchToActivity}
+                          disabled={saving}
                           className="absolute inset-y-0 right-0 w-1/2"
                           onMouseEnter={() => setHoverHalfStars(starIndex * 2)}
                           onFocus={() => setHoverHalfStars(starIndex * 2)}
