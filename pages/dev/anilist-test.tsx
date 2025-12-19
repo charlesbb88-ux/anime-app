@@ -1,8 +1,8 @@
 // pages/dev/anilist-test.tsx
+"use client";
 
 import { useState } from "react";
 import type { NextPage } from "next";
-import { searchAniListAnime, type AniListAnime } from "@/lib/anilist";
 
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
@@ -11,19 +11,63 @@ function truncate(text: string, max: number): string {
 
 type ImportState = "idle" | "loading" | "success" | "error";
 
+type UnifiedSearchItem = {
+  source: "anilist" | "tmdb" | "tvdb";
+
+  anilist_id?: number;
+  tmdb_id?: number;
+  tvdb_id?: number | null;
+
+  title: string;
+  year: number | null;
+
+  poster_url?: string | null;
+  backdrop_url?: string | null;
+
+  overview?: string | null;
+
+  // dev/debug only
+  raw?: any;
+};
+
+type SearchResponse = {
+  success: boolean;
+  query: string;
+  errors?: {
+    anilist?: string | null;
+    tmdb?: string | null;
+    tvdb?: string | null;
+  };
+  results: UnifiedSearchItem[];
+};
+
 const AniListTestPage: NextPage = () => {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<AniListAnime[]>([]);
+
+  const [results, setResults] = useState<UnifiedSearchItem[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [importStates, setImportStates] = useState<Record<number, ImportState>>(
+
+  const [importStates, setImportStates] = useState<Record<string, ImportState>>(
     {}
   );
-  const [importErrors, setImportErrors] = useState<Record<number, string>>({});
+  const [importErrors, setImportErrors] = useState<Record<string, string>>({});
+
+  function resultKey(item: UnifiedSearchItem) {
+    const id =
+      item.source === "anilist"
+        ? item.anilist_id
+        : item.source === "tmdb"
+        ? item.tmdb_id
+        : item.tvdb_id;
+
+    return `${item.source}:${String(id ?? "unknown")}`;
+  }
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
-    if (!query.trim()) return;
+    const q = query.trim();
+    if (!q) return;
 
     setLoading(true);
     setError(null);
@@ -31,54 +75,147 @@ const AniListTestPage: NextPage = () => {
     setImportStates({});
     setImportErrors({});
 
-    const { data, error } = await searchAniListAnime(query.trim(), 1, 10);
-
-    if (error) {
-      setError(error);
-    } else {
-      setResults(data);
-    }
-
-    setLoading(false);
-  }
-
-  async function handleImport(anime: AniListAnime) {
-    const id = anime.id;
-
-    setImportStates((prev) => ({ ...prev, [id]: "loading" }));
-    setImportErrors((prev) => ({ ...prev, [id]: "" }));
-
     try {
-      const res = await fetch("/api/admin/import-anime-from-anilist", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ anilistId: id }),
-      });
-
-      const json = await res.json();
+      const res = await fetch(
+        `/api/admin/search-anime?q=${encodeURIComponent(q)}`
+      );
+      const json = (await res.json()) as SearchResponse;
 
       if (!res.ok || !json.success) {
-        const msg = json.error || "Import failed";
-        setImportStates((prev) => ({ ...prev, [id]: "error" }));
-        setImportErrors((prev) => ({ ...prev, [id]: msg }));
+        setError((json as any)?.error || "Search failed");
       } else {
-        setImportStates((prev) => ({ ...prev, [id]: "success" }));
+        setResults(json.results || []);
+
+        // Show a small warning if one source failed but others succeeded
+        const errs = json.errors || {};
+        const partialErrors = [errs.anilist, errs.tmdb, errs.tvdb].filter(
+          Boolean
+        );
+        if (partialErrors.length > 0) {
+          setError(
+            `Partial search errors: ${[
+              errs.anilist ? "AniList" : null,
+              errs.tmdb ? "TMDB" : null,
+              errs.tvdb ? "TVDB" : null,
+            ]
+              .filter(Boolean)
+              .join(", ")}`
+          );
+        }
       }
     } catch (err) {
-      console.error("Import error:", err);
-      setImportStates((prev) => ({ ...prev, [id]: "error" }));
+      console.error("Search error:", err);
+      setError("Network error searching APIs");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleImport(item: UnifiedSearchItem) {
+    const key = resultKey(item);
+
+    setImportStates((prev) => ({ ...prev, [key]: "loading" }));
+    setImportErrors((prev) => ({ ...prev, [key]: "" }));
+
+    try {
+      // ✅ AniList keeps using your existing endpoint
+      if (item.source === "anilist" && item.anilist_id) {
+        const res = await fetch("/api/admin/import-anime-from-anilist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ anilistId: item.anilist_id }),
+        });
+
+        const json = await res.json();
+
+        if (!res.ok || !json.success) {
+          const msg = json.error || "Import failed";
+          setImportStates((prev) => ({ ...prev, [key]: "error" }));
+          setImportErrors((prev) => ({ ...prev, [key]: msg }));
+        } else {
+          setImportStates((prev) => ({ ...prev, [key]: "success" }));
+        }
+
+        return;
+      }
+
+      // ✅ TMDB + TVDB use the unified importer
+      if (item.source === "tmdb" && item.tmdb_id) {
+        const res = await fetch("/api/admin/import-anime", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: "tmdb", sourceId: item.tmdb_id }),
+        });
+
+        const json = await res.json();
+
+        if (!res.ok || !json.success) {
+          const msg = json.error || "TMDB import failed";
+          setImportStates((prev) => ({ ...prev, [key]: "error" }));
+          setImportErrors((prev) => ({ ...prev, [key]: msg }));
+        } else {
+          setImportStates((prev) => ({ ...prev, [key]: "success" }));
+        }
+
+        return;
+      }
+
+      if (item.source === "tvdb" && item.tvdb_id) {
+        const res = await fetch("/api/admin/import-anime", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: "tvdb", sourceId: item.tvdb_id }),
+        });
+
+        const json = await res.json();
+
+        if (!res.ok || !json.success) {
+          const msg = json.error || "TVDB import failed";
+          setImportStates((prev) => ({ ...prev, [key]: "error" }));
+          setImportErrors((prev) => ({ ...prev, [key]: msg }));
+        } else {
+          setImportStates((prev) => ({ ...prev, [key]: "success" }));
+        }
+
+        return;
+      }
+
+      setImportStates((prev) => ({ ...prev, [key]: "error" }));
       setImportErrors((prev) => ({
         ...prev,
-        [id]: "Network error importing anime",
+        [key]: "Missing source id; cannot import.",
+      }));
+    } catch (err) {
+      console.error("Import error:", err);
+      setImportStates((prev) => ({ ...prev, [key]: "error" }));
+      setImportErrors((prev) => ({
+        ...prev,
+        [key]: "Network error importing",
       }));
     }
   }
 
+  function sourceBadge(source: UnifiedSearchItem["source"]) {
+    if (source === "anilist") return "AniList";
+    if (source === "tmdb") return "TMDB";
+    return "TVDB";
+  }
+
+  function sourceColor(source: UnifiedSearchItem["source"]) {
+    if (source === "anilist")
+      return "bg-indigo-700/40 text-indigo-200 border-indigo-700";
+    if (source === "tmdb")
+      return "bg-emerald-700/40 text-emerald-200 border-emerald-700";
+    return "bg-amber-700/40 text-amber-200 border-amber-700";
+  }
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold mb-4">AniList Search (dev test)</h1>
+      <h1 className="text-2xl font-bold mb-2">Anime Import Search (dev test)</h1>
+      <p className="text-sm text-gray-400 mb-4">
+        Searches AniList + TMDB + TVDB together (one request). Import wired for
+        AniList, TMDB, and TVDB.
+      </p>
 
       <form onSubmit={handleSearch} className="mb-4 flex gap-2">
         <input
@@ -98,65 +235,50 @@ const AniListTestPage: NextPage = () => {
       </form>
 
       {error && (
-        <div className="mb-4 rounded-md border border-red-700 bg-red-950/60 px-3 py-2 text-sm text-red-200">
+        <div className="mb-4 rounded-md border border-yellow-700 bg-yellow-950/50 px-3 py-2 text-sm text-yellow-200">
           {error}
         </div>
       )}
 
       {results.length > 0 && (
         <div className="space-y-5">
-          {results.map((anime) => {
-            const displayTitle =
-              anime.title.romaji ||
-              anime.title.english ||
-              anime.title.native ||
-              "Untitled";
+          {results.map((item) => {
+            const key = resultKey(item);
+            const importState = importStates[key] ?? "idle";
+            const importError = importErrors[key];
 
-            const year = anime.seasonYear ?? "?";
-            const season = anime.season ?? "?";
-            const episodes = anime.episodes ?? null;
-
-            const genres = anime.genres ?? [];
-            const genreText = genres.join(", ");
-
-            const nonSpoilerTags =
-              anime.tags?.filter((t) => !t.isMediaSpoiler) ?? [];
-            const tagNames = nonSpoilerTags.map((t) => t.name);
-            const tagText = tagNames.join(", ");
-
-            const description = anime.description
-              ? truncate(anime.description.replace(/\s+/g, " "), 260)
+            const yearText = item.year ?? "?";
+            const overview = item.overview
+              ? truncate(item.overview.replace(/\s+/g, " "), 260)
               : "No description.";
 
-            let trailerUrl: string | null = null;
-            if (anime.trailer?.site === "youtube" && anime.trailer.id) {
-              trailerUrl = `https://www.youtube.com/watch?v=${anime.trailer.id}`;
-            }
+            const posterUrl = item.poster_url ?? null;
+            const bannerUrl = item.backdrop_url ?? null;
 
-            const score =
-              typeof anime.averageScore === "number"
-                ? (anime.averageScore / 10).toFixed(1)
-                : null;
+            const canImport =
+              (item.source === "anilist" && !!item.anilist_id) ||
+              (item.source === "tmdb" && !!item.tmdb_id) ||
+              (item.source === "tvdb" && !!item.tvdb_id);
 
-            const importState = importStates[anime.id] ?? "idle";
-            const importError = importErrors[anime.id];
+            const importLabel =
+              item.source === "anilist"
+                ? "Import (AniList)"
+                : item.source === "tmdb"
+                ? "Import (TMDB)"
+                : "Import (TVDB)";
 
-            const posterUrl =
-              anime.coverImage?.extraLarge ||
-              anime.coverImage?.large ||
-              anime.coverImage?.medium ||
-              null;
+            const importDisabled = importState === "loading" || !canImport;
 
             return (
               <div
-                key={anime.id}
+                key={key}
                 className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/70"
               >
-                {anime.bannerImage && (
+                {bannerUrl && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={anime.bannerImage}
-                    alt={`${displayTitle} banner`}
+                    src={bannerUrl}
+                    alt={`${item.title} banner`}
                     className="h-32 w-full object-cover"
                   />
                 )}
@@ -167,12 +289,12 @@ const AniListTestPage: NextPage = () => {
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={posterUrl}
-                        alt={displayTitle}
+                        alt={item.title}
                         className="h-full w-full object-cover"
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-gray-200">
-                        {displayTitle[0]}
+                        {item.title?.[0] ?? "?"}
                       </div>
                     )}
                   </div>
@@ -180,84 +302,36 @@ const AniListTestPage: NextPage = () => {
                   <div className="flex-1">
                     <div className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
                       <p className="text-sm font-semibold text-gray-100">
-                        {displayTitle}
+                        {item.title}
                       </p>
-                      <span className="text-[11px] text-gray-400">
-                        {season} {year}
-                      </span>
-                    </div>
 
-                    <div className="mb-2 flex flex-wrap gap-3 text-[11px] text-gray-400">
-                      <span>
-                        Episodes:{" "}
-                        <span className="font-semibold text-gray-200">
-                          {episodes ?? "Unknown"}
-                        </span>
+                      <span className="text-[11px] text-gray-400">
+                        {yearText}
                       </span>
-                      {anime.format && (
-                        <span>
-                          Format:{" "}
-                          <span className="font-semibold text-gray-200">
-                            {anime.format}
-                          </span>
-                        </span>
-                      )}
-                      {anime.status && (
-                        <span>
-                          Status:{" "}
-                          <span className="font-semibold text-gray-200">
-                            {anime.status}
-                          </span>
-                        </span>
-                      )}
-                      {score && (
-                        <span>
-                          Score:{" "}
-                          <span className="font-semibold text-gray-200">
-                            {score}/10
-                          </span>
-                        </span>
-                      )}
+
+                      <span
+                        className={`ml-1 inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] ${sourceColor(
+                          item.source
+                        )}`}
+                      >
+                        {sourceBadge(item.source)}
+                      </span>
                     </div>
 
                     <p className="mb-2 text-[11px] leading-snug text-gray-300">
-                      {description}
+                      {overview}
                     </p>
-
-                    <div className="mb-2 flex flex-wrap gap-2">
-                      {genreText && (
-                        <span className="rounded-full bg-gray-800 px-2 py-1 text-[10px] text-gray-200">
-                          Genres: {genreText}
-                        </span>
-                      )}
-                      {tagText && (
-                        <span className="rounded-full bg-gray-800 px-2 py-1 text-[10px] text-gray-200">
-                          Tags: {tagText}
-                        </span>
-                      )}
-                    </div>
-
-                    {trailerUrl && (
-                      <a
-                        href={trailerUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center text-[11px] text-blue-400 hover:text-blue-300"
-                      >
-                        Watch trailer on YouTube ↗
-                      </a>
-                    )}
 
                     <div className="mt-3 flex items-center gap-3">
                       <button
                         type="button"
-                        onClick={() => handleImport(anime)}
-                        disabled={importState === "loading"}
+                        onClick={() => handleImport(item)}
+                        disabled={importDisabled}
                         className="rounded-md bg-emerald-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-600/60"
                       >
                         {importState === "loading"
                           ? "Importing..."
-                          : "Import into catalog"}
+                          : importLabel}
                       </button>
 
                       {importState === "success" && (
@@ -274,8 +348,14 @@ const AniListTestPage: NextPage = () => {
                     </div>
 
                     <p className="mt-2 text-[10px] text-gray-500">
-                      AniList ID:{" "}
-                      <span className="font-mono">{anime.id}</span>
+                      Source ID:{" "}
+                      <span className="font-mono">
+                        {item.source === "anilist"
+                          ? item.anilist_id
+                          : item.source === "tmdb"
+                          ? item.tmdb_id
+                          : item.tvdb_id}
+                      </span>
                     </p>
                   </div>
                 </div>
@@ -285,9 +365,9 @@ const AniListTestPage: NextPage = () => {
         </div>
       )}
 
-      {!loading && !error && results.length === 0 && (
+      {!loading && results.length === 0 && (
         <p className="text-sm text-gray-500 mt-4">
-          Try searching for something to see AniList results.
+          Try searching for something to see results from all sources.
         </p>
       )}
     </div>
