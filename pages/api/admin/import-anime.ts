@@ -13,13 +13,7 @@ import {
 import {
   getTvdbSeriesExtended,
   getTvdbSeriesArtworks,
-  getTvdbSeriesSeasons,
-  getTvdbSeasonExtended,
-  getTvdbSeasonArtworks,
   getTvdbSeriesEpisodes,
-  getTvdbEpisodeExtended,
-  getTvdbEpisodeArtworks,
-  getTvdbSeriesCharacters,
 } from "@/lib/tvdb";
 
 /* ---------------------- helpers ---------------------- */
@@ -79,9 +73,8 @@ function tvdbArtworkKind(raw: any): string {
 
 /**
  * NOTE:
- * We keep these helpers deliberately loosely typed, because your Supabase
- * generated types / GenericStringError unions can cause TS to think `data`
- * is an error-shaped object. At runtime, Supabase returns `data` rows or null.
+ * We keep these helpers loosely typed, because Supabase generated types
+ * can cause TS to think `data` is an error-shaped object.
  */
 async function updateAnimeById(
   animeId: string,
@@ -102,9 +95,6 @@ async function upsertAnimeBySlug(
   payload: Record<string, any>,
   selectCols: string
 ): Promise<{ data: any; error: any }> {
-  // IMPORTANT:
-  // We ONLY use slug for onConflict because slug should be UNIQUE.
-  // We do NOT use tmdb_id/tvdb_id in onConflict unless you add UNIQUE constraints.
   const { data, error } = await supabaseAdmin
     .from("anime")
     .upsert(payload, { onConflict: "slug" })
@@ -244,7 +234,7 @@ async function importFromTmdb(tmdbId: number, res: NextApiResponse) {
   const animeId = mustId(upserted, "TMDB anime upsert");
   if (!animeId) return res.status(500).json({ error: "TMDB upsert returned no anime id" });
 
-  // 4) Insert ALL series artwork into anime_artwork
+  // series artwork -> anime_artwork
   try {
     const posters = tvImages?.posters ?? [];
     const backdrops = tvImages?.backdrops ?? [];
@@ -295,7 +285,7 @@ async function importFromTmdb(tmdbId: number, res: NextApiResponse) {
     console.error("Series artwork insert error:", e);
   }
 
-  // 5) Seasons + season artwork + episodes + episode artwork
+  // seasons + season artwork + episodes + episode artwork
   const seasons = (tv.seasons ?? []).filter((s) => typeof s.season_number === "number");
   let globalEpisodeCounter = 0;
 
@@ -439,11 +429,7 @@ async function importFromTmdb(tmdbId: number, res: NextApiResponse) {
       }
 
       try {
-        const { data: epImages } = await getTmdbEpisodeImages(
-          tmdbId,
-          seasonNumber,
-          ep.episode_number
-        );
+        const { data: epImages } = await getTmdbEpisodeImages(tmdbId, seasonNumber, ep.episode_number);
         const stills = epImages?.stills ?? [];
 
         const rows = stills.map((s, idx) => ({
@@ -478,11 +464,13 @@ async function importFromTmdb(tmdbId: number, res: NextApiResponse) {
 }
 
 /* ======================================================
-   TVDB import (series + seasons + episodes + artwork + characters)
+   TVDB import (series + artwork + episodes + episode thumbs + episode descriptions)
+   NOTE: We intentionally do NOT call TVDB seasons/characters/episode-artworks endpoints
+   because your key is returning HTTP 400 for them.
 ====================================================== */
 
 async function importFromTvdb(tvdbId: number, res: NextApiResponse) {
-  const { data: series, error: seriesErr } = await getTvdbSeriesExtended(tvdbId);
+  const { data: series, error: seriesErr } = await getTvdbSeriesExtended(tvdbId as any);
   if (seriesErr || !series) {
     console.error("TVDB series extended error:", seriesErr);
     return res.status(500).json({ error: seriesErr || "Failed to fetch TVDB series" });
@@ -554,9 +542,9 @@ async function importFromTvdb(tvdbId: number, res: NextApiResponse) {
   const animeId = mustId(upserted, "TVDB anime upsert");
   if (!animeId) return res.status(500).json({ error: "TVDB upsert returned no anime id" });
 
-  // 3) series artworks -> anime_artwork
+  // series artworks -> anime_artwork
   try {
-    const { data: artworks, error: awErr } = await getTvdbSeriesArtworks(tvdbId);
+    const { data: artworks, error: awErr } = await getTvdbSeriesArtworks(tvdbId as any);
     if (awErr) console.error("TVDB series artworks error:", awErr);
 
     const list = (artworks as any)?.artworks ?? artworks ?? [];
@@ -590,117 +578,19 @@ async function importFromTvdb(tvdbId: number, res: NextApiResponse) {
     console.error("TVDB series artwork insert error:", e);
   }
 
-  // 4) seasons
-  const { data: seasonsData, error: seasonsErr } = await getTvdbSeriesSeasons(tvdbId);
-  if (seasonsErr) console.error("TVDB seasons error:", seasonsErr);
-
-  const seasonsList: any[] = Array.isArray((seasonsData as any)?.seasons)
-    ? (seasonsData as any).seasons
-    : Array.isArray(seasonsData)
-    ? (seasonsData as any)
-    : [];
-
-  const SEASON_TYPE_AIRED_ORDER = 1;
-
-  let globalEpisodeCounter = 0;
-
-  for (const s of seasonsList) {
-    const tvdbSeasonId: number | null = typeof s?.id === "number" ? s.id : null;
-
-    const seasonNumber: number | null =
-      typeof s?.number === "number"
-        ? s.number
-        : typeof s?.seasonNumber === "number"
-        ? s.seasonNumber
-        : typeof s?.season_number === "number"
-        ? s.season_number
-        : null;
-
-    if (seasonNumber === null) continue;
-
-    let seasonTitle: string | null = s?.name ?? s?.title ?? null;
-    let seasonOverview: string | null = s?.overview ?? null;
-    let seasonAirDate: string | null = toDateOnly(s?.firstAired ?? s?.airDate ?? null);
-
-    if (tvdbSeasonId) {
-      const { data: seasonExt } = await getTvdbSeasonExtended(tvdbSeasonId);
-      if (seasonExt) {
-        seasonTitle = seasonTitle ?? seasonExt?.name ?? null;
-        seasonOverview = seasonOverview ?? seasonExt?.overview ?? null;
-        seasonAirDate = seasonAirDate ?? toDateOnly(seasonExt?.firstAired ?? null);
-      }
-    }
-
-    const { data: seasonRow, error: seasonUpErr } = await supabaseAdmin
-      .from("anime_seasons")
-      .upsert(
-        {
-          anime_id: animeId,
-          season_number: seasonNumber,
-          title: seasonTitle,
-          description: seasonOverview,
-          air_date: seasonAirDate,
-          tvdb_season_id: tvdbSeasonId,
-        },
-        { onConflict: "anime_id,season_number" }
-      )
-      .select("id")
-      .single();
-
-    if (seasonUpErr || !seasonRow) {
-      console.error("TVDB season upsert error:", seasonUpErr);
-      continue;
-    }
-
-    const animeSeasonId = mustId(seasonRow, "TVDB season upsert");
-    if (!animeSeasonId) continue;
-
-    if (tvdbSeasonId) {
-      try {
-        const { data: sArt } = await getTvdbSeasonArtworks(tvdbSeasonId);
-        const list = (sArt as any)?.artworks ?? sArt ?? [];
-        const arr: any[] = Array.isArray(list) ? list : [];
-
-        const rows = arr
-          .map((a, idx) => {
-            const url = normalizeTvdbImageUrl(a?.image || a?.url || a?.thumbnail || null);
-            if (!url) return null;
-
-            return {
-              anime_season_id: animeSeasonId,
-              source: "tvdb",
-              kind: tvdbArtworkKind(a),
-              url,
-              lang: a?.language ?? a?.lang ?? null,
-              width: a?.width ?? null,
-              height: a?.height ?? null,
-              vote: a?.score ?? a?.rating ?? null,
-              is_primary: idx === 0,
-            };
-          })
-          .filter(Boolean);
-
-        if (rows.length) {
-          await supabaseAdmin.from("anime_season_artwork").upsert(rows as any[], {
-            onConflict: "anime_season_id,source,kind,url",
-          });
-        }
-      } catch (e) {
-        console.error("TVDB season artwork insert error:", e);
-      }
-    }
-  }
-
-  // 5) episodes pages
-  let page = 0;
+  // episodes (paged) -> anime_episodes + anime_episode_artwork
+  // IMPORTANT: this is the endpoint that is clearly working for you.
+  const SEASON_TYPE = "default";
   const maxPagesSafety = 200;
 
-  while (page < maxPagesSafety) {
-    const { data: pageData, error: epPageErr } = await getTvdbSeriesEpisodes(
-      tvdbId,
-      SEASON_TYPE_AIRED_ORDER,
-      page
-    );
+  // We create seasons from the episode list (so we don't need /series/{id}/seasons)
+  const seenSeasonNumbers = new Set<number>();
+
+  // Use absoluteNumber if present/valid; otherwise fall back to a running counter.
+  let globalEpisodeCounter = 0;
+
+  for (let page = 0; page < maxPagesSafety; page++) {
+    const { data: pageData, error: epPageErr } = await getTvdbSeriesEpisodes(tvdbId as any, SEASON_TYPE as any, page as any);
 
     if (epPageErr) {
       console.error("TVDB episodes page error:", page, epPageErr);
@@ -718,8 +608,6 @@ async function importFromTvdb(tvdbId: number, res: NextApiResponse) {
     if (!episodes.length) break;
 
     for (const ep of episodes) {
-      const tvdbEpisodeId: number | null = typeof ep?.id === "number" ? ep.id : null;
-
       const seasonNumber: number | null =
         typeof ep?.seasonNumber === "number"
           ? ep.seasonNumber
@@ -738,27 +626,52 @@ async function importFromTvdb(tvdbId: number, res: NextApiResponse) {
           ? ep.episode_number
           : null;
 
-      globalEpisodeCounter += 1;
+      // best episode_number to store: prefer absoluteNumber if it’s > 0
+      const abs: number | null = typeof ep?.absoluteNumber === "number" ? ep.absoluteNumber : null;
 
-      let epTitle: string | null = ep?.name ?? ep?.title ?? null;
-      let synopsis: string | null = ep?.overview ?? null;
-      let airDate: string | null = toDateOnly(ep?.aired ?? ep?.airDate ?? ep?.firstAired ?? null);
+      let episodeNumber: number;
+      if (abs && abs > 0) {
+        episodeNumber = abs;
+        globalEpisodeCounter = Math.max(globalEpisodeCounter, abs);
+      } else {
+        globalEpisodeCounter += 1;
+        episodeNumber = globalEpisodeCounter;
+      }
 
-      if (tvdbEpisodeId) {
-        const { data: epExt } = await getTvdbEpisodeExtended(tvdbEpisodeId);
-        if (epExt) {
-          epTitle = epTitle ?? epExt?.name ?? epExt?.title ?? null;
-          synopsis = synopsis ?? epExt?.overview ?? epExt?.description ?? null;
-          airDate = airDate ?? toDateOnly(epExt?.aired ?? epExt?.firstAired ?? null);
+      // create / ensure season row
+      if (typeof seasonNumber === "number" && Number.isFinite(seasonNumber)) {
+        if (!seenSeasonNumbers.has(seasonNumber)) {
+          seenSeasonNumbers.add(seasonNumber);
+
+          const { error: seasonUpErr } = await supabaseAdmin.from("anime_seasons").upsert(
+            {
+              anime_id: animeId,
+              season_number: seasonNumber,
+              title: null,
+              description: null,
+              air_date: null,
+              tvdb_season_id: null,
+            },
+            { onConflict: "anime_id,season_number" }
+          );
+
+          if (seasonUpErr) {
+            console.error("TVDB season upsert error (derived from episodes):", seasonUpErr);
+          }
         }
       }
+
+      const epTitle: string | null = ep?.name ?? ep?.title ?? null;
+      const synopsis: string | null = ep?.overview ?? null;
+      const airDate: string | null = toDateOnly(ep?.aired ?? ep?.airDate ?? ep?.firstAired ?? null);
+      const tvdbEpisodeId: number | null = typeof ep?.id === "number" ? ep.id : null;
 
       const { data: episodeRow, error: upErr } = await supabaseAdmin
         .from("anime_episodes")
         .upsert(
           {
             anime_id: animeId,
-            episode_number: globalEpisodeCounter,
+            episode_number: episodeNumber,
             season_number: seasonNumber,
             season_episode_number: seasonEpisodeNumber,
             title: epTitle,
@@ -779,123 +692,37 @@ async function importFromTvdb(tvdbId: number, res: NextApiResponse) {
       const animeEpisodeId = mustId(episodeRow, "TVDB episode upsert");
       if (!animeEpisodeId) continue;
 
-      if (tvdbEpisodeId) {
+      // episode thumbnail from ep.image (path -> full URL)
+      const episodeImg = normalizeTvdbImageUrl(ep?.image ?? null);
+      if (episodeImg) {
         try {
-          const { data: eArt } = await getTvdbEpisodeArtworks(tvdbEpisodeId);
-          const list = (eArt as any)?.artworks ?? eArt ?? [];
-          const arr: any[] = Array.isArray(list) ? list : [];
-
-          const rows = arr
-            .map((a, idx) => {
-              const url = normalizeTvdbImageUrl(a?.image || a?.url || a?.thumbnail || null);
-              if (!url) return null;
-
-              return {
+          await supabaseAdmin.from("anime_episode_artwork").upsert(
+            [
+              {
                 anime_episode_id: animeEpisodeId,
                 source: "tvdb",
-                kind: tvdbArtworkKind(a),
-                url,
-                lang: a?.language ?? a?.lang ?? null,
-                width: a?.width ?? null,
-                height: a?.height ?? null,
-                vote: a?.score ?? a?.rating ?? null,
-                is_primary: idx === 0,
-              };
-            })
-            .filter(Boolean);
-
-          if (rows.length) {
-            await supabaseAdmin.from("anime_episode_artwork").upsert(rows as any[], {
-              onConflict: "anime_episode_id,source,kind,url",
-            });
-          }
+                kind: "still",
+                url: episodeImg,
+                lang: null,
+                width: null,
+                height: null,
+                vote: null,
+                is_primary: true,
+              },
+            ],
+            { onConflict: "anime_episode_id,source,kind,url" }
+          );
         } catch (e) {
-          console.error("TVDB episode artwork insert error:", e);
+          console.error("TVDB episode image insert error:", e);
         }
       }
     }
-
-    page += 1;
   }
 
-  // 6) characters/cast -> anime_characters (YOUR schema)
-  try {
-    const { data: chars, error: charErr } = await getTvdbSeriesCharacters(tvdbId);
-    if (charErr) console.error("TVDB characters error:", charErr);
-
-    const list: any[] = Array.isArray((chars as any)?.characters)
-      ? (chars as any).characters
-      : Array.isArray(chars)
-      ? (chars as any)
-      : [];
-
-    if (list.length) {
-      // wipe old TVDB rows so reruns are clean
-      await supabaseAdmin
-        .from("anime_characters")
-        .delete()
-        .eq("anime_id", animeId)
-        .eq("source", "tvdb");
-
-      const rows = list
-        .map((c, idx) => {
-          const tvdbCharacterId: number | null = typeof c?.id === "number" ? c.id : null;
-
-          const characterName: string | null =
-            c?.name ?? c?.characterName ?? c?.character_name ?? null;
-
-          const personName: string | null =
-            c?.personName ?? c?.peopleName ?? c?.person_name ?? null;
-
-          const characterImageUrl = normalizeTvdbImageUrl(
-            c?.image ?? c?.image_url ?? c?.characterImage ?? null
-          );
-
-          const personImageUrl = normalizeTvdbImageUrl(
-            c?.personImgURL ?? c?.person_image_url ?? c?.personImage ?? null
-          );
-
-          const role: string | null = c?.role ?? c?.type ?? null;
-
-          const sortOrder: number =
-            typeof c?.sortOrder === "number"
-              ? c.sortOrder
-              : typeof c?.sort_order === "number"
-              ? c.sort_order
-              : idx;
-
-          if (!characterName && !personName) return null;
-
-          return {
-            anime_id: animeId,
-            source: "tvdb",
-            tvdb_character_id: tvdbCharacterId,
-            character_name: characterName ?? personName ?? "Unknown",
-            character_image_url: characterImageUrl ?? null,
-            person_name: personName ?? null,
-            person_image_url: personImageUrl ?? null,
-            role,
-            sort_order: sortOrder,
-          };
-        })
-        .filter(Boolean);
-
-      if (rows.length) {
-        const { error: insErr } = await supabaseAdmin.from("anime_characters").insert(rows as any[]);
-        if (insErr) console.error("TVDB characters insert error:", insErr);
-      }
-    }
-  } catch (e) {
-    console.error("TVDB character insert error:", e);
-  }
-
-  // 7) update total_episodes (best-effort)
+  // update total_episodes (best-effort)
   try {
     if (globalEpisodeCounter > 0) {
-      await supabaseAdmin
-        .from("anime")
-        .update({ total_episodes: globalEpisodeCounter })
-        .eq("id", animeId);
+      await supabaseAdmin.from("anime").update({ total_episodes: globalEpisodeCounter }).eq("id", animeId);
     }
   } catch (e) {
     console.error("TVDB total_episodes update error:", e);

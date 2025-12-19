@@ -5,6 +5,15 @@ type TvdbLoginResponse = {
   status?: string;
 };
 
+/**
+ * TheTVDB response shape is typically:
+ * { status: "success", data: ... }
+ */
+type TvdbResponse<T> = {
+  status?: string;
+  data?: T;
+};
+
 type TvdbSearchItem = {
   tvdb_id?: number;
   id?: number;
@@ -16,20 +25,6 @@ type TvdbSearchItem = {
   primary_language?: string | null;
   objectID?: string | null;
   type?: string | null;
-};
-
-type TvdbSearchResponse = {
-  data?: TvdbSearchItem[];
-  status?: string;
-};
-
-/**
- * TheTVDB response shape is typically:
- * { status: "success", data: ... }
- */
-type TvdbResponse<T> = {
-  status?: string;
-  data?: T;
 };
 
 const TVDB_API_BASE = "https://api4.thetvdb.com/v4";
@@ -87,11 +82,29 @@ async function getTvdbToken(): Promise<string> {
    Low-level request helper
 ====================================================== */
 
-async function tvdbGet<T>(path: string): Promise<{ data: T | null; error: string | null }> {
+function buildUrl(path: string, params?: Record<string, string | number | boolean | null | undefined>) {
+  const url = new URL(`${TVDB_API_BASE}${path}`);
+
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (v === null || v === undefined) continue;
+      url.searchParams.set(k, String(v));
+    }
+  }
+
+  return url.toString();
+}
+
+async function tvdbGet<T>(
+  path: string,
+  params?: Record<string, string | number | boolean | null | undefined>
+): Promise<{ data: T | null; error: string | null }> {
   try {
     const token = await getTvdbToken();
 
-    const res = await fetch(`${TVDB_API_BASE}${path}`, {
+    const url = buildUrl(path, params);
+
+    const res = await fetch(url, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -101,7 +114,7 @@ async function tvdbGet<T>(path: string): Promise<{ data: T | null; error: string
 
     if (!res.ok) {
       const text = await res.text();
-      console.error("TVDB GET error:", res.status, path, text);
+      console.error("TVDB GET error:", res.status, url, text);
       return { data: null, error: `TVDB HTTP ${res.status}` };
     }
 
@@ -121,10 +134,11 @@ export async function searchTvdb(query: string) {
   const q = query.trim();
   if (!q) return { data: [], error: null as string | null };
 
-  // v4 search pattern used in the docs/tools: /search?type=series&q=...
-  const path = `/search?type=series&q=${encodeURIComponent(q)}`;
-
-  const { data, error } = await tvdbGet<TvdbSearchItem[]>(path);
+  // /search?type=series&q=...
+  const { data, error } = await tvdbGet<TvdbSearchItem[]>("/search", {
+    type: "series",
+    q,
+  });
 
   if (error || !data) return { data: [], error };
 
@@ -145,79 +159,60 @@ export async function searchTvdb(query: string) {
    Full import helpers (series / seasons / episodes / artwork / characters)
 ====================================================== */
 
-/**
- * Series extended record.
- * We keep this as "any" friendly because TVDB returns a big shape,
- * and we only pluck what we need in the importer.
- */
 export async function getTvdbSeriesExtended(seriesId: number) {
-  // commonly: /series/{id}/extended
   return tvdbGet<any>(`/series/${seriesId}/extended`);
 }
 
-/**
- * Series artwork list.
- * commonly: /series/{id}/artworks
- */
 export async function getTvdbSeriesArtworks(seriesId: number) {
   return tvdbGet<any>(`/series/${seriesId}/artworks`);
 }
 
 /**
- * Seasons for a series.
- * commonly: /series/{id}/seasons
+ * ✅ FIX: add paging (your logs show /seasons was 400 without it)
  */
-export async function getTvdbSeriesSeasons(seriesId: number) {
-  return tvdbGet<any>(`/series/${seriesId}/seasons`);
+export async function getTvdbSeriesSeasons(seriesId: number, page: number = 0) {
+  return tvdbGet<any>(`/series/${seriesId}/seasons`, { page });
 }
 
-/**
- * Season extended record.
- * commonly: /seasons/{id}/extended
- */
 export async function getTvdbSeasonExtended(seasonId: number) {
   return tvdbGet<any>(`/seasons/${seasonId}/extended`);
 }
 
-/**
- * Season artwork list.
- * commonly: /seasons/{id}/artworks
- */
 export async function getTvdbSeasonArtworks(seasonId: number) {
   return tvdbGet<any>(`/seasons/${seasonId}/artworks`);
 }
 
 /**
  * Episodes for a series by season-type.
- * TVDB supports multiple season orders; "default" is usually "Aired Order".
- * commonly referenced: /series/{id}/episodes/{season-type}
+ * ✅ Keep paging explicit.
  *
- * Some installs want pagination: ?page=0,1,2...
+ * NOTE: Some TVDB endpoints behave like page=1 is the first page.
+ * So we expose the param cleanly and we’ll test 0 vs 1 from the importer if needed.
  */
-export async function getTvdbSeriesEpisodes(seriesId: number, seasonType: number, page: number = 0) {
-  return tvdbGet<any>(`/series/${seriesId}/episodes/${seasonType}?page=${page}`);
+export async function getTvdbSeriesEpisodes(
+  seriesId: number,
+  seasonType: string = "default",
+  page: number = 0,
+  lang: string = "eng"
+) {
+  return tvdbGet<any>(`/series/${seriesId}/episodes/${seasonType}/${lang}`, { page });
 }
 
-/**
- * Episode extended record (includes overview/description fields).
- * commonly: /episodes/{id}/extended
- */
+export async function getTvdbSeriesEpisodesFlat(seriesId: number, page: number = 0) {
+  return tvdbGet<any>(`/series/${seriesId}/episodes`, { page });
+}
+
 export async function getTvdbEpisodeExtended(episodeId: number) {
   return tvdbGet<any>(`/episodes/${episodeId}/extended`);
 }
 
-/**
- * Episode artwork list.
- * commonly: /episodes/{id}/artworks
- */
 export async function getTvdbEpisodeArtworks(episodeId: number) {
   return tvdbGet<any>(`/episodes/${episodeId}/artworks`);
 }
 
 /**
- * Characters / cast for a series.
- * commonly: /series/{id}/characters
+ * ✅ FIX: add paging (your logs show /characters was 400 without it)
  */
-export async function getTvdbSeriesCharacters(seriesId: number) {
-  return tvdbGet<any>(`/series/${seriesId}/characters`);
+export async function getTvdbSeriesCharacters(seriesId: number, page: number = 0) {
+  return tvdbGet<any>(`/series/${seriesId}/characters`, { page });
 }
