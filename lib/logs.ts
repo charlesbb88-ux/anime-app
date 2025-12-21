@@ -37,6 +37,78 @@ async function getAuthedUserId(): Promise<{ userId: string | null; error: any }>
   return { userId: user.id, error: null };
 }
 
+/**
+ * ✅ Best-effort feed post creation for logs.
+ * This is intentionally "soft fail":
+ * - If your posts schema doesn't match, we do NOT break logging.
+ *
+ * Adjust these fields if your posts table uses different column names.
+ */
+async function tryCreatePostForLog(input: {
+  user_id: string;
+  visibility: Visibility;
+  contains_spoilers: boolean;
+
+  // targets
+  anime_id?: string | null;
+  anime_episode_id?: string | null;
+  manga_id?: string | null;
+  manga_chapter_id?: string | null;
+
+  // snapshot fields
+  rating: number | null;
+  liked: boolean;
+  review_id: string | null;
+
+  // log note
+  note: string | null;
+
+  // timestamp
+  created_at_iso: string;
+}) {
+  try {
+    // ⚠️ These column names are "best guess".
+    // If your posts table uses different ones, the insert will error,
+    // but we swallow it so logs still work.
+    const payload: any = {
+      user_id: input.user_id,
+
+      // common feed fields
+      visibility: input.visibility,
+      contains_spoilers: input.contains_spoilers,
+
+      // link targets so PostFeed can filter by anime/manga page
+      anime_id: input.anime_id ?? null,
+      anime_episode_id: input.anime_episode_id ?? null,
+      manga_id: input.manga_id ?? null,
+      manga_chapter_id: input.manga_chapter_id ?? null,
+
+      // snapshot (so feed cards can show rating/like even without a review body)
+      rating: input.rating,
+      liked: input.liked,
+      review_id: input.review_id,
+
+      // text (if your feed reads a different column name, rename this)
+      content: input.note ?? null,
+
+      // type/kind (rename if your schema uses post_type, kind, etc.)
+      type: "log",
+
+      created_at: input.created_at_iso,
+    };
+
+    const { error } = await supabase.from("posts").insert(payload);
+
+    if (error) {
+      // Soft fail: don't break logging
+      console.warn("[logs] Could not create feed post for log:", error);
+    }
+  } catch (e) {
+    // Soft fail: don't break logging
+    console.warn("[logs] Exception creating feed post for log:", e);
+  }
+}
+
 /* ============================================================
    ANIME: Episode Log
 ============================================================ */
@@ -67,10 +139,8 @@ export type CreateAnimeEpisodeLogInput = {
   anime_id: string;
   anime_episode_id: string;
 
-  // optional
-  logged_at?: string; // defaults to now
+  logged_at?: string;
 
-  // ✅ snapshot fields
   rating?: number | null;
   liked?: boolean;
   review_id?: string | null;
@@ -80,7 +150,6 @@ export type CreateAnimeEpisodeLogInput = {
   note?: string | null;
   contains_spoilers?: boolean;
 
-  // if you don't pass this, we use the user's profile default_visibility if present
   visibility?: Visibility;
 };
 
@@ -93,6 +162,8 @@ export async function createAnimeEpisodeLog(
 
   const visibilityToUse = await getVisibilityToUse(userId, input.visibility);
 
+  const loggedAt = input.logged_at ?? new Date().toISOString();
+
   const { data: log, error: logError } = await supabase
     .from("anime_episode_logs")
     .insert({
@@ -101,9 +172,8 @@ export async function createAnimeEpisodeLog(
       anime_id: input.anime_id,
       anime_episode_id: input.anime_episode_id,
 
-      logged_at: input.logged_at ?? new Date().toISOString(),
+      logged_at: loggedAt,
 
-      // ✅ snapshot stored on log
       rating: input.rating ?? null,
       liked: input.liked ?? false,
       review_id: input.review_id ?? null,
@@ -118,6 +188,23 @@ export async function createAnimeEpisodeLog(
     .single();
 
   if (logError || !log) return { data: null, error: logError };
+
+  // ✅ ALSO create a feed post (soft fail, won't break logging)
+  await tryCreatePostForLog({
+    user_id: userId,
+    visibility: visibilityToUse,
+    contains_spoilers: (log as any).contains_spoilers ?? false,
+
+    anime_id: (log as any).anime_id ?? input.anime_id,
+    anime_episode_id: (log as any).anime_episode_id ?? input.anime_episode_id,
+
+    rating: (log as any).rating ?? null,
+    liked: Boolean((log as any).liked),
+    review_id: (log as any).review_id ?? null,
+
+    note: (log as any).note ?? null,
+    created_at_iso: (log as any).logged_at ?? loggedAt,
+  });
 
   return { data: log as AnimeEpisodeLogRow, error: null };
 }
@@ -136,7 +223,6 @@ export async function getMyAnimeEpisodeLogCount(
     .eq("anime_episode_id", anime_episode_id);
 
   if (error) return { count: 0, error };
-
   return { count: count ?? 0, error: null };
 }
 
@@ -170,7 +256,6 @@ export type CreateAnimeSeriesLogInput = {
 
   logged_at?: string;
 
-  // ✅ snapshot fields
   rating?: number | null;
   liked?: boolean;
   review_id?: string | null;
@@ -192,15 +277,16 @@ export async function createAnimeSeriesLog(
 
   const visibilityToUse = await getVisibilityToUse(userId, input.visibility);
 
+  const loggedAt = input.logged_at ?? new Date().toISOString();
+
   const { data: log, error: logError } = await supabase
     .from("anime_series_logs")
     .insert({
       user_id: userId,
       anime_id: input.anime_id,
 
-      logged_at: input.logged_at ?? new Date().toISOString(),
+      logged_at: loggedAt,
 
-      // ✅ snapshot stored on log
       rating: input.rating ?? null,
       liked: input.liked ?? false,
       review_id: input.review_id ?? null,
@@ -215,13 +301,27 @@ export async function createAnimeSeriesLog(
     .single();
 
   if (logError || !log) return { data: null, error: logError };
+
+  await tryCreatePostForLog({
+    user_id: userId,
+    visibility: visibilityToUse,
+    contains_spoilers: (log as any).contains_spoilers ?? false,
+
+    anime_id: (log as any).anime_id ?? input.anime_id,
+
+    rating: (log as any).rating ?? null,
+    liked: Boolean((log as any).liked),
+    review_id: (log as any).review_id ?? null,
+
+    note: (log as any).note ?? null,
+    created_at_iso: (log as any).logged_at ?? loggedAt,
+  });
+
   return { data: log as AnimeSeriesLogRow, error: null };
 }
 
 /* ============================================================
    MANGA: Series Log
-   DB uses: is_reread (boolean)
-   We keep an is_rewatch alias in the returned type for backward compatibility.
 ============================================================ */
 
 export type MangaSeriesLogRow = {
@@ -235,10 +335,7 @@ export type MangaSeriesLogRow = {
   liked: boolean;
   review_id: string | null;
 
-  // DB column:
   is_reread: boolean;
-
-  // Back-compat alias (some code may still reference is_rewatch):
   is_rewatch?: boolean;
 
   note: string | null;
@@ -254,12 +351,10 @@ export type CreateMangaSeriesLogInput = {
 
   logged_at?: string;
 
-  // ✅ snapshot fields
   rating?: number | null;
   liked?: boolean;
   review_id?: string | null;
 
-  // Prefer is_reread; accept is_rewatch too so old callers don’t break:
   is_reread?: boolean;
   is_rewatch?: boolean;
 
@@ -279,6 +374,7 @@ export async function createMangaSeriesLog(
   const visibilityToUse = await getVisibilityToUse(userId, input.visibility);
 
   const isReread = input.is_reread ?? input.is_rewatch ?? false;
+  const loggedAt = input.logged_at ?? new Date().toISOString();
 
   const { data: log, error: logError } = await supabase
     .from("manga_series_logs")
@@ -286,9 +382,8 @@ export async function createMangaSeriesLog(
       user_id: userId,
       manga_id: input.manga_id,
 
-      logged_at: input.logged_at ?? new Date().toISOString(),
+      logged_at: loggedAt,
 
-      // ✅ snapshot stored on log
       rating: input.rating ?? null,
       liked: input.liked ?? false,
       review_id: input.review_id ?? null,
@@ -304,16 +399,27 @@ export async function createMangaSeriesLog(
 
   if (logError || !log) return { data: null, error: logError };
 
-  // add alias so older code reading is_rewatch won’t break
-  const normalized = { ...(log as any), is_rewatch: (log as any).is_reread } as MangaSeriesLogRow;
+  await tryCreatePostForLog({
+    user_id: userId,
+    visibility: visibilityToUse,
+    contains_spoilers: (log as any).contains_spoilers ?? false,
 
+    manga_id: (log as any).manga_id ?? input.manga_id,
+
+    rating: (log as any).rating ?? null,
+    liked: Boolean((log as any).liked),
+    review_id: (log as any).review_id ?? null,
+
+    note: (log as any).note ?? null,
+    created_at_iso: (log as any).logged_at ?? loggedAt,
+  });
+
+  const normalized = { ...(log as any), is_rewatch: (log as any).is_reread } as MangaSeriesLogRow;
   return { data: normalized, error: null };
 }
 
 /* ============================================================
    MANGA: Chapter Log
-   DB uses: is_reread (boolean)
-   We keep an is_rewatch alias in the returned type for backward compatibility.
 ============================================================ */
 
 export type MangaChapterLogRow = {
@@ -328,10 +434,7 @@ export type MangaChapterLogRow = {
   liked: boolean;
   review_id: string | null;
 
-  // DB column:
   is_reread: boolean;
-
-  // Back-compat alias:
   is_rewatch?: boolean;
 
   note: string | null;
@@ -348,12 +451,10 @@ export type CreateMangaChapterLogInput = {
 
   logged_at?: string;
 
-  // ✅ snapshot fields
   rating?: number | null;
   liked?: boolean;
   review_id?: string | null;
 
-  // Prefer is_reread; accept is_rewatch too so old callers don’t break:
   is_reread?: boolean;
   is_rewatch?: boolean;
 
@@ -373,6 +474,7 @@ export async function createMangaChapterLog(
   const visibilityToUse = await getVisibilityToUse(userId, input.visibility);
 
   const isReread = input.is_reread ?? input.is_rewatch ?? false;
+  const loggedAt = input.logged_at ?? new Date().toISOString();
 
   const { data: log, error: logError } = await supabase
     .from("manga_chapter_logs")
@@ -382,9 +484,8 @@ export async function createMangaChapterLog(
       manga_id: input.manga_id,
       manga_chapter_id: input.manga_chapter_id,
 
-      logged_at: input.logged_at ?? new Date().toISOString(),
+      logged_at: loggedAt,
 
-      // ✅ snapshot stored on log
       rating: input.rating ?? null,
       liked: input.liked ?? false,
       review_id: input.review_id ?? null,
@@ -400,8 +501,23 @@ export async function createMangaChapterLog(
 
   if (logError || !log) return { data: null, error: logError };
 
-  const normalized = { ...(log as any), is_rewatch: (log as any).is_reread } as MangaChapterLogRow;
+  await tryCreatePostForLog({
+    user_id: userId,
+    visibility: visibilityToUse,
+    contains_spoilers: (log as any).contains_spoilers ?? false,
 
+    manga_id: (log as any).manga_id ?? input.manga_id,
+    manga_chapter_id: (log as any).manga_chapter_id ?? input.manga_chapter_id,
+
+    rating: (log as any).rating ?? null,
+    liked: Boolean((log as any).liked),
+    review_id: (log as any).review_id ?? null,
+
+    note: (log as any).note ?? null,
+    created_at_iso: (log as any).logged_at ?? loggedAt,
+  });
+
+  const normalized = { ...(log as any), is_rewatch: (log as any).is_reread } as MangaChapterLogRow;
   return { data: normalized, error: null };
 }
 
