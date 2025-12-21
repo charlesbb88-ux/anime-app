@@ -1,62 +1,42 @@
+// components/actions/MangaActionBox.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Eye, Heart, BookmarkPlus } from "lucide-react";
+
 import {
-  getMyAnimeWatchedMark,
-  setMyAnimeWatchedMark,
-  getMyAnimeLikedMark,
-  setMyAnimeLikedMark,
-  getMyAnimeWatchlistMark,
-  setMyAnimeWatchlistMark,
-  getMyAnimeRatingMark,
-  setMyAnimeRatingMark,
+  getMyMangaWatchedMark,
+  setMyMangaWatchedMark,
+  getMyMangaLikedMark,
+  setMyMangaLikedMark,
+  getMyMangaWatchlistMark,
+  setMyMangaWatchlistMark,
+  getMyMangaRatingMark,
+  setMyMangaRatingMark,
 } from "@/lib/marks";
 
 type Props = {
   onOpenLog: () => void;
   onShowActivity?: () => void;
 
-  // ✅ anime targets
-  animeId?: string | null;
-  animeEpisodeId?: string | null;
-
-  // ✅ manga targets (series for now)
+  // series id is always present (for series page)
   mangaId?: string | null;
-  mangaChapterId?: string | null; // not used yet, but keeps the API consistent
+
+  // ✅ optional: if provided, becomes "chapter scoped"
+  mangaChapterId?: string | null;
 };
 
-export default function ActionBox({
+export default function MangaActionBox({
   onOpenLog,
   onShowActivity,
-
-  animeId = null,
-  animeEpisodeId = null,
-
   mangaId = null,
   mangaChapterId = null,
 }: Props) {
-  const targetKind = useMemo(() => {
-    if (animeId) return "anime" as const;
-    if (mangaId) return "manga" as const;
-    return null;
-  }, [animeId, mangaId]);
-
   const scopeKey = useMemo(() => {
-    if (targetKind === "anime") {
-      return animeEpisodeId
-        ? `anime:episode:${animeEpisodeId}`
-        : `anime:series:${animeId ?? "none"}`;
-    }
-
-    if (targetKind === "manga") {
-      return mangaChapterId
-        ? `manga:chapter:${mangaChapterId}`
-        : `manga:series:${mangaId ?? "none"}`;
-    }
-
-    return "none";
-  }, [targetKind, animeId, animeEpisodeId, mangaId, mangaChapterId]);
+    return mangaChapterId
+      ? `chapter:${mangaChapterId}`
+      : `series:${mangaId ?? "none"}`;
+  }, [mangaId, mangaChapterId]);
 
   // top actions
   const [isWatched, setIsWatched] = useState(false);
@@ -76,31 +56,18 @@ export default function ActionBox({
   );
   const [ratingBusy, setRatingBusy] = useState(false);
 
-  const isAnime = targetKind === "anime";
-  const isManga = targetKind === "manga";
-
-  // ✅ For now: manga marks are not wired (no manga mark helpers imported here),
-  // so we disable the mark/rating buttons to avoid hidden breaks.
-  const marksEnabled = isAnime && Boolean(animeId);
-
-  // ✅ load watched/liked/watchlist/rating state from DB (anime only for now)
+  // ✅ load watched/liked/watchlist/rating state from DB (series OR chapter scope)
   useEffect(() => {
     let mounted = true;
 
     async function load() {
-      // reset defaults when scope changes
-      setIsWatched(false);
-      setIsLiked(false);
-      setInWatchlist(false);
-      setHalfStars(null);
-
-      if (!marksEnabled) return;
+      if (!mangaId) return;
 
       const [watchedRes, likedRes, watchlistRes, ratingRes] = await Promise.all([
-        getMyAnimeWatchedMark(animeId as string, animeEpisodeId),
-        getMyAnimeLikedMark(animeId as string, animeEpisodeId),
-        getMyAnimeWatchlistMark(animeId as string, animeEpisodeId),
-        getMyAnimeRatingMark(animeId as string, animeEpisodeId),
+        getMyMangaWatchedMark(mangaId, mangaChapterId),
+        getMyMangaLikedMark(mangaId, mangaChapterId),
+        getMyMangaWatchlistMark(mangaId, mangaChapterId),
+        getMyMangaRatingMark(mangaId, mangaChapterId),
       ]);
 
       if (!mounted) return;
@@ -122,55 +89,67 @@ export default function ActionBox({
     return () => {
       mounted = false;
     };
-  }, [marksEnabled, animeId, animeEpisodeId, scopeKey]);
+  }, [mangaId, mangaChapterId, scopeKey]);
 
   async function toggleWatched() {
-    if (!marksEnabled) return;
+    if (!mangaId) {
+      setIsWatched((v) => !v);
+      return;
+    }
     if (watchBusy) return;
 
     const next = !isWatched;
     setIsWatched(next);
     setWatchBusy(true);
 
-    const { error } = await setMyAnimeWatchedMark(animeId as string, next, animeEpisodeId);
+    const { error } = await setMyMangaWatchedMark(mangaId, next, mangaChapterId);
     if (error) setIsWatched(!next);
 
     setWatchBusy(false);
   }
 
   async function toggleLiked() {
-    if (!marksEnabled) return;
+    if (!mangaId) {
+      setIsLiked((v) => !v);
+      return;
+    }
     if (likeBusy) return;
 
     const next = !isLiked;
     setIsLiked(next);
     setLikeBusy(true);
 
-    const { error } = await setMyAnimeLikedMark(animeId as string, next, animeEpisodeId);
+    const { error } = await setMyMangaLikedMark(mangaId, next, mangaChapterId);
     if (error) setIsLiked(!next);
 
     setLikeBusy(false);
   }
 
   async function toggleWatchlist() {
-    if (!marksEnabled) return;
+    if (!mangaId) {
+      setInWatchlist((v) => !v);
+      return;
+    }
     if (watchlistBusy) return;
 
     const next = !inWatchlist;
     setInWatchlist(next);
     setWatchlistBusy(true);
 
-    const { error } = await setMyAnimeWatchlistMark(animeId as string, next, animeEpisodeId);
+    const { error } = await setMyMangaWatchlistMark(mangaId, next, mangaChapterId);
     if (error) setInWatchlist(!next);
 
     setWatchlistBusy(false);
   }
 
   async function setRatingHalfStars(nextHalfStars: number) {
-    if (!marksEnabled) return;
-
     const clamped = clampInt(nextHalfStars, 1, 10);
     const nextValue = halfStars === clamped ? null : clamped;
+
+    if (!mangaId) {
+      setHalfStars(nextValue);
+      return;
+    }
 
     if (ratingBusy) return;
 
@@ -178,13 +157,11 @@ export default function ActionBox({
     setHalfStars(nextValue);
     setRatingBusy(true);
 
-    const { error } = await setMyAnimeRatingMark(animeId as string, nextValue, animeEpisodeId);
+    const { error } = await setMyMangaRatingMark(mangaId, nextValue, mangaChapterId);
     if (error) setHalfStars(prev);
 
     setRatingBusy(false);
   }
-
-  const disableMarksUi = !marksEnabled;
 
   return (
     <div className="w-full max-w-[240px] overflow-hidden rounded-md border border-gray-800 bg-[#2b323a] text-gray-200 shadow-sm">
@@ -200,10 +177,10 @@ export default function ActionBox({
               ].join(" ")}
             />
           }
-          label={isWatched ? "Watched" : "Watch"}
+          label={isWatched ? "Watched" : "Read"}
           pressed={isWatched}
           onClick={toggleWatched}
-          disabled={disableMarksUi || watchBusy}
+          disabled={watchBusy}
         />
 
         <TopAction
@@ -219,7 +196,7 @@ export default function ActionBox({
           label="Like"
           pressed={isLiked}
           onClick={toggleLiked}
-          disabled={disableMarksUi || likeBusy}
+          disabled={likeBusy}
         />
 
         <TopAction
@@ -235,7 +212,7 @@ export default function ActionBox({
           label="Watchlist"
           pressed={inWatchlist}
           onClick={toggleWatchlist}
-          disabled={disableMarksUi || watchlistBusy}
+          disabled={watchlistBusy}
           hideRightDivider
         />
       </div>
@@ -246,11 +223,6 @@ export default function ActionBox({
       <div className="px-4 py-1.5">
         <div className="mb-0.5 text-center text-xs font-semibold text-gray-300">
           {halfStars == null ? "Rate" : "Rated"}
-          {isManga ? (
-            <span className="ml-2 text-[10px] font-normal text-gray-400">
-              (marks not wired yet)
-            </span>
-          ) : null}
         </div>
 
         <div className="flex justify-center gap-[6px]">
@@ -264,11 +236,11 @@ export default function ActionBox({
                 className="relative"
                 onMouseLeave={() => setHoverHalfStars(null)}
               >
-                <StarVisual filledPercent={filled} dim={ratingBusy || disableMarksUi} />
+                <StarVisual filledPercent={filled} dim={ratingBusy} />
 
                 <button
                   type="button"
-                  disabled={disableMarksUi || ratingBusy}
+                  disabled={ratingBusy}
                   className="absolute inset-y-0 left-0 w-1/2"
                   onMouseEnter={() => setHoverHalfStars(starIndex * 2 - 1)}
                   onFocus={() => setHoverHalfStars(starIndex * 2 - 1)}
@@ -279,7 +251,7 @@ export default function ActionBox({
 
                 <button
                   type="button"
-                  disabled={disableMarksUi || ratingBusy}
+                  disabled={ratingBusy}
                   className="absolute inset-y-0 right-0 w-1/2"
                   onMouseEnter={() => setHoverHalfStars(starIndex * 2)}
                   onFocus={() => setHoverHalfStars(starIndex * 2)}

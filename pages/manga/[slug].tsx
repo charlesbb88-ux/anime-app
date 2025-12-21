@@ -22,7 +22,7 @@ import PostFeed from "../../components/PostFeed";
 import GlobalLogModal from "@/components/reviews/GlobalLogModal";
 
 // ✅ Letterboxd-style action box (reusable)
-import ActionBox from "@/components/actions/ActionBox";
+import MangaActionBox from "@/components/actions/MangaActionBox";
 
 type Manga = {
   id: string;
@@ -85,6 +85,9 @@ const MangaPage: NextPage = () => {
 
   // ✅ log modal open/close
   const [logOpen, setLogOpen] = useState(false);
+
+  // ✅ NEW: ActionBox refresh nonce (matches anime page pattern)
+  const [actionBoxNonce, setActionBoxNonce] = useState(0);
 
   // ✅ NEW: confirmation count (manga series logs)
   const [myMangaSeriesLogCount, setMyMangaSeriesLogCount] = useState<
@@ -437,8 +440,13 @@ const MangaPage: NextPage = () => {
               )}
             </div>
 
+            {/* ✅ ActionBox wiring (LIKE ANIME MAIN PAGE) */}
             <div className="mt-3">
-              <ActionBox onOpenLog={() => setLogOpen(true)} />
+              <MangaActionBox
+                mangaId={manga.id}
+                onOpenLog={() => setLogOpen(true)}
+                onShowActivity={() => router.push(`/manga/${slug}/activity`)}
+              />
             </div>
           </div>
         </div>
@@ -625,8 +633,13 @@ const MangaPage: NextPage = () => {
           console.log("[manga log] myCount:", myCount, "err:", myErr);
 
           if (!myErr) setMyMangaSeriesLogCount(myCount ?? 0);
-        }}
 
+          // ✅ match anime page behavior: refresh marks UI + (optionally) feed
+          setActionBoxNonce((n) => n + 1);
+
+          // If you want the new review/log post to show immediately in the discussion feed:
+          setFeedNonce((n) => n + 1);
+        }}
       />
     </>
   );

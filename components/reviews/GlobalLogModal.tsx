@@ -15,7 +15,6 @@ import {
   setMyAnimeLikedMark,
 } from "@/lib/marks";
 
-// ✅ Reviews
 import {
   createAnimeSeriesReview,
   createAnimeEpisodeReview,
@@ -45,7 +44,7 @@ type Props = {
   onSuccess?: () => void;
 };
 
-/* -------------------- Half-star helpers (ActionBox behavior) -------------------- */
+/* -------------------- helpers -------------------- */
 
 function clampInt(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.round(n)));
@@ -95,15 +94,18 @@ function formatWatchedOn(d: Date) {
   });
 }
 
-// ✅ Map modal half-stars (1..10) to a 0..100 review rating (10 steps).
-// If untouched, return null (so we don't force a rating).
+// Map half-stars (1..10) to rating 0..100 in 10-point steps.
+// If untouched, return null so we don't force a rating.
 function halfStarsTo100(halfStars: number | null): number | null {
   if (halfStars === null) return null;
-  const hs = clampInt(halfStars, 1, 10); // 1..10
+  const hs = clampInt(halfStars, 1, 10);
   return Math.round((hs / 10) * 100); // 10..100
 }
 
-async function getAuthedUserId(): Promise<{ userId: string | null; error: any }> {
+/* -------------------- Manga marks (local) -------------------- */
+/* Keeps lib/marks.ts untouched; we implement manga marks in this file. */
+
+async function getAuthedUser(): Promise<{ userId: string | null; error: any }> {
   const {
     data: { user },
     error,
@@ -114,6 +116,64 @@ async function getAuthedUserId(): Promise<{ userId: string | null; error: any }>
 
   return { userId: user.id, error: null };
 }
+
+function applyMangaScope(q: any, manga_id: string, manga_chapter_id?: string | null) {
+  q.eq("manga_id", manga_id);
+
+  // series scope = chapter_id null
+  // chapter scope = chapter_id = provided id
+  if (manga_chapter_id) q.eq("manga_chapter_id", manga_chapter_id);
+  else q.is("manga_chapter_id", null);
+
+  // keep these null so we never mix with anime
+  q.is("anime_id", null).is("anime_episode_id", null);
+
+  return q;
+}
+
+async function setMyMangaMark(
+  kind: "watched" | "liked" | "rating",
+  manga_id: string,
+  manga_chapter_id: string | null,
+  value: boolean | number | null
+): Promise<{ error: any }> {
+  const { userId, error: userErr } = await getAuthedUser();
+  if (userErr || !userId) return { error: userErr ?? new Error("Not authenticated") };
+
+  // delete existing mark in this SAME scope
+  const delQ = supabase
+    .from("user_marks")
+    .delete()
+    .eq("user_id", userId)
+    .eq("kind", kind);
+
+  applyMangaScope(delQ, manga_id, manga_chapter_id);
+
+  const del = await delQ;
+  if (del.error) return { error: del.error };
+
+  // if turning off / clearing, we’re done
+  if (kind === "liked" && value === false) return { error: null };
+  if (kind === "rating" && value == null) return { error: null };
+  if (kind === "watched" && value === false) return { error: null };
+
+  const insertRow: any = {
+    user_id: userId,
+    kind,
+    manga_id,
+    manga_chapter_id: manga_chapter_id ?? null,
+  };
+
+  if (kind === "rating") {
+    const clamped = clampInt(Number(value ?? 0), 1, 10);
+    insertRow.stars = clamped;
+  }
+
+  const { error } = await supabase.from("user_marks").insert(insertRow);
+  return { error };
+}
+
+/* -------------------- Component -------------------- */
 
 export default function GlobalLogModal({
   open,
@@ -132,23 +192,21 @@ export default function GlobalLogModal({
   const [content, setContent] = useState<string>("");
   const [containsSpoilers, setContainsSpoilers] = useState<boolean>(false);
 
-  // ✅ Controls whether we create a log/activity entry
-  // - Series: “Log in Journal”
-  // - Episode: same idea (“Log episode in Journal”)
+  // “Log in Journal” checkbox
   const [logWatchToActivity, setLogWatchToActivity] = useState<boolean>(false);
 
-  // ✅ When user checks the box, freeze a "watched on" date for the label
+  // freeze a "watched on" date label
   const [watchedOnLabel, setWatchedOnLabel] = useState<string>("");
 
-  // ✅ Rating mark (half-stars 1..10) – same behavior as ActionBox
+  // Rating mark (half-stars 1..10)
   const [hoverHalfStars, setHoverHalfStars] = useState<number | null>(null);
-  const [halfStars, setHalfStars] = useState<number | null>(null); // null = untouched/blank in modal
+  const [halfStars, setHalfStars] = useState<number | null>(null);
   const shownHalfStars = useMemo(
     () => hoverHalfStars ?? halfStars ?? 0,
     [hoverHalfStars, halfStars]
   );
 
-  // ✅ Like choice in THIS modal (null = untouched; true/false = explicit choice)
+  // Like choice in THIS modal (null = untouched; true/false = explicit choice)
   const [likeChoice, setLikeChoice] = useState<boolean | null>(null);
 
   const [saving, setSaving] = useState<boolean>(false);
@@ -162,10 +220,7 @@ export default function GlobalLogModal({
     return null;
   }, [animeEpisodeId, animeId, mangaChapterId, mangaId]);
 
-  const isAnimeTarget = target === "animeSeries" || target === "animeEpisode";
-  const showLikeAndStars = isAnimeTarget && Boolean(animeId);
-
-  const showJournalCheckbox = target === "animeSeries" || target === "animeEpisode";
+  const isEpisodeLikeTarget = target === "animeEpisode" || target === "mangaChapter";
 
   const canSubmit = useMemo(() => {
     if (saving) return false;
@@ -179,17 +234,22 @@ export default function GlobalLogModal({
     return false;
   }, [saving, target, animeEpisodeId, animeId, mangaChapterId, mangaId]);
 
-  // ✅ Reset on open (modal always opens blank: no stars + no like)
+  // ✅ IMPORTANT: only show the checkbox/like/stars if the modal has a valid target combo.
+  // This prevents “it looks clickable but Save is disabled” confusion.
+  const showLikeAndStars = canSubmit;
+  const showJournalCheckbox = canSubmit;
+
+  // Reset on open (modal opens blank: no stars + no like)
   useEffect(() => {
     if (!open) return;
 
     setContent("");
     setContainsSpoilers(false);
 
-    // ✅ default checkbox behavior:
-    // - Series: default OFF (so it behaves like your “just marks + optional review” path)
-    // - Episode: default ON (so it keeps your current behavior of creating an episode log)
-    if (animeEpisodeId) {
+    // default checkbox behavior:
+    // - Episode/chapter: default ON
+    // - Series: default OFF
+    if (isEpisodeLikeTarget) {
       setLogWatchToActivity(true);
       setWatchedOnLabel(formatWatchedOn(new Date()));
     } else {
@@ -199,26 +259,21 @@ export default function GlobalLogModal({
 
     setHoverHalfStars(null);
     setHalfStars(null);
-
     setLikeChoice(null);
 
     setSaving(false);
     setError("");
-  }, [open, animeEpisodeId]);
+  }, [open, isEpisodeLikeTarget]);
 
   function handleToggleJournal(checked: boolean) {
     setLogWatchToActivity(checked);
-
-    if (checked) {
-      setWatchedOnLabel(formatWatchedOn(new Date()));
-    } else {
-      setWatchedOnLabel("");
-    }
+    if (checked) setWatchedOnLabel(formatWatchedOn(new Date()));
+    else setWatchedOnLabel("");
   }
 
   function setRatingHalfStars(nextHalfStars: number) {
     const clamped = clampInt(nextHalfStars, 1, 10);
-    const nextValue = halfStars === clamped ? null : clamped; // toggle-off if same
+    const nextValue = halfStars === clamped ? null : clamped;
     setHalfStars(nextValue);
   }
 
@@ -242,19 +297,18 @@ export default function GlobalLogModal({
       const trimmed = content.trim();
       const reviewRating = halfStarsTo100(halfStars);
 
+      // Like is only TRUE if explicitly set true. If untouched (null), treat as false for payload fields.
       const snapshotLiked = likeChoice === true;
       const snapshotRating = reviewRating;
 
-      // ✅ ANIME EPISODE
+      /* ==========================
+         ANIME EPISODE
+      ========================== */
       if (target === "animeEpisode") {
-        if (!animeId || !animeEpisodeId) {
-          throw new Error("Missing animeId or animeEpisodeId.");
-        }
+        if (!animeId || !animeEpisodeId) throw new Error("Missing animeId or animeEpisodeId.");
 
         let reviewId: string | null = null;
 
-        // ✅ If they wrote text, create the episode review via helper
-        // This should also create the feed post (same behavior as your test button)
         if (trimmed) {
           const result = await createAnimeEpisodeReview({
             anime_id: animeId,
@@ -262,34 +316,30 @@ export default function GlobalLogModal({
             rating: snapshotRating,
             content: trimmed,
             contains_spoilers: containsSpoilers,
-            author_liked: snapshotLiked, // ✅ supported by helper
+            author_liked: snapshotLiked,
           });
-
           if (result.error) throw result.error;
           reviewId = result.data?.id ?? null;
         }
 
-        // ✅ Marks (episode-scoped)
-        // watched: always true on save
+        // Marks (episode-scoped): watched always, liked/rating only if touched
         {
           const { error } = await setMyAnimeWatchedMark(animeId, true, animeEpisodeId);
           if (error) throw error;
         }
 
-        // like mark only if user interacted with heart in this modal
         if (likeChoice !== null) {
           const { error } = await setMyAnimeLikedMark(animeId, likeChoice, animeEpisodeId);
           if (error) throw error;
         }
 
-        // rating mark only if user touched stars in this modal
         if (halfStars !== null) {
           const nextValue = clampInt(halfStars, 1, 10);
           const { error } = await setMyAnimeRatingMark(animeId, nextValue, animeEpisodeId);
           if (error) throw error;
         }
 
-        // ✅ ONLY create episode log/activity entry if checkbox is ON
+        // ONLY create log if checkbox ON
         if (logWatchToActivity) {
           const { error } = await createAnimeEpisodeLog({
             anime_id: animeId,
@@ -303,7 +353,6 @@ export default function GlobalLogModal({
             note: trimmed ? trimmed : null,
             contains_spoilers: containsSpoilers,
           });
-
           if (error) throw error;
         }
 
@@ -312,63 +361,46 @@ export default function GlobalLogModal({
         return;
       }
 
-      // ✅ ANIME SERIES
+      /* ==========================
+         ANIME SERIES
+      ========================== */
       if (target === "animeSeries") {
         if (!animeId) throw new Error("Missing animeId.");
 
-        // always mark watched
+        // watched always
         {
           const { error } = await setMyAnimeWatchedMark(animeId, true);
           if (error) throw error;
         }
 
-        // ✅ unchecked (NOT journal): apply marks + INSERT REVIEW
-        if (!logWatchToActivity) {
-          if (halfStars !== null) {
-            const nextValue = clampInt(halfStars, 1, 10);
-            const { error } = await setMyAnimeRatingMark(animeId, nextValue);
-            if (error) throw error;
-          }
-
-          if (likeChoice !== null) {
-            const { error } = await setMyAnimeLikedMark(animeId, likeChoice);
-            if (error) throw error;
-          }
-
-          if (trimmed) {
-            const result = await createAnimeSeriesReview({
-              anime_id: animeId,
-              rating: snapshotRating,
-              content: trimmed,
-              contains_spoilers: containsSpoilers,
-              author_liked: snapshotLiked,
-            });
-
-            if (result.error) throw result.error;
-          }
-
-          onClose();
-          onSuccess?.();
-          return;
+        // liked/rating only if touched
+        if (halfStars !== null) {
+          const nextValue = clampInt(halfStars, 1, 10);
+          const { error } = await setMyAnimeRatingMark(animeId, nextValue);
+          if (error) throw error;
         }
 
-        // ✅ checked (journal): create a series log row (activity entry)
+        if (likeChoice !== null) {
+          const { error } = await setMyAnimeLikedMark(animeId, likeChoice);
+          if (error) throw error;
+        }
+
+        // review optional
+        let reviewId: string | null = null;
+        if (trimmed) {
+          const result = await createAnimeSeriesReview({
+            anime_id: animeId,
+            rating: snapshotRating,
+            content: trimmed,
+            contains_spoilers: containsSpoilers,
+            author_liked: snapshotLiked,
+          });
+          if (result.error) throw result.error;
+          reviewId = result.data?.id ?? null;
+        }
+
+        // log optional (checkbox)
         if (logWatchToActivity) {
-          let reviewId: string | null = null;
-
-          if (trimmed) {
-            const result = await createAnimeSeriesReview({
-              anime_id: animeId,
-              rating: snapshotRating,
-              content: trimmed,
-              contains_spoilers: containsSpoilers,
-              author_liked: snapshotLiked,
-            });
-
-            if (result.error) throw result.error;
-            reviewId = result.data?.id ?? null;
-          }
-
           const { error } = await createAnimeSeriesLog({
             anime_id: animeId,
             visibility: visibility ?? undefined,
@@ -381,115 +413,133 @@ export default function GlobalLogModal({
             contains_spoilers: containsSpoilers,
           });
           if (error) throw error;
-
-          onClose();
-          onSuccess?.();
-          return;
         }
-      }
-
-      // ✅ MANGA CHAPTER
-      if (target === "mangaChapter") {
-        if (!mangaId || !mangaChapterId) {
-          throw new Error("Missing mangaId or mangaChapterId.");
-        }
-
-        let reviewId: string | null = null;
-
-        if (trimmed) {
-          const { userId, error: userErr } = await getAuthedUserId();
-          if (userErr) throw userErr;
-          if (!userId) throw new Error("Not authenticated");
-
-          const { data, error: insErr } = await supabase
-            .from("reviews")
-            .insert({
-              user_id: userId,
-              manga_id: mangaId,
-              manga_chapter_id: mangaChapterId,
-              rating: snapshotRating,
-              content: trimmed,
-              contains_spoilers: containsSpoilers,
-              visibility: visibility ?? "public",
-              author_liked: snapshotLiked,
-            })
-            .select("id")
-            .single();
-
-          if (insErr) throw insErr;
-          reviewId = data?.id ?? null;
-        }
-
-        const { error } = await createMangaChapterLog({
-          manga_id: mangaId,
-          manga_chapter_id: mangaChapterId,
-          visibility: visibility ?? undefined,
-
-          rating: snapshotRating,
-          liked: snapshotLiked,
-          review_id: reviewId,
-
-          note: trimmed ? trimmed : null,
-          contains_spoilers: containsSpoilers,
-        });
-
-        if (error) throw error;
 
         onClose();
         onSuccess?.();
         return;
       }
 
-      // ✅ MANGA SERIES
-      if (target === "mangaSeries") {
-        if (!mangaId) throw new Error("Missing mangaId.");
+      /* ==========================
+         MANGA CHAPTER
+      ========================== */
+      if (target === "mangaChapter") {
+        if (!mangaId || !mangaChapterId) throw new Error("Missing mangaId or mangaChapterId.");
 
         let reviewId: string | null = null;
 
         if (trimmed) {
-          const { userId, error: userErr } = await getAuthedUserId();
-          if (userErr) throw userErr;
-          if (!userId) throw new Error("Not authenticated");
-
-          const { data, error: insErr } = await supabase
-            .from("reviews")
-            .insert({
-              user_id: userId,
-              manga_id: mangaId,
-              rating: snapshotRating,
-              content: trimmed,
-              contains_spoilers: containsSpoilers,
-              visibility: visibility ?? "public",
-              author_liked: snapshotLiked,
-            })
-            .select("id")
-            .single();
-
-          if (insErr) throw insErr;
-          reviewId = data?.id ?? null;
+          const result = await createMangaChapterReview({
+            manga_id: mangaId,
+            manga_chapter_id: mangaChapterId,
+            rating: snapshotRating,
+            content: trimmed,
+            contains_spoilers: containsSpoilers,
+            author_liked: snapshotLiked,
+          });
+          if (result.error) throw result.error;
+          reviewId = result.data?.id ?? null;
         }
 
-        const { error } = await createMangaSeriesLog({
-          manga_id: mangaId,
-          visibility: visibility ?? undefined,
+        // Marks (chapter-scoped): watched always, liked/rating only if touched
+        {
+          const { error } = await setMyMangaMark("watched", mangaId, mangaChapterId, true);
+          if (error) throw error;
+        }
 
-          rating: snapshotRating,
-          liked: snapshotLiked,
-          review_id: reviewId,
+        if (likeChoice !== null) {
+          const { error } = await setMyMangaMark("liked", mangaId, mangaChapterId, likeChoice);
+          if (error) throw error;
+        }
 
-          note: trimmed ? trimmed : null,
-          contains_spoilers: containsSpoilers,
-        });
+        if (halfStars !== null) {
+          const nextValue = clampInt(halfStars, 1, 10);
+          const { error } = await setMyMangaMark("rating", mangaId, mangaChapterId, nextValue);
+          if (error) throw error;
+        }
 
-        if (error) throw error;
+        // ONLY create log if checkbox ON
+        if (logWatchToActivity) {
+          const { error } = await createMangaChapterLog({
+            manga_id: mangaId,
+            manga_chapter_id: mangaChapterId,
+            visibility: visibility ?? undefined,
+
+            rating: snapshotRating,
+            liked: snapshotLiked,
+            review_id: reviewId,
+
+            note: trimmed ? trimmed : null,
+            contains_spoilers: containsSpoilers,
+          });
+          if (error) throw error;
+        }
+
+        onClose();
+        onSuccess?.();
+        return;
+      }
+
+      /* ==========================
+         MANGA SERIES
+      ========================== */
+      if (target === "mangaSeries") {
+        if (!mangaId) throw new Error("Missing mangaId.");
+
+        // watched always
+        {
+          const { error } = await setMyMangaMark("watched", mangaId, null, true);
+          if (error) throw error;
+        }
+
+        // liked/rating only if touched
+        if (likeChoice !== null) {
+          const { error } = await setMyMangaMark("liked", mangaId, null, likeChoice);
+          if (error) throw error;
+        }
+
+        if (halfStars !== null) {
+          const nextValue = clampInt(halfStars, 1, 10);
+          const { error } = await setMyMangaMark("rating", mangaId, null, nextValue);
+          if (error) throw error;
+        }
+
+        // review optional
+        let reviewId: string | null = null;
+        if (trimmed) {
+          const result = await createMangaSeriesReview({
+            manga_id: mangaId,
+            rating: snapshotRating,
+            content: trimmed,
+            contains_spoilers: containsSpoilers,
+            author_liked: snapshotLiked,
+          });
+          if (result.error) throw result.error;
+          reviewId = result.data?.id ?? null;
+        }
+
+        // log optional (checkbox)
+        if (logWatchToActivity) {
+          const { error } = await createMangaSeriesLog({
+            manga_id: mangaId,
+            visibility: visibility ?? undefined,
+
+            rating: snapshotRating,
+            liked: snapshotLiked,
+            review_id: reviewId,
+
+            note: trimmed ? trimmed : null,
+            contains_spoilers: containsSpoilers,
+          });
+          if (error) throw error;
+        }
 
         onClose();
         onSuccess?.();
         return;
       }
     } catch (err: any) {
-      const msg =
-        err?.message || (typeof err === "string" ? err : "") || "Failed to save log.";
+      const msg = err?.message || (typeof err === "string" ? err : "") || "Failed to save log.";
       setError(msg);
     } finally {
       setSaving(false);
@@ -501,13 +551,7 @@ export default function GlobalLogModal({
   const heartFill = likeChoice === true ? "fill-current" : "";
 
   const checkboxLabel =
-    target === "animeEpisode"
-      ? logWatchToActivity && watchedOnLabel
-        ? `Logged on ${watchedOnLabel}`
-        : "Log in Journal"
-      : logWatchToActivity && watchedOnLabel
-        ? `Watched on ${watchedOnLabel}`
-        : "Log in Journal";
+    logWatchToActivity && watchedOnLabel ? `Logged on ${watchedOnLabel}` : "Log in Journal";
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center" aria-modal="true" role="dialog">
@@ -551,7 +595,7 @@ export default function GlobalLogModal({
           </div>
 
           <div className="flex flex-col gap-4">
-            {/* ✅ checkbox now shows for animeEpisode too */}
+            {/* Log checkbox */}
             {showJournalCheckbox ? (
               <label className="flex items-center gap-2 text-sm text-zinc-200">
                 <input
@@ -564,7 +608,7 @@ export default function GlobalLogModal({
               </label>
             ) : null}
 
-            {/* REVIEW BOX */}
+            {/* Review box */}
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-200">Review</label>
               <textarea
@@ -580,7 +624,7 @@ export default function GlobalLogModal({
               />
             </div>
 
-            {/* ✅ LIKE (heart) — show for animeSeries + animeEpisode */}
+            {/* Like (heart) */}
             {showLikeAndStars ? (
               <div className="flex justify-center">
                 <button
@@ -607,7 +651,7 @@ export default function GlobalLogModal({
               </div>
             ) : null}
 
-            {/* ✅ STARS — show for animeSeries + animeEpisode */}
+            {/* Stars */}
             {showLikeAndStars ? (
               <div className="pt-1">
                 <div className="mb-1 text-center text-xs font-semibold text-zinc-300">
@@ -683,10 +727,9 @@ export default function GlobalLogModal({
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className={`rounded-md px-3 py-2 text-sm text-white ${canSubmit
-                  ? "bg-emerald-600 hover:bg-emerald-500"
-                  : "bg-zinc-700 opacity-60"
-                  }`}
+                className={`rounded-md px-3 py-2 text-sm text-white ${
+                  canSubmit ? "bg-emerald-600 hover:bg-emerald-500" : "bg-zinc-700 opacity-60"
+                }`}
               >
                 {saving ? "Saving..." : "Save"}
               </button>

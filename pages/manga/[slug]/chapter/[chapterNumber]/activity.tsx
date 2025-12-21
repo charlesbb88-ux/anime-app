@@ -1,4 +1,4 @@
-// pages/manga/[slug]/activity.tsx
+// pages/manga/[slug]/chapter/[chapterNumber]/activity.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -11,7 +11,7 @@ type ActivityItem =
   | {
       id: string;
       kind: "log";
-      type: "manga_series" | "manga_chapter";
+      type: "manga_chapter";
       title: string;
       subLabel?: string;
       rating: number | null;
@@ -22,8 +22,9 @@ type ActivityItem =
   | {
       id: string;
       kind: "review";
-      type: "manga_series_review";
+      type: "manga_chapter_review";
       title: string;
+      subLabel?: string;
       logged_at: string; // created_at from reviews
       rating: number | null; // 0..100
       content: string | null;
@@ -34,15 +35,16 @@ type ActivityItem =
       kind: "mark";
       type: "watched" | "liked" | "watchlist" | "rating";
       title: string;
+      subLabel?: string;
       logged_at: string;
-      // ⭐ rating uses HALF-STARS stored as 1..10
+      // rating uses HALF-STARS stored as 1..10
       stars?: number | null;
     };
 
 function getMangaDisplayTitle(manga: any): string {
   return (
     manga?.title_english ||
-    manga?.title_preferred ||
+    manga?.title_romaji ||
     manga?.title_native ||
     manga?.title ||
     "Unknown manga"
@@ -84,7 +86,7 @@ function clampInt(n: number, min: number, max: number) {
 }
 
 function computeStarFillPercent(halfStars: number, starIndex: number) {
-  const starHalfStart = (starIndex - 1) * 2; // 0,2,4,6,8
+  const starHalfStart = (starIndex - 1) * 2;
   const remaining = halfStars - starHalfStart;
 
   if (remaining >= 2) return 100 as const;
@@ -123,9 +125,25 @@ function HalfStarsRow({ halfStars }: { halfStars: number }) {
   );
 }
 
-const MangaActivityPage: NextPage = () => {
+/* -------------------- Minimal manga fetch by slug -------------------- */
+
+async function getMangaBySlug(slug: string): Promise<{ data: any | null; error: any }> {
+  const { data, error } = await supabase
+    .from("manga")
+    .select("*")
+    .eq("slug", slug)
+    .maybeSingle();
+
+  if (error || !data) return { data: null, error: error ?? new Error("Manga not found") };
+  return { data, error: null };
+}
+
+const MangaChapterActivityPage: NextPage = () => {
   const router = useRouter();
-  const { slug } = router.query as { slug?: string };
+  const { slug, chapterNumber } = router.query as {
+    slug?: string;
+    chapterNumber?: string;
+  };
 
   const [loading, setLoading] = useState(true);
   const [pageTitle, setPageTitle] = useState<string>("Your activity");
@@ -149,69 +167,78 @@ const MangaActivityPage: NextPage = () => {
         return;
       }
 
-      if (!slug) {
+      // prevent "Loading…" getting stuck on first render timing
+      if (!slug || !chapterNumber) {
         if (mounted) setLoading(false);
         return;
       }
 
-      // ✅ fetch manga by slug
-      const mangaRes = await supabase
-        .from("manga")
-        .select(
-          "id, title, title_english, title_native, title_preferred"
-        )
-        .eq("slug", slug)
-        .maybeSingle();
+      const chNum = Number(chapterNumber);
+      if (!Number.isFinite(chNum)) {
+        setError("Invalid chapter number.");
+        setLoading(false);
+        return;
+      }
+
+      const res: any = await getMangaBySlug(slug);
+      const manga = res?.data ?? null;
+      const mangaErr = res?.error ?? null;
 
       if (!mounted) return;
 
-      const manga = mangaRes.data ?? null;
-
-      if (mangaRes.error || !manga?.id) {
+      if (mangaErr || !manga?.id) {
         setError("Manga not found.");
         setLoading(false);
         return;
       }
 
       const mangaTitle = getMangaDisplayTitle(manga);
-      setPageTitle(`Your activity · ${mangaTitle}`);
+
+      // ✅ find the chapter row for this manga + chapter_number
+      const chapterRes = await supabase
+        .from("manga_chapters")
+        .select("id, chapter_number")
+        .eq("manga_id", manga.id)
+        .eq("chapter_number", chNum)
+        .maybeSingle();
+
+      if (!mounted) return;
+
+      if (chapterRes.error) {
+        console.error("Chapter activity: chapter lookup error", chapterRes.error);
+      }
+
+      const chapterRow = chapterRes.data ?? null;
+      if (!chapterRow?.id) {
+        setError(`Chapter ${chNum} not found.`);
+        setLoading(false);
+        return;
+      }
+
+      setPageTitle(`Your activity · ${mangaTitle} · Chapter ${chNum}`);
 
       const [
-        seriesLogs,
         chapterLogs,
-        seriesReviews,
+        chapterReviews,
         watchedMark,
         likedMark,
         watchlistMark,
         ratingMark,
       ] = await Promise.all([
         supabase
-          .from("manga_series_logs")
+          .from("manga_chapter_logs")
           .select("id, logged_at, rating, note, visibility")
           .eq("user_id", user.id)
           .eq("manga_id", manga.id)
+          .eq("manga_chapter_id", chapterRow.id)
           .order("logged_at", { ascending: false }),
 
-        // ✅ chapter logs (manga version of episode logs)
-        // expects table: manga_chapter_logs with manga_chapter_id -> manga_chapters table
-        supabase
-          .from("manga_chapter_logs")
-          .select(
-            `id, logged_at, rating, note, visibility,
-             chapter:manga_chapter_id ( chapter_number ),
-             manga:manga_id ( title_english, title_preferred, title_native, title )`
-          )
-          .eq("user_id", user.id)
-          .eq("manga_id", manga.id)
-          .order("logged_at", { ascending: false }),
-
-        // ✅ Reviews table: series review = manga_id set AND manga_chapter_id null
         supabase
           .from("reviews")
           .select("id, created_at, rating, content, contains_spoilers")
           .eq("user_id", user.id)
           .eq("manga_id", manga.id)
-          .is("manga_chapter_id", null)
+          .eq("manga_chapter_id", chapterRow.id)
           .order("created_at", { ascending: false }),
 
         supabase
@@ -220,7 +247,7 @@ const MangaActivityPage: NextPage = () => {
           .eq("user_id", user.id)
           .eq("kind", "watched")
           .eq("manga_id", manga.id)
-          .is("manga_chapter_id", null)
+          .eq("manga_chapter_id", chapterRow.id)
           .is("anime_id", null)
           .is("anime_episode_id", null)
           .maybeSingle(),
@@ -231,7 +258,7 @@ const MangaActivityPage: NextPage = () => {
           .eq("user_id", user.id)
           .eq("kind", "liked")
           .eq("manga_id", manga.id)
-          .is("manga_chapter_id", null)
+          .eq("manga_chapter_id", chapterRow.id)
           .is("anime_id", null)
           .is("anime_episode_id", null)
           .maybeSingle(),
@@ -242,7 +269,7 @@ const MangaActivityPage: NextPage = () => {
           .eq("user_id", user.id)
           .eq("kind", "watchlist")
           .eq("manga_id", manga.id)
-          .is("manga_chapter_id", null)
+          .eq("manga_chapter_id", chapterRow.id)
           .is("anime_id", null)
           .is("anime_episode_id", null)
           .maybeSingle(),
@@ -253,7 +280,7 @@ const MangaActivityPage: NextPage = () => {
           .eq("user_id", user.id)
           .eq("kind", "rating")
           .eq("manga_id", manga.id)
-          .is("manga_chapter_id", null)
+          .eq("manga_chapter_id", chapterRow.id)
           .is("anime_id", null)
           .is("anime_episode_id", null)
           .maybeSingle(),
@@ -261,19 +288,20 @@ const MangaActivityPage: NextPage = () => {
 
       if (!mounted) return;
 
-      if (seriesLogs.error) console.error("Manga activity: seriesLogs error", seriesLogs.error);
-      if (chapterLogs.error) console.error("Manga activity: chapterLogs error", chapterLogs.error);
-      if (seriesReviews.error) console.error("Manga activity: seriesReviews error", seriesReviews.error);
+      if (chapterLogs.error) console.error("Chapter activity: chapterLogs error", chapterLogs.error);
+      if (chapterReviews.error)
+        console.error("Chapter activity: chapterReviews error", chapterReviews.error);
 
       const merged: ActivityItem[] = [];
+      const subLabel = `Chapter ${chNum}`;
 
-      // ✅ MARKS (same behavior as your anime page currently: always show them if they exist)
       if (watchedMark.data?.id) {
         merged.push({
           id: watchedMark.data.id,
           kind: "mark",
           type: "watched",
           title: mangaTitle,
+          subLabel,
           logged_at: watchedMark.data.created_at,
         });
       }
@@ -284,6 +312,7 @@ const MangaActivityPage: NextPage = () => {
           kind: "mark",
           type: "liked",
           title: mangaTitle,
+          subLabel,
           logged_at: likedMark.data.created_at,
         });
       }
@@ -294,6 +323,7 @@ const MangaActivityPage: NextPage = () => {
           kind: "mark",
           type: "watchlist",
           title: mangaTitle,
+          subLabel,
           logged_at: watchlistMark.data.created_at,
         });
       }
@@ -304,18 +334,19 @@ const MangaActivityPage: NextPage = () => {
           kind: "mark",
           type: "rating",
           title: mangaTitle,
+          subLabel,
           logged_at: ratingMark.data.created_at,
           stars: ratingMark.data.stars ?? null,
         });
       }
 
-      // ✅ Reviews (series)
-      seriesReviews.data?.forEach((row: any) => {
+      chapterReviews.data?.forEach((row: any) => {
         merged.push({
           id: row.id,
           kind: "review",
-          type: "manga_series_review",
+          type: "manga_chapter_review",
           title: mangaTitle,
+          subLabel,
           logged_at: row.created_at,
           rating: typeof row.rating === "number" ? row.rating : null,
           content: row.content ?? null,
@@ -323,33 +354,13 @@ const MangaActivityPage: NextPage = () => {
         });
       });
 
-      // ✅ Series logs
-      seriesLogs.data?.forEach((row: any) => {
-        merged.push({
-          id: row.id,
-          kind: "log",
-          type: "manga_series",
-          title: mangaTitle,
-          rating: row.rating,
-          note: row.note,
-          logged_at: row.logged_at,
-          visibility: row.visibility,
-        });
-      });
-
-      // ✅ Chapter logs
       chapterLogs.data?.forEach((row: any) => {
-        const rowTitle = getMangaDisplayTitle(row?.manga) || mangaTitle;
-
         merged.push({
           id: row.id,
           kind: "log",
           type: "manga_chapter",
-          title: rowTitle,
-          subLabel:
-            row.chapter?.chapter_number != null
-              ? `Chapter ${row.chapter.chapter_number}`
-              : "Chapter",
+          title: mangaTitle,
+          subLabel,
           rating: row.rating,
           note: row.note,
           logged_at: row.logged_at,
@@ -357,9 +368,7 @@ const MangaActivityPage: NextPage = () => {
         });
       });
 
-      merged.sort(
-        (a, b) => new Date(b.logged_at).getTime() - new Date(a.logged_at).getTime()
-      );
+      merged.sort((a, b) => new Date(b.logged_at).getTime() - new Date(a.logged_at).getTime());
 
       setItems(merged);
       setLoading(false);
@@ -370,7 +379,7 @@ const MangaActivityPage: NextPage = () => {
     return () => {
       mounted = false;
     };
-  }, [router, slug]);
+  }, [router, slug, chapterNumber]);
 
   if (loading) {
     return (
@@ -393,15 +402,14 @@ const MangaActivityPage: NextPage = () => {
           {items.map((item) => {
             if (item.kind === "mark" && item.type === "watched") {
               return (
-                <li
-                  key={`watched-${item.id}`}
-                  className="rounded-md border border-neutral-800 p-4"
-                >
+                <li key={`watched-${item.id}`} className="rounded-md border border-neutral-800 p-4">
                   <div className="flex items-center justify-between gap-4">
                     <div className="text-sm font-medium">
-                      You marked{" "}
-                      <span className="font-bold text-black">{item.title}</span>{" "}
-                      as watched
+                      You marked <span className="font-bold text-black">{item.title}</span> as
+                      watched
+                      {item.subLabel ? (
+                        <span className="ml-2 text-neutral-400">· {item.subLabel}</span>
+                      ) : null}
                     </div>
 
                     <div className="text-xs text-neutral-500 whitespace-nowrap">
@@ -414,14 +422,13 @@ const MangaActivityPage: NextPage = () => {
 
             if (item.kind === "mark" && item.type === "liked") {
               return (
-                <li
-                  key={`liked-${item.id}`}
-                  className="rounded-md border border-neutral-800 p-4"
-                >
+                <li key={`liked-${item.id}`} className="rounded-md border border-neutral-800 p-4">
                   <div className="flex items-center justify-between gap-4">
                     <div className="text-sm font-medium">
-                      You liked{" "}
-                      <span className="font-bold text-black">{item.title}</span>
+                      You liked <span className="font-bold text-black">{item.title}</span>
+                      {item.subLabel ? (
+                        <span className="ml-2 text-neutral-400">· {item.subLabel}</span>
+                      ) : null}
                     </div>
 
                     <div className="text-xs text-neutral-500 whitespace-nowrap">
@@ -434,15 +441,14 @@ const MangaActivityPage: NextPage = () => {
 
             if (item.kind === "mark" && item.type === "watchlist") {
               return (
-                <li
-                  key={`watchlist-${item.id}`}
-                  className="rounded-md border border-neutral-800 p-4"
-                >
+                <li key={`watchlist-${item.id}`} className="rounded-md border border-neutral-800 p-4">
                   <div className="flex items-center justify-between gap-4">
                     <div className="text-sm font-medium">
-                      You added{" "}
-                      <span className="font-bold text-black">{item.title}</span>{" "}
-                      to your watchlist
+                      You added <span className="font-bold text-black">{item.title}</span> to your
+                      watchlist
+                      {item.subLabel ? (
+                        <span className="ml-2 text-neutral-400">· {item.subLabel}</span>
+                      ) : null}
                     </div>
 
                     <div className="text-xs text-neutral-500 whitespace-nowrap">
@@ -457,14 +463,13 @@ const MangaActivityPage: NextPage = () => {
               const hs = clampInt(Number(item.stars ?? 0), 0, 10);
 
               return (
-                <li
-                  key={`rating-${item.id}`}
-                  className="rounded-md border border-neutral-800 p-4"
-                >
+                <li key={`rating-${item.id}`} className="rounded-md border border-neutral-800 p-4">
                   <div className="flex items-center justify-between gap-4">
                     <div className="text-sm font-medium">
-                      You rated{" "}
-                      <span className="font-bold text-black">{item.title}</span>
+                      You rated <span className="font-bold text-black">{item.title}</span>
+                      {item.subLabel ? (
+                        <span className="ml-2 text-neutral-400">· {item.subLabel}</span>
+                      ) : null}
                       {hs > 0 ? <HalfStarsRow halfStars={hs} /> : null}
                     </div>
 
@@ -478,14 +483,13 @@ const MangaActivityPage: NextPage = () => {
 
             if (item.kind === "review") {
               return (
-                <li
-                  key={`review-${item.id}`}
-                  className="rounded-md border border-neutral-800 p-4"
-                >
+                <li key={`review-${item.id}`} className="rounded-md border border-neutral-800 p-4">
                   <div className="flex items-center justify-between gap-4">
                     <div className="text-sm font-medium">
-                      You reviewed{" "}
-                      <span className="font-bold text-black">{item.title}</span>
+                      You reviewed <span className="font-bold text-black">{item.title}</span>
+                      {item.subLabel ? (
+                        <span className="ml-2 text-neutral-400">· {item.subLabel}</span>
+                      ) : null}
                     </div>
 
                     <div className="text-xs text-neutral-500 whitespace-nowrap">
@@ -498,38 +502,6 @@ const MangaActivityPage: NextPage = () => {
 
             if (item.kind !== "log") return null;
 
-            if (item.type === "manga_series") {
-              return (
-                <li
-                  key={`log-${item.type}-${item.id}`}
-                  className="rounded-md border border-neutral-800 p-4"
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="text-sm font-medium">
-                      You read{" "}
-                      <span className="font-bold text-black">{item.title}</span>{" "}
-                      on {formatOnFullDate(item.logged_at)}
-                    </div>
-
-                    <div className="text-xs text-neutral-500 whitespace-nowrap">
-                      {formatRelativeShort(item.logged_at)}
-                    </div>
-                  </div>
-
-                  {item.rating !== null && (
-                    <div className="mt-2 text-sm">Rating: {item.rating}</div>
-                  )}
-
-                  {item.note && (
-                    <div className="mt-1 text-sm text-neutral-400 line-clamp-2">
-                      {item.note}
-                    </div>
-                  )}
-                </li>
-              );
-            }
-
-            // manga chapter logs
             return (
               <li
                 key={`log-${item.type}-${item.id}`}
@@ -537,10 +509,11 @@ const MangaActivityPage: NextPage = () => {
               >
                 <div className="flex items-center justify-between gap-4">
                   <div className="text-sm font-medium">
-                    {item.title}
-                    {item.subLabel && (
+                    You read <span className="font-bold text-black">{item.title}</span>{" "}
+                    {item.subLabel ? (
                       <span className="ml-2 text-neutral-400">· {item.subLabel}</span>
-                    )}
+                    ) : null}{" "}
+                    on {formatOnFullDate(item.logged_at)}
                   </div>
 
                   <div className="text-xs text-neutral-500 whitespace-nowrap">
@@ -548,18 +521,10 @@ const MangaActivityPage: NextPage = () => {
                   </div>
                 </div>
 
-                <div className="mt-1 text-xs text-neutral-500">
-                  {item.type.replace("_", " ")}
-                </div>
-
-                {item.rating !== null && (
-                  <div className="mt-2 text-sm">Rating: {item.rating}</div>
-                )}
+                {item.rating !== null && <div className="mt-2 text-sm">Rating: {item.rating}</div>}
 
                 {item.note && (
-                  <div className="mt-1 text-sm text-neutral-400 line-clamp-2">
-                    {item.note}
-                  </div>
+                  <div className="mt-1 text-sm text-neutral-400 line-clamp-2">{item.note}</div>
                 )}
               </li>
             );
@@ -570,4 +535,4 @@ const MangaActivityPage: NextPage = () => {
   );
 };
 
-export default MangaActivityPage;
+export default MangaChapterActivityPage;
