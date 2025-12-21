@@ -13,7 +13,7 @@ import { getAnimeBySlug, getAnimeEpisode } from "@/lib/anime";
 // ✅ episode review helper
 import { createAnimeEpisodeReview } from "@/lib/reviews";
 
-// ✅ NEW: episode log helpers
+// ✅ episode log helpers
 import { createAnimeEpisodeLog, getMyAnimeEpisodeLogCount } from "@/lib/logs";
 
 import EpisodeNavigator from "@/components/EpisodeNavigator";
@@ -21,8 +21,11 @@ import LeftSidebar from "@/components/LeftSidebar";
 import RightSidebar from "@/components/RightSidebar";
 import PostFeed from "@/components/PostFeed";
 
-// ✅ NEW: Global Log modal
+// ✅ Global Log modal
 import GlobalLogModal from "@/components/reviews/GlobalLogModal";
+
+// ✅ Letterboxd-style action box
+import ActionBox from "@/components/actions/ActionBox";
 
 const AnimeEpisodePage: NextPage = () => {
   const router = useRouter();
@@ -44,13 +47,16 @@ const AnimeEpisodePage: NextPage = () => {
   const [savingLog, setSavingLog] = useState(false);
   const [logSaveMsg, setLogSaveMsg] = useState<string | null>(null);
 
-  // ✅ NEW: my log count
+  // ✅ my log count
   const [myLogCount, setMyLogCount] = useState<number | null>(null);
 
-  // ✅ Force PostFeed refresh after saving (no PostFeed changes)
+  // ✅ Force PostFeed refresh after saving
   const [feedNonce, setFeedNonce] = useState(0);
 
-  // ✅ NEW: open/close the global log modal
+  // ✅ Force ActionBox refresh after saving
+  const [actionBoxNonce, setActionBoxNonce] = useState(0);
+
+  // ✅ open/close the global log modal
   const [logOpen, setLogOpen] = useState(false);
 
   // Normalize slug and episodeNumber to strings
@@ -137,7 +143,7 @@ const AnimeEpisodePage: NextPage = () => {
     };
   }, [anime, episodeNum, isValidEpisodeNumber]);
 
-  // ✅ NEW: fetch my log count when the episode loads
+  // ✅ fetch my log count when the episode loads
   useEffect(() => {
     if (!episode?.id) {
       setMyLogCount(null);
@@ -151,7 +157,6 @@ const AnimeEpisodePage: NextPage = () => {
       if (isCancelled) return;
 
       if (error) {
-        // Don't hard-fail the page for this; just hide the count
         console.error("Error fetching log count:", error);
         setMyLogCount(null);
         return;
@@ -330,7 +335,6 @@ const AnimeEpisodePage: NextPage = () => {
                   ← Back to anime main page
                 </Link>
 
-                {/* ✅ New: open GlobalLogModal */}
                 {anime && episode && (
                   <button
                     type="button"
@@ -380,6 +384,22 @@ const AnimeEpisodePage: NextPage = () => {
                   {logSaveMsg && (
                     <span className="text-xs text-gray-400">{logSaveMsg}</span>
                   )}
+                </div>
+              )}
+
+              {/* ✅ NEW: ActionBox (series marks) that opens episode modal */}
+              {anime && episode && (
+                <div className="mt-3">
+                  <ActionBox
+                    key={actionBoxNonce}
+                    animeId={anime.id}
+                    onOpenLog={() => setLogOpen(true)}
+                    onShowActivity={() =>
+                      router.push(
+                        `/anime/${slugString}/episode/${episodeNum}/activity`
+                      )
+                    }
+                  />
                 </div>
               )}
             </div>
@@ -469,8 +489,15 @@ const AnimeEpisodePage: NextPage = () => {
         animeEpisodeId={episode?.id ?? null}
         onSuccess={async () => {
           if (!episode?.id) return;
+
           const { count, error } = await getMyAnimeEpisodeLogCount(episode.id);
           if (!error) setMyLogCount(count);
+
+          // ✅ refresh episode feed so new review shows immediately
+          setFeedNonce((n) => n + 1);
+
+          // ✅ optional: refresh marks UI (watched/liked/watchlist/rating)
+          setActionBoxNonce((n) => n + 1);
         }}
       />
     </>

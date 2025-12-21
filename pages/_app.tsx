@@ -1,3 +1,4 @@
+// pages/_app.tsx
 "use client";
 
 import "@/styles/globals.css";
@@ -8,15 +9,23 @@ import Header from "../components/Header";
 import AuthModalManager from "../components/AuthModalManager";
 import UsernameGate from "../components/UsernameGate";
 
+type NextPageWithLayout = AppProps["Component"] & {
+  getLayout?: (page: React.ReactElement) => React.ReactNode;
+  hideHeader?: boolean;
+};
+
 export default function App({ Component, pageProps }: AppProps) {
-  const hideHeader = (Component as any).hideHeader === true;
+  const C = Component as NextPageWithLayout;
+  const hideHeader = C.hideHeader === true;
+
+  const getLayout = C.getLayout ?? ((page) => page);
 
   return (
     <UsernameGate>
       <>
         <div className="min-h-screen bg-[#f5f5f5] font-sans">
           {!hideHeader && <Header />}
-          <Component {...pageProps} />
+          {getLayout(<C {...pageProps} />)}
         </div>
 
         <AuthModalManager />
