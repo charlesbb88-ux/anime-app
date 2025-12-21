@@ -1,56 +1,90 @@
+// lib/marks.ts
+"use client";
+
 import { supabase } from "@/lib/supabaseClient";
 
 /* ======================================================
-   WATCHED (anime series)
+   Helpers
 ====================================================== */
 
-export async function getMyAnimeWatchedMark(anime_id: string) {
+async function getAuthedUser() {
   const {
     data: { user },
-    error: userErr,
+    error,
   } = await supabase.auth.getUser();
 
+  if (error || !user) {
+    return { user: null, error: error ?? new Error("Not authenticated.") };
+  }
+
+  return { user, error: null };
+}
+
+function applyAnimeScope(
+  q: any,
+  anime_id: string,
+  anime_episode_id?: string | null
+) {
+  q.eq("anime_id", anime_id);
+
+  // ✅ series scope = episode_id null
+  // ✅ episode scope = episode_id = provided id
+  if (anime_episode_id) q.eq("anime_episode_id", anime_episode_id);
+  else q.is("anime_episode_id", null);
+
+  // keep these null so we never mix with manga
+  q.is("manga_id", null).is("manga_chapter_id", null);
+
+  return q;
+}
+
+/* ======================================================
+   WATCHED (anime series OR episode)
+====================================================== */
+
+export async function getMyAnimeWatchedMark(
+  anime_id: string,
+  anime_episode_id?: string | null
+) {
+  const { user, error: userErr } = await getAuthedUser();
   if (userErr || !user) {
     return { exists: false, error: userErr ?? new Error("Not authenticated.") };
   }
 
-  const { data, error } = await supabase
+  const q = supabase
     .from("user_marks")
     .select("id")
     .eq("user_id", user.id)
-    .eq("kind", "watched")
-    .eq("anime_id", anime_id)
-    .is("anime_episode_id", null)
-    .is("manga_id", null)
-    .is("manga_chapter_id", null)
-    .maybeSingle();
+    .eq("kind", "watched");
+
+  applyAnimeScope(q, anime_id, anime_episode_id);
+
+  const { data, error } = await q.maybeSingle();
 
   if (error) return { exists: false, error };
   return { exists: Boolean(data?.id), error: null };
 }
 
-export async function setMyAnimeWatchedMark(anime_id: string, watched: boolean) {
-  const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
-
+export async function setMyAnimeWatchedMark(
+  anime_id: string,
+  watched: boolean,
+  anime_episode_id?: string | null
+) {
+  const { user, error: userErr } = await getAuthedUser();
   if (userErr || !user) {
     return { error: userErr ?? new Error("Not authenticated.") };
   }
 
-  // ✅ always remove any existing row first (prevents duplicate unique errors
-  //    and refreshes created_at when we re-insert)
-  const del = await supabase
+  // delete existing mark in this SAME scope
+  const delQ = supabase
     .from("user_marks")
     .delete()
     .eq("user_id", user.id)
-    .eq("kind", "watched")
-    .eq("anime_id", anime_id)
-    .is("anime_episode_id", null)
-    .is("manga_id", null)
-    .is("manga_chapter_id", null);
+    .eq("kind", "watched");
 
+  applyAnimeScope(delQ, anime_id, anime_episode_id);
+
+  const del = await delQ;
   if (del.error) return { error: del.error };
 
   if (!watched) return { error: null };
@@ -59,60 +93,58 @@ export async function setMyAnimeWatchedMark(anime_id: string, watched: boolean) 
     user_id: user.id,
     kind: "watched",
     anime_id,
+    anime_episode_id: anime_episode_id ?? null,
   });
 
   return { error };
 }
 
 /* ======================================================
-   LIKED (anime series)
+   LIKED (anime series OR episode)
 ====================================================== */
 
-export async function getMyAnimeLikedMark(anime_id: string) {
-  const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
-
+export async function getMyAnimeLikedMark(
+  anime_id: string,
+  anime_episode_id?: string | null
+) {
+  const { user, error: userErr } = await getAuthedUser();
   if (userErr || !user) {
     return { exists: false, error: userErr ?? new Error("Not authenticated.") };
   }
 
-  const { data, error } = await supabase
+  const q = supabase
     .from("user_marks")
     .select("id")
     .eq("user_id", user.id)
-    .eq("kind", "liked")
-    .eq("anime_id", anime_id)
-    .is("anime_episode_id", null)
-    .is("manga_id", null)
-    .is("manga_chapter_id", null)
-    .maybeSingle();
+    .eq("kind", "liked");
+
+  applyAnimeScope(q, anime_id, anime_episode_id);
+
+  const { data, error } = await q.maybeSingle();
 
   if (error) return { exists: false, error };
   return { exists: Boolean(data?.id), error: null };
 }
 
-export async function setMyAnimeLikedMark(anime_id: string, liked: boolean) {
-  const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
-
+export async function setMyAnimeLikedMark(
+  anime_id: string,
+  liked: boolean,
+  anime_episode_id?: string | null
+) {
+  const { user, error: userErr } = await getAuthedUser();
   if (userErr || !user) {
     return { error: userErr ?? new Error("Not authenticated.") };
   }
 
-  const del = await supabase
+  const delQ = supabase
     .from("user_marks")
     .delete()
     .eq("user_id", user.id)
-    .eq("kind", "liked")
-    .eq("anime_id", anime_id)
-    .is("anime_episode_id", null)
-    .is("manga_id", null)
-    .is("manga_chapter_id", null);
+    .eq("kind", "liked");
 
+  applyAnimeScope(delQ, anime_id, anime_episode_id);
+
+  const del = await delQ;
   if (del.error) return { error: del.error };
 
   if (!liked) return { error: null };
@@ -121,35 +153,34 @@ export async function setMyAnimeLikedMark(anime_id: string, liked: boolean) {
     user_id: user.id,
     kind: "liked",
     anime_id,
+    anime_episode_id: anime_episode_id ?? null,
   });
 
   return { error };
 }
 
 /* ======================================================
-   WATCHLIST (anime series)
+   WATCHLIST (anime series OR episode)
 ====================================================== */
 
-export async function getMyAnimeWatchlistMark(anime_id: string) {
-  const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
-
+export async function getMyAnimeWatchlistMark(
+  anime_id: string,
+  anime_episode_id?: string | null
+) {
+  const { user, error: userErr } = await getAuthedUser();
   if (userErr || !user) {
     return { exists: false, error: userErr ?? new Error("Not authenticated.") };
   }
 
-  const { data, error } = await supabase
+  const q = supabase
     .from("user_marks")
     .select("id")
     .eq("user_id", user.id)
-    .eq("kind", "watchlist")
-    .eq("anime_id", anime_id)
-    .is("anime_episode_id", null)
-    .is("manga_id", null)
-    .is("manga_chapter_id", null)
-    .maybeSingle();
+    .eq("kind", "watchlist");
+
+  applyAnimeScope(q, anime_id, anime_episode_id);
+
+  const { data, error } = await q.maybeSingle();
 
   if (error) return { exists: false, error };
   return { exists: Boolean(data?.id), error: null };
@@ -157,27 +188,23 @@ export async function getMyAnimeWatchlistMark(anime_id: string) {
 
 export async function setMyAnimeWatchlistMark(
   anime_id: string,
-  in_watchlist: boolean
+  in_watchlist: boolean,
+  anime_episode_id?: string | null
 ) {
-  const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
-
+  const { user, error: userErr } = await getAuthedUser();
   if (userErr || !user) {
     return { error: userErr ?? new Error("Not authenticated.") };
   }
 
-  const del = await supabase
+  const delQ = supabase
     .from("user_marks")
     .delete()
     .eq("user_id", user.id)
-    .eq("kind", "watchlist")
-    .eq("anime_id", anime_id)
-    .is("anime_episode_id", null)
-    .is("manga_id", null)
-    .is("manga_chapter_id", null);
+    .eq("kind", "watchlist");
 
+  applyAnimeScope(delQ, anime_id, anime_episode_id);
+
+  const del = await delQ;
   if (del.error) return { error: del.error };
 
   if (!in_watchlist) return { error: null };
@@ -186,22 +213,21 @@ export async function setMyAnimeWatchlistMark(
     user_id: user.id,
     kind: "watchlist",
     anime_id,
+    anime_episode_id: anime_episode_id ?? null,
   });
 
   return { error };
 }
 
 /* ======================================================
-   RATING (anime series)  ⭐ HALF-STARS stored as 1..10
-   1 = 0.5★, 2 = 1.0★, ... 10 = 5.0★
+   RATING (anime series OR episode) ⭐ HALF-STARS 1..10
 ====================================================== */
 
-export async function getMyAnimeRatingMark(anime_id: string) {
-  const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
-
+export async function getMyAnimeRatingMark(
+  anime_id: string,
+  anime_episode_id?: string | null
+) {
+  const { user, error: userErr } = await getAuthedUser();
   if (userErr || !user) {
     return {
       exists: false,
@@ -210,16 +236,15 @@ export async function getMyAnimeRatingMark(anime_id: string) {
     };
   }
 
-  const { data, error } = await supabase
+  const q = supabase
     .from("user_marks")
     .select("id, stars")
     .eq("user_id", user.id)
-    .eq("kind", "rating")
-    .eq("anime_id", anime_id)
-    .is("anime_episode_id", null)
-    .is("manga_id", null)
-    .is("manga_chapter_id", null)
-    .maybeSingle();
+    .eq("kind", "rating");
+
+  applyAnimeScope(q, anime_id, anime_episode_id);
+
+  const { data, error } = await q.maybeSingle();
 
   if (error) return { exists: false, halfStars: null as number | null, error };
 
@@ -232,27 +257,23 @@ export async function getMyAnimeRatingMark(anime_id: string) {
 
 export async function setMyAnimeRatingMark(
   anime_id: string,
-  halfStars: number | null
+  halfStars: number | null,
+  anime_episode_id?: string | null
 ) {
-  const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
-
+  const { user, error: userErr } = await getAuthedUser();
   if (userErr || !user) {
     return { error: userErr ?? new Error("Not authenticated.") };
   }
 
-  const del = await supabase
+  const delQ = supabase
     .from("user_marks")
     .delete()
     .eq("user_id", user.id)
-    .eq("kind", "rating")
-    .eq("anime_id", anime_id)
-    .is("anime_episode_id", null)
-    .is("manga_id", null)
-    .is("manga_chapter_id", null);
+    .eq("kind", "rating");
 
+  applyAnimeScope(delQ, anime_id, anime_episode_id);
+
+  const del = await delQ;
   if (del.error) return { error: del.error };
 
   if (halfStars == null) return { error: null };
@@ -263,6 +284,7 @@ export async function setMyAnimeRatingMark(
     user_id: user.id,
     kind: "rating",
     anime_id,
+    anime_episode_id: anime_episode_id ?? null,
     stars: clamped,
   });
 

@@ -132,14 +132,15 @@ export default function GlobalLogModal({
   const [content, setContent] = useState<string>("");
   const [containsSpoilers, setContainsSpoilers] = useState<boolean>(false);
 
-  // ✅ For anime series logs, "Journal log" vs "just mark watched"
+  // ✅ Controls whether we create a log/activity entry
+  // - Series: “Log in Journal”
+  // - Episode: same idea (“Log episode in Journal”)
   const [logWatchToActivity, setLogWatchToActivity] = useState<boolean>(false);
 
   // ✅ When user checks the box, freeze a "watched on" date for the label
   const [watchedOnLabel, setWatchedOnLabel] = useState<string>("");
 
   // ✅ Rating mark (half-stars 1..10) – same behavior as ActionBox
-  // IMPORTANT: modal opens blank (null), and only applies on save if user touched it
   const [hoverHalfStars, setHoverHalfStars] = useState<number | null>(null);
   const [halfStars, setHalfStars] = useState<number | null>(null); // null = untouched/blank in modal
   const shownHalfStars = useMemo(
@@ -161,6 +162,11 @@ export default function GlobalLogModal({
     return null;
   }, [animeEpisodeId, animeId, mangaChapterId, mangaId]);
 
+  const isAnimeTarget = target === "animeSeries" || target === "animeEpisode";
+  const showLikeAndStars = isAnimeTarget && Boolean(animeId);
+
+  const showJournalCheckbox = target === "animeSeries" || target === "animeEpisode";
+
   const canSubmit = useMemo(() => {
     if (saving) return false;
     if (!target) return false;
@@ -180,8 +186,16 @@ export default function GlobalLogModal({
     setContent("");
     setContainsSpoilers(false);
 
-    setLogWatchToActivity(false);
-    setWatchedOnLabel("");
+    // ✅ default checkbox behavior:
+    // - Series: default OFF (so it behaves like your “just marks + optional review” path)
+    // - Episode: default ON (so it keeps your current behavior of creating an episode log)
+    if (animeEpisodeId) {
+      setLogWatchToActivity(true);
+      setWatchedOnLabel(formatWatchedOn(new Date()));
+    } else {
+      setLogWatchToActivity(false);
+      setWatchedOnLabel("");
+    }
 
     setHoverHalfStars(null);
     setHalfStars(null);
@@ -190,14 +204,13 @@ export default function GlobalLogModal({
 
     setSaving(false);
     setError("");
-  }, [open]);
+  }, [open, animeEpisodeId]);
 
   function handleToggleJournal(checked: boolean) {
     setLogWatchToActivity(checked);
 
     if (checked) {
-      const now = new Date();
-      setWatchedOnLabel(formatWatchedOn(now));
+      setWatchedOnLabel(formatWatchedOn(new Date()));
     } else {
       setWatchedOnLabel("");
     }
@@ -210,7 +223,6 @@ export default function GlobalLogModal({
   }
 
   function toggleLike() {
-    // null -> true -> false -> true ...
     setLikeChoice((prev) => {
       if (prev === null) return true;
       return !prev;
@@ -230,9 +242,8 @@ export default function GlobalLogModal({
       const trimmed = content.trim();
       const reviewRating = halfStarsTo100(halfStars);
 
-      // Snapshot booleans (for log + review)
-      const snapshotLiked = likeChoice === true; // only true is "liked"
-      const snapshotRating = reviewRating; // 0..100 or null
+      const snapshotLiked = likeChoice === true;
+      const snapshotRating = reviewRating;
 
       // ✅ ANIME EPISODE
       if (target === "animeEpisode") {
@@ -242,44 +253,63 @@ export default function GlobalLogModal({
 
         let reviewId: string | null = null;
 
+        // ✅ If they wrote text, create the episode review via helper
+        // This should also create the feed post (same behavior as your test button)
         if (trimmed) {
-          const { userId, error: userErr } = await getAuthedUserId();
-          if (userErr) throw userErr;
-          if (!userId) throw new Error("Not authenticated");
+          const result = await createAnimeEpisodeReview({
+            anime_id: animeId,
+            anime_episode_id: animeEpisodeId,
+            rating: snapshotRating,
+            content: trimmed,
+            contains_spoilers: containsSpoilers,
 
-          const { data, error: insErr } = await supabase
-            .from("reviews")
-            .insert({
-              user_id: userId,
-              anime_id: animeId,
-              anime_episode_id: animeEpisodeId,
-              rating: snapshotRating,
-              content: trimmed,
-              contains_spoilers: containsSpoilers,
-              visibility: visibility ?? "public",
-              author_liked: snapshotLiked,
-            })
-            .select("id")
-            .single();
+            // include these only if your helper supports them
+            visibility: visibility ?? undefined,
+            author_liked: snapshotLiked,
+          } as any);
 
-          if (insErr) throw insErr;
-          reviewId = data?.id ?? null;
+          if (result.error) throw result.error;
+          reviewId = result.data?.id ?? null;
         }
 
-        const { error } = await createAnimeEpisodeLog({
-          anime_id: animeId,
-          anime_episode_id: animeEpisodeId,
-          visibility: visibility ?? undefined,
 
-          rating: snapshotRating,
-          liked: snapshotLiked,
-          review_id: reviewId,
+        // ✅ Marks (episode-scoped)
+        // watched: always true on save
+        {
+          const { error } = await setMyAnimeWatchedMark(animeId, true, animeEpisodeId);
+          if (error) throw error;
+        }
 
-          note: trimmed ? trimmed : null,
-          contains_spoilers: containsSpoilers,
-        });
+        // like mark only if user interacted with heart in this modal
+        if (likeChoice !== null) {
+          const { error } = await setMyAnimeLikedMark(animeId, likeChoice, animeEpisodeId);
+          if (error) throw error;
+        }
 
-        if (error) throw error;
+        // rating mark only if user touched stars in this modal
+        if (halfStars !== null) {
+          const nextValue = clampInt(halfStars, 1, 10);
+          const { error } = await setMyAnimeRatingMark(animeId, nextValue, animeEpisodeId);
+          if (error) throw error;
+        }
+
+        // ✅ ONLY create episode log/activity entry if checkbox is ON
+        if (logWatchToActivity) {
+          const { error } = await createAnimeEpisodeLog({
+            anime_id: animeId,
+            anime_episode_id: animeEpisodeId,
+            visibility: visibility ?? undefined,
+
+            rating: snapshotRating,
+            liked: snapshotLiked,
+            review_id: reviewId,
+
+            note: trimmed ? trimmed : null,
+            contains_spoilers: containsSpoilers,
+          });
+
+          if (error) throw error;
+        }
 
         onClose();
         onSuccess?.();
@@ -298,20 +328,17 @@ export default function GlobalLogModal({
 
         // ✅ unchecked (NOT journal): apply marks + INSERT REVIEW
         if (!logWatchToActivity) {
-          // rating mark (only if user touched stars in this modal)
           if (halfStars !== null) {
             const nextValue = clampInt(halfStars, 1, 10);
             const { error } = await setMyAnimeRatingMark(animeId, nextValue);
             if (error) throw error;
           }
 
-          // like mark (only if user touched heart in this modal)
           if (likeChoice !== null) {
             const { error } = await setMyAnimeLikedMark(animeId, likeChoice);
             if (error) throw error;
           }
 
-          // ✅ insert a SERIES REVIEW (only if they actually wrote something)
           if (trimmed) {
             const result = await createAnimeSeriesReview({
               anime_id: animeId,
@@ -333,8 +360,6 @@ export default function GlobalLogModal({
         if (logWatchToActivity) {
           let reviewId: string | null = null;
 
-          // ✅ IMPORTANT CHANGE:
-          // If they wrote a review, use createAnimeSeriesReview so it ALSO creates the post.
           if (trimmed) {
             const result = await createAnimeSeriesReview({
               anime_id: animeId,
@@ -479,12 +504,17 @@ export default function GlobalLogModal({
     likeChoice === null ? "text-zinc-500" : likeChoice ? "text-red-400" : "text-zinc-400";
   const heartFill = likeChoice === true ? "fill-current" : "";
 
+  const checkboxLabel =
+    target === "animeEpisode"
+      ? logWatchToActivity && watchedOnLabel
+        ? `Logged on ${watchedOnLabel}`
+        : "Log in Journal"
+      : logWatchToActivity && watchedOnLabel
+        ? `Watched on ${watchedOnLabel}`
+        : "Log in Journal";
+
   return (
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center"
-      aria-modal="true"
-      role="dialog"
-    >
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center" aria-modal="true" role="dialog">
       <button
         type="button"
         className="absolute inset-0 bg-black/60"
@@ -492,7 +522,10 @@ export default function GlobalLogModal({
         aria-label="Close modal"
       />
 
-      <div className="relative z-10 w-[94vw] max-w-[860px] rounded-xl bg-zinc-900 p-5 shadow-xl">
+      <div
+        className="relative z-10 w-[94vw] max-w-[860px] rounded-xl bg-zinc-900 p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="mb-4 flex items-center justify-between">
           <div>
             <div className="text-sm text-zinc-400">Log / Review</div>
@@ -522,8 +555,8 @@ export default function GlobalLogModal({
           </div>
 
           <div className="flex flex-col gap-4">
-            {/* ✅ Anime series checkbox label behavior */}
-            {target === "animeSeries" ? (
+            {/* ✅ checkbox now shows for animeEpisode too */}
+            {showJournalCheckbox ? (
               <label className="flex items-center gap-2 text-sm text-zinc-200">
                 <input
                   type="checkbox"
@@ -531,9 +564,7 @@ export default function GlobalLogModal({
                   onChange={(e) => handleToggleJournal(e.target.checked)}
                   className="h-4 w-4"
                 />
-                {logWatchToActivity && watchedOnLabel
-                  ? `Watched on ${watchedOnLabel}`
-                  : "Log in Journal"}
+                {checkboxLabel}
               </label>
             ) : null}
 
@@ -553,8 +584,8 @@ export default function GlobalLogModal({
               />
             </div>
 
-            {/* ✅ LIKE (heart) — now allowed in journal mode */}
-            {target === "animeSeries" && animeId ? (
+            {/* ✅ LIKE (heart) — show for animeSeries + animeEpisode */}
+            {showLikeAndStars ? (
               <div className="flex justify-center">
                 <button
                   type="button"
@@ -571,8 +602,8 @@ export default function GlobalLogModal({
                     likeChoice === null
                       ? "Like"
                       : likeChoice
-                      ? "Will like on save"
-                      : "Will remove like on save"
+                        ? "Will like on save"
+                        : "Will remove like on save"
                   }
                 >
                   <Heart className={["h-7 w-7", heartColor, heartFill].join(" ")} />
@@ -580,8 +611,8 @@ export default function GlobalLogModal({
               </div>
             ) : null}
 
-            {/* ✅ STARS (below review box) — now allowed in journal mode */}
-            {target === "animeSeries" && animeId ? (
+            {/* ✅ STARS — show for animeSeries + animeEpisode */}
+            {showLikeAndStars ? (
               <div className="pt-1">
                 <div className="mb-1 text-center text-xs font-semibold text-zinc-300">
                   {halfStars == null ? "Rate" : "Rated"}
@@ -656,33 +687,14 @@ export default function GlobalLogModal({
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className={`rounded-md px-3 py-2 text-sm text-white ${
-                  canSubmit
+                className={`rounded-md px-3 py-2 text-sm text-white ${canSubmit
                     ? "bg-emerald-600 hover:bg-emerald-500"
                     : "bg-zinc-700 opacity-60"
-                }`}
+                  }`}
               >
                 {saving ? "Saving..." : "Save"}
               </button>
             </div>
-
-            {!target ? (
-              <div className="text-xs text-zinc-500">
-                (Save is disabled until a target id is provided.)
-              </div>
-            ) : null}
-
-            {target === "animeEpisode" && !animeId ? (
-              <div className="text-xs text-zinc-500">
-                (Missing animeId — required for episode logs.)
-              </div>
-            ) : null}
-
-            {target === "mangaChapter" && !mangaId ? (
-              <div className="text-xs text-zinc-500">
-                (Missing mangaId — required for chapter logs.)
-              </div>
-            ) : null}
           </div>
         </form>
       </div>

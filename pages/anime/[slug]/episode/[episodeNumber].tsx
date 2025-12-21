@@ -393,13 +393,13 @@ const AnimeEpisodePage: NextPage = () => {
                   <ActionBox
                     key={actionBoxNonce}
                     animeId={anime.id}
+                    animeEpisodeId={episode.id}   // ✅ THIS IS THE FIX
                     onOpenLog={() => setLogOpen(true)}
                     onShowActivity={() =>
-                      router.push(
-                        `/anime/${slugString}/episode/${episodeNum}/activity`
-                      )
+                      router.push(`/anime/${slugString}/episode/${episodeNum}/activity`)
                     }
                   />
+
                 </div>
               )}
             </div>

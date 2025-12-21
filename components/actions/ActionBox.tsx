@@ -16,14 +16,25 @@ import {
 type Props = {
   onOpenLog: () => void;
   onShowActivity?: () => void;
+
+  // series id is always present
   animeId?: string | null;
+
+  // ✅ optional: if provided, ActionBox becomes "episode scoped"
+  animeEpisodeId?: string | null;
 };
 
 export default function ActionBox({
   onOpenLog,
   onShowActivity,
   animeId = null,
+  animeEpisodeId = null,
 }: Props) {
+  const scopeKey = useMemo(() => {
+    // helps readability / debugging
+    return animeEpisodeId ? `episode:${animeEpisodeId}` : `series:${animeId ?? "none"}`;
+  }, [animeId, animeEpisodeId]);
+
   // top actions
   const [isWatched, setIsWatched] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
@@ -34,7 +45,6 @@ export default function ActionBox({
   const [watchlistBusy, setWatchlistBusy] = useState(false);
 
   // rating stored as HALF-STARS: 1..10 (0.5★..5★)
-  // ✅ null means "not rated yet"
   const [hoverHalfStars, setHoverHalfStars] = useState<number | null>(null);
   const [halfStars, setHalfStars] = useState<number | null>(null);
   const shownHalfStars = useMemo(
@@ -43,7 +53,7 @@ export default function ActionBox({
   );
   const [ratingBusy, setRatingBusy] = useState(false);
 
-  // ✅ load watched/liked/watchlist/rating state from DB
+  // ✅ load watched/liked/watchlist/rating state from DB (series OR episode scope)
   useEffect(() => {
     let mounted = true;
 
@@ -51,10 +61,10 @@ export default function ActionBox({
       if (!animeId) return;
 
       const [watchedRes, likedRes, watchlistRes, ratingRes] = await Promise.all([
-        getMyAnimeWatchedMark(animeId),
-        getMyAnimeLikedMark(animeId),
-        getMyAnimeWatchlistMark(animeId),
-        getMyAnimeRatingMark(animeId),
+        getMyAnimeWatchedMark(animeId, animeEpisodeId),
+        getMyAnimeLikedMark(animeId, animeEpisodeId),
+        getMyAnimeWatchlistMark(animeId, animeEpisodeId),
+        getMyAnimeRatingMark(animeId, animeEpisodeId),
       ]);
 
       if (!mounted) return;
@@ -67,7 +77,7 @@ export default function ActionBox({
         const n = clampInt(ratingRes.halfStars, 1, 10);
         setHalfStars(n);
       } else {
-        setHalfStars(null); // ✅ not rated
+        setHalfStars(null);
       }
     }
 
@@ -76,7 +86,7 @@ export default function ActionBox({
     return () => {
       mounted = false;
     };
-  }, [animeId]);
+  }, [animeId, animeEpisodeId, scopeKey]);
 
   async function toggleWatched() {
     if (!animeId) {
@@ -89,7 +99,7 @@ export default function ActionBox({
     setIsWatched(next);
     setWatchBusy(true);
 
-    const { error } = await setMyAnimeWatchedMark(animeId, next);
+    const { error } = await setMyAnimeWatchedMark(animeId, next, animeEpisodeId);
     if (error) setIsWatched(!next);
 
     setWatchBusy(false);
@@ -106,7 +116,7 @@ export default function ActionBox({
     setIsLiked(next);
     setLikeBusy(true);
 
-    const { error } = await setMyAnimeLikedMark(animeId, next);
+    const { error } = await setMyAnimeLikedMark(animeId, next, animeEpisodeId);
     if (error) setIsLiked(!next);
 
     setLikeBusy(false);
@@ -123,7 +133,7 @@ export default function ActionBox({
     setInWatchlist(next);
     setWatchlistBusy(true);
 
-    const { error } = await setMyAnimeWatchlistMark(animeId, next);
+    const { error } = await setMyAnimeWatchlistMark(animeId, next, animeEpisodeId);
     if (error) setInWatchlist(!next);
 
     setWatchlistBusy(false);
@@ -141,11 +151,11 @@ export default function ActionBox({
     if (ratingBusy) return;
 
     const prev = halfStars;
-    setHalfStars(nextValue); // optimistic
+    setHalfStars(nextValue);
     setRatingBusy(true);
 
-    const { error } = await setMyAnimeRatingMark(animeId, nextValue);
-    if (error) setHalfStars(prev); // rollback
+    const { error } = await setMyAnimeRatingMark(animeId, nextValue, animeEpisodeId);
+    if (error) setHalfStars(prev);
 
     setRatingBusy(false);
   }
@@ -214,7 +224,7 @@ export default function ActionBox({
 
         <div className="flex justify-center gap-[6px]">
           {Array.from({ length: 5 }).map((_, i) => {
-            const starIndex = i + 1; // 1..5
+            const starIndex = i + 1;
             const filled = computeStarFillPercent(shownHalfStars, starIndex);
 
             return (
@@ -254,13 +264,9 @@ export default function ActionBox({
 
       <Divider />
 
-      {/* ROW 3: split in half */}
+      {/* ROW 3 */}
       <div className="grid grid-cols-2">
-        <HalfRowButton
-          disabled={!onShowActivity}
-          onClick={onShowActivity}
-          left
-        >
+        <HalfRowButton disabled={!onShowActivity} onClick={onShowActivity} left>
           Your Activity
         </HalfRowButton>
 
@@ -289,9 +295,9 @@ function computeStarFillPercent(shownHalfStars: number, starIndex: number) {
   const starHalfStart = (starIndex - 1) * 2;
   const remaining = shownHalfStars - starHalfStart;
 
-  if (remaining >= 2) return 100;
-  if (remaining === 1) return 50;
-  return 0;
+  if (remaining >= 2) return 100 as const;
+  if (remaining === 1) return 50 as const;
+  return 0 as const;
 }
 
 /* -------------------- Subcomponents -------------------- */
@@ -424,7 +430,6 @@ function MenuRow({
     </button>
   );
 }
-
 
 function Divider() {
   return <div className="h-px bg-gray-700/60" />;
