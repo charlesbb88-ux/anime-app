@@ -262,16 +262,12 @@ export default function GlobalLogModal({
             rating: snapshotRating,
             content: trimmed,
             contains_spoilers: containsSpoilers,
-
-            // include these only if your helper supports them
-            visibility: visibility ?? undefined,
-            author_liked: snapshotLiked,
-          } as any);
+            author_liked: snapshotLiked, // ✅ supported by helper
+          });
 
           if (result.error) throw result.error;
           reviewId = result.data?.id ?? null;
         }
-
 
         // ✅ Marks (episode-scoped)
         // watched: always true on save
@@ -688,8 +684,8 @@ export default function GlobalLogModal({
                 type="submit"
                 disabled={!canSubmit}
                 className={`rounded-md px-3 py-2 text-sm text-white ${canSubmit
-                    ? "bg-emerald-600 hover:bg-emerald-500"
-                    : "bg-zinc-700 opacity-60"
+                  ? "bg-emerald-600 hover:bg-emerald-500"
+                  : "bg-zinc-700 opacity-60"
                   }`}
               >
                 {saving ? "Saving..." : "Save"}
