@@ -333,27 +333,19 @@ export default function GlobalLogModal({
         if (logWatchToActivity) {
           let reviewId: string | null = null;
 
+          // ✅ IMPORTANT CHANGE:
+          // If they wrote a review, use createAnimeSeriesReview so it ALSO creates the post.
           if (trimmed) {
-            const { userId, error: userErr } = await getAuthedUserId();
-            if (userErr) throw userErr;
-            if (!userId) throw new Error("Not authenticated");
+            const result = await createAnimeSeriesReview({
+              anime_id: animeId,
+              rating: snapshotRating,
+              content: trimmed,
+              contains_spoilers: containsSpoilers,
+              author_liked: snapshotLiked,
+            });
 
-            const { data, error: insErr } = await supabase
-              .from("reviews")
-              .insert({
-                user_id: userId,
-                anime_id: animeId,
-                rating: snapshotRating,
-                content: trimmed,
-                contains_spoilers: containsSpoilers,
-                visibility: visibility ?? "public",
-                author_liked: snapshotLiked,
-              })
-              .select("id")
-              .single();
-
-            if (insErr) throw insErr;
-            reviewId = data?.id ?? null;
+            if (result.error) throw result.error;
+            reviewId = result.data?.id ?? null;
           }
 
           const { error } = await createAnimeSeriesLog({
