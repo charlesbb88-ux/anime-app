@@ -137,6 +137,51 @@ function mustId(row: any, label: string): string | null {
   return null;
 }
 
+type ExternalSource = "tmdb" | "tvdb" | "anilist" | "mal";
+
+async function upsertExternalLink(args: {
+  animeId: string;
+  source: ExternalSource;
+  externalId: string | number;
+  externalType?: string | null; // e.g. "tv", "movie"
+  title?: string | null;
+  year?: number | null;
+  startDate?: string | null; // YYYY-MM-DD
+  episodes?: number | null;
+  status?: string | null;
+  confidence?: number; // 0..100
+  matchMethod?: string | null;
+  notes?: string | null;
+}): Promise<{ data: any; error: any }> {
+  const external_id = String(args.externalId);
+
+  // Store start_date as date (YYYY-MM-DD) or null
+  const start_date = args.startDate ? toDateOnly(args.startDate) : null;
+
+  const payload = {
+    anime_id: args.animeId,
+    source: args.source,
+    external_id,
+    external_type: args.externalType ?? null,
+    title: args.title ?? null,
+    year: args.year ?? null,
+    start_date,
+    episodes: args.episodes ?? null,
+    status: args.status ?? null,
+    confidence: typeof args.confidence === "number" ? args.confidence : 100,
+    match_method: args.matchMethod ?? "manual_import",
+    notes: args.notes ?? null,
+  };
+
+  const { data, error } = await supabaseAdmin
+    .from("anime_external_links")
+    .upsert(payload as any, { onConflict: "anime_id,source" })
+    .select("id, anime_id, source, external_id")
+    .single();
+
+  return { data, error };
+}
+
 const ADMIN_IMPORT_SECRET = process.env.ANIME_IMPORT_SECRET || "";
 
 type Body = {
@@ -233,6 +278,25 @@ async function importFromTmdb(tmdbId: number, res: NextApiResponse) {
 
   const animeId = mustId(upserted, "TMDB anime upsert");
   if (!animeId) return res.status(500).json({ error: "TMDB upsert returned no anime id" });
+
+  // ✅ Link anime row to TMDB (keeps your existing tmdb_id column too)
+  const { error: tmdbLinkErr } = await upsertExternalLink({
+    animeId,
+    source: "tmdb",
+    externalId: tmdbId,
+    externalType: "tv", // because this importer is /tv/*
+    title,
+    year: tv.first_air_date ? parseInt(tv.first_air_date.slice(0, 4), 10) : null,
+    startDate: tv.first_air_date ?? null,
+    episodes: totalEpisodes,
+    status: tv.status ?? null,
+    confidence: 100,
+    matchMethod: "manual_import",
+  });
+
+  if (tmdbLinkErr) {
+    console.error("TMDB external link write failed:", tmdbLinkErr);
+  }
 
   // series artwork -> anime_artwork
   try {
@@ -542,6 +606,25 @@ async function importFromTvdb(tvdbId: number, res: NextApiResponse) {
   const animeId = mustId(upserted, "TVDB anime upsert");
   if (!animeId) return res.status(500).json({ error: "TVDB upsert returned no anime id" });
 
+  // ✅ Link anime row to TVDB (keeps your existing tvdb_id column too)
+  const { error: tvdbLinkErr } = await upsertExternalLink({
+    animeId,
+    source: "tvdb",
+    externalId: tvdbId,
+    externalType: "tv", // TVDB series is effectively TV for your use-case
+    title,
+    year,
+    startDate,
+    episodes: null, // you’ll update total_episodes later after importing eps
+    status,
+    confidence: 100,
+    matchMethod: "manual_import",
+  });
+
+  if (tvdbLinkErr) {
+    console.error("TVDB external link write failed:", tvdbLinkErr);
+  }
+
   // series artworks -> anime_artwork
   try {
     const { data: artworks, error: awErr } = await getTvdbSeriesArtworks(tvdbId as any);
@@ -600,10 +683,10 @@ async function importFromTvdb(tvdbId: number, res: NextApiResponse) {
     const episodes: any[] = Array.isArray((pageData as any)?.episodes)
       ? (pageData as any).episodes
       : Array.isArray((pageData as any)?.data)
-      ? (pageData as any).data
-      : Array.isArray(pageData)
-      ? (pageData as any)
-      : [];
+        ? (pageData as any).data
+        : Array.isArray(pageData)
+          ? (pageData as any)
+          : [];
 
     if (!episodes.length) break;
 
@@ -612,19 +695,19 @@ async function importFromTvdb(tvdbId: number, res: NextApiResponse) {
         typeof ep?.seasonNumber === "number"
           ? ep.seasonNumber
           : typeof ep?.season_number === "number"
-          ? ep.season_number
-          : typeof ep?.season === "number"
-          ? ep.season
-          : null;
+            ? ep.season_number
+            : typeof ep?.season === "number"
+              ? ep.season
+              : null;
 
       const seasonEpisodeNumber: number | null =
         typeof ep?.number === "number"
           ? ep.number
           : typeof ep?.episodeNumber === "number"
-          ? ep.episodeNumber
-          : typeof ep?.episode_number === "number"
-          ? ep.episode_number
-          : null;
+            ? ep.episodeNumber
+            : typeof ep?.episode_number === "number"
+              ? ep.episode_number
+              : null;
 
       // best episode_number to store: prefer absoluteNumber if it’s > 0
       const abs: number | null = typeof ep?.absoluteNumber === "number" ? ep.absoluteNumber : null;
@@ -727,6 +810,20 @@ async function importFromTvdb(tvdbId: number, res: NextApiResponse) {
   } catch (e) {
     console.error("TVDB total_episodes update error:", e);
   }
+
+  // best-effort: update link's episodes field too
+  try {
+    if (globalEpisodeCounter > 0) {
+      await supabaseAdmin
+        .from("anime_external_links")
+        .update({ episodes: globalEpisodeCounter })
+        .eq("anime_id", animeId)
+        .eq("source", "tvdb");
+    }
+  } catch (e) {
+    console.error("TVDB link episodes update error:", e);
+  }
+
 
   return res.status(200).json({
     success: true,
