@@ -187,6 +187,7 @@ const ADMIN_IMPORT_SECRET = process.env.ANIME_IMPORT_SECRET || "";
 type Body = {
   source?: "tmdb" | "tvdb";
   sourceId?: number | string;
+  targetAnimeId?: string; // ✅ force import into this anime row
   secret?: string;
 };
 
@@ -203,15 +204,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   }
 
-  const { source, sourceId } = req.body as Body;
+  const { source, sourceId, targetAnimeId } = req.body as Body;
 
   if (!source || !sourceId) return res.status(400).json({ error: "Missing source or sourceId" });
 
   const idNum = typeof sourceId === "string" ? parseInt(sourceId, 10) : sourceId;
   if (!idNum || Number.isNaN(idNum)) return res.status(400).json({ error: "Invalid sourceId" });
 
-  if (source === "tmdb") return importFromTmdb(idNum, res);
-  if (source === "tvdb") return importFromTvdb(idNum, res);
+  if (source === "tmdb") return importFromTmdb(idNum, res, targetAnimeId);
+  if (source === "tvdb") return importFromTvdb(idNum, res, targetAnimeId);
 
   return res.status(400).json({ error: "Invalid source" });
 }
@@ -220,7 +221,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
    TMDB import (full: series + seasons + episodes + artwork)
 ====================================================== */
 
-async function importFromTmdb(tmdbId: number, res: NextApiResponse) {
+async function importFromTmdb(tmdbId: number, res: NextApiResponse, targetAnimeId?: string) {
   const { data: tv, error: tvErr } = await getTmdbTvDetails(tmdbId);
   if (tvErr || !tv) {
     console.error("TMDB details error:", tvErr);
@@ -242,7 +243,7 @@ async function importFromTmdb(tmdbId: number, res: NextApiResponse) {
   const averageScore =
     typeof tv.vote_average === "number" ? Math.round(tv.vote_average * 10) : null; // 0..100
 
-  const existingAnimeId = await findExistingAnimeIdByTmdb(tmdbId);
+  const existingAnimeId = targetAnimeId || (await findExistingAnimeIdByTmdb(tmdbId));
 
   const animePayload = {
     title,
@@ -533,7 +534,7 @@ async function importFromTmdb(tmdbId: number, res: NextApiResponse) {
    because your key is returning HTTP 400 for them.
 ====================================================== */
 
-async function importFromTvdb(tvdbId: number, res: NextApiResponse) {
+async function importFromTvdb(tvdbId: number, res: NextApiResponse, targetAnimeId?: string) {
   const { data: series, error: seriesErr } = await getTvdbSeriesExtended(tvdbId as any);
   if (seriesErr || !series) {
     console.error("TVDB series extended error:", seriesErr);
