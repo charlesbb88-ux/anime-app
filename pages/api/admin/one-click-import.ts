@@ -299,18 +299,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   })();
 
   const bestTvdb = (() => {
-    let best: any = null;
-    for (const r of tvdbSearch.data ?? []) {
-      const rYear = toInt(r.year);
-      const s =
-        titleScore(title, r.title) +
-        yearScore(year, rYear) +
-        episodeScore(episodes, null);
-      const confidence = Math.max(0, Math.min(100, Math.round((s / 140) * 100)));
-      if (!best || confidence > best.confidence) best = { ...r, score: s, confidence };
+  let best: any = null;
+
+  for (const r of tvdbSearch.data ?? []) {
+    const rYear = toInt(r.year);
+
+    // TVDB often returns Japanese name in r.title, but English aliases exist in r.raw.aliases / translations.
+    const candidates: string[] = [];
+
+const eng = r?.raw?.translations?.eng;
+if (eng) candidates.push(eng); // put English first
+
+if (r.title) candidates.push(String(r.title)); // then whatever TVDB search title is
+
+const aliases = r?.raw?.aliases;
+if (Array.isArray(aliases)) {
+  for (const a of aliases) {
+    if (typeof a === "string" && a.trim()) candidates.push(a.trim());
+  }
+}
+
+    const translations = r?.raw?.translations;
+    if (translations && typeof translations === "object") {
+      for (const v of Object.values(translations)) {
+        if (typeof v === "string" && v.trim()) candidates.push(v.trim());
+      }
     }
-    return best;
-  })();
+
+    // score title against the BEST candidate (english alias usually wins)
+    let bestTitlePoints = 0;
+    for (const c of candidates) {
+      bestTitlePoints = Math.max(bestTitlePoints, titleScore(title, c));
+    }
+
+    const s = bestTitlePoints + yearScore(year, rYear);
+    const confidence = Math.max(0, Math.min(100, Math.round((s / 125) * 100)));
+
+    if (!best || confidence > best.confidence) best = { ...r, score: s, confidence };
+  }
+
+  return best;
+})();
 
   // 4) If we found candidates, we run your importer routes but FORCE into same animeId
   const importResults: any = { tmdb: null, tvdb: null };

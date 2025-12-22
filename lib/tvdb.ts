@@ -15,16 +15,40 @@ type TvdbResponse<T> = {
 };
 
 type TvdbSearchItem = {
-  tvdb_id?: number;
-  id?: number;
+  tvdb_id?: number | string;
+  id?: number | string;
+  objectID?: string | null;
+
   name?: string;
   title?: string;
+
   image_url?: string | null;
   year?: string | number | null;
   overview?: string | null;
+
   primary_language?: string | null;
-  objectID?: string | null;
+  primary_type?: string | null;
   type?: string | null;
+  country?: string | null;
+  status?: string | null;
+  slug?: string | null;
+
+  // ✅ these are what you’re trying to use
+  aliases?: string[] | null;
+  translations?: Record<string, string> | null;
+
+  // ✅ also present in your sample
+  overviews?: Record<string, string> | null;
+
+  // optional extra stuff (present in your sample)
+  first_air_time?: string | null;
+  network?: string | null;
+  thumbnail?: string | null;
+  remote_ids?: Array<{
+    id?: string | number | null;
+    type?: number | null;
+    sourceName?: string | null;
+  }> | null;
 };
 
 const TVDB_API_BASE = "https://api4.thetvdb.com/v4";
