@@ -29,7 +29,7 @@ import PostFeed from "../../../../components/PostFeed";
 import GlobalLogModal from "@/components/reviews/GlobalLogModal";
 
 // ✅ action box (same entry point as other pages)
-import ActionBox from "@/components/actions/ActionBox";
+import MangaActionBox from "@/components/actions/MangaActionBox";
 
 const MangaChapterPage: NextPage = () => {
   const router = useRouter();
@@ -170,6 +170,23 @@ const MangaChapterPage: NextPage = () => {
       cancelled = true;
     };
   }, [chapter?.id]);
+
+  function handleShowActivity() {
+    // must have both ids for a chapter-scoped activity view
+    if (!manga?.id || !chapter?.id) return;
+
+    // ✅ Option A (recommended): query params (easy, flexible)
+    router.push({
+      pathname: "/activity",
+      query: {
+        mangaId: manga.id,
+        mangaChapterId: chapter.id,
+      },
+    });
+
+    // ✅ Option B (if you already use a dedicated route pattern):
+    // router.push(`/manga/${slugString}/chapter/${chapterNum}/activity`);
+  }
 
   // ✅ TEMP: test save chapter review
   async function handleTestSaveReview() {
@@ -346,8 +363,18 @@ const MangaChapterPage: NextPage = () => {
 
           {/* ✅ same entry point style as other pages */}
           <div className="mt-3">
-            <ActionBox onOpenLog={() => setLogOpen(true)} />
+            {manga?.id && chapter?.id ? (
+              <MangaActionBox
+                mangaId={manga.id}
+                mangaChapterId={chapter.id}
+                onOpenLog={() => setLogOpen(true)}
+                onShowActivity={() => router.push(`/manga/${slugString}/chapter/${chapterNum}/activity`)}
+              />
+            ) : (
+              <div className="text-xs text-gray-500">Loading actions…</div>
+            )}
           </div>
+
         </header>
 
         <section className="space-y-4">
@@ -446,6 +473,10 @@ const MangaChapterPage: NextPage = () => {
         mangaId={manga?.id ?? null}
         mangaChapterId={chapter?.id ?? null}
         onSuccess={async () => {
+          // ✅ refresh discussion feed immediately (same behavior as other pages)
+          setFeedNonce((n) => n + 1);
+
+          // keep your existing count refresh
           if (!chapter?.id) return;
           const { count, error } = await getMyMangaChapterLogCount(chapter.id);
           if (!error) setMyLogCount(count);
