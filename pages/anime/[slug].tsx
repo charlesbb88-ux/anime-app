@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { NextPage } from "next";
 import { useRouter } from "next/router";
 import Link from "next/link";
+import Image from "next/image";
 
 import { getAnimeBySlug } from "@/lib/anime";
 import type { Anime } from "@/lib/types";
@@ -38,6 +39,13 @@ type AnimeTag = {
   category: string | null;
 };
 
+function normalizeBackdropUrl(url: string) {
+  if (url.includes("https://image.tmdb.org/t/p/original/")) {
+    return url.replace("/t/p/original/", "/t/p/w1280/");
+  }
+  return url; // TVDB stays as-is
+}
+
 const AnimePage: NextPage = () => {
   const router = useRouter();
 
@@ -52,6 +60,9 @@ const AnimePage: NextPage = () => {
 
   // ✅ MUST be declared up here (before any returns)
   const [trailerSrc, setTrailerSrc] = useState<string | null>(null);
+
+  // ✅ Backdrop from public.anime_artwork
+  const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
 
   // ✅ Your uploaded overlay (public/masks/white-edge-mask.png)
   const overlayMaskUrl = "/masks/white-edge-mask.png";
@@ -119,6 +130,73 @@ const AnimePage: NextPage = () => {
     run();
     return () => {
       isMounted = false;
+    };
+  }, [slug]);
+
+  // Fetch backdrop artwork (public.anime_artwork)
+  useEffect(() => {
+    if (!slug) {
+      setBackdropUrl(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function run() {
+      // Get anime id quickly by slug (small query)
+      const { data: animeRow, error: animeErr } = await supabase
+        .from("anime")
+        .select("id")
+        .eq("slug", slug)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      if (animeErr || !animeRow?.id) {
+        setBackdropUrl(null);
+        return;
+      }
+
+      const animeId = animeRow.id;
+
+      // Now fetch backdrops for that id
+      const primary = await supabase
+        .from("anime_artwork")
+        .select("url")
+        .eq("anime_id", animeId)
+        .eq("kind", "backdrop")
+        .eq("is_primary", true)
+        .order("vote", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      if (!primary.error && primary.data?.url) {
+        setBackdropUrl(normalizeBackdropUrl(primary.data.url));
+        return;
+      }
+
+      const fallback = await supabase
+        .from("anime_artwork")
+        .select("url")
+        .eq("anime_id", animeId)
+        .eq("kind", "backdrop")
+        .order("vote", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      setBackdropUrl(
+  fallback.data?.url ? normalizeBackdropUrl(fallback.data.url) : null
+);
+    }
+
+    run();
+
+    return () => {
+      cancelled = true;
     };
   }, [slug]);
 
@@ -320,34 +398,19 @@ const AnimePage: NextPage = () => {
   // ------------------------
   return (
     <>
-      <div className="mx-auto max-w-5xl px-4 py-8">
-        {/* Banner (Letterboxd structure, but fades into WHITE page background) */}
-        {a.banner_image_url && (
-          <div className="mb-6 h-40 w-full overflow-hidden rounded-lg">
-            <div className="relative h-full w-full">
-              {/* backdropimage */}
-              <div
-                className="absolute inset-0"
-                style={{
-                  backgroundImage: `url(${a.banner_image_url})`,
-                  backgroundSize: "cover",
-                  backgroundRepeat: "no-repeat",
-                  backgroundPosition: "center 0px",
-                }}
-              />
-
-              {/* ✅ backdropmask (YOUR PNG overlay, stretched to fit any aspect) */}
-              <div
-                className="absolute inset-0"
-                style={{
-                  backgroundImage: `url(${overlayMaskUrl})`,
-                  backgroundRepeat: "no-repeat",
-                  backgroundPosition: "center",
-                  backgroundSize: "100% 100%",
-                  pointerEvents: "none",
-                }}
-              />
-            </div>
+      <div className="mx-auto max-w-5xl px-4 pt-0 pb-8">
+        {/* Backdrop (from public.anime_artwork) */}
+        {backdropUrl && (
+          <div className="w-full">
+            <Image
+              src={backdropUrl}
+              alt=""
+              width={1600}
+              height={900}
+              priority
+              sizes="(max-width: 1024px) 100vw, 1024px"
+              style={{ width: "100%", height: "auto" }}
+            />
           </div>
         )}
 
@@ -587,9 +650,8 @@ const AnimePage: NextPage = () => {
                           )}
 
                           <span
-                            className={`relative ${
-                              isSpoiler ? "text-red-400" : "text-gray-100"
-                            }`}
+                            className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"
+                              }`}
                           >
                             {tag.name}
                           </span>
@@ -626,12 +688,10 @@ const AnimePage: NextPage = () => {
                   className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
                 >
                   {showSpoilers
-                    ? `Hide ${spoilerCount} spoiler tag${
-                        spoilerCount === 1 ? "" : "s"
-                      }`
-                    : `Show ${spoilerCount} spoiler tag${
-                        spoilerCount === 1 ? "" : "s"
-                      }`}
+                    ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
+                    }`
+                    : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
+                    }`}
                 </button>
               )}
             </>
@@ -673,63 +733,6 @@ const AnimePage: NextPage = () => {
           <RightSidebar />
         </div>
       </div>
-
-      {/* ------------------------------------------- */}
-      {/*     DEBUG: TRAILER THUMBNAIL PREVIEW        */}
-      {/* ------------------------------------------- */}
-      {trailerThumbBase && trailerSrc && (
-        <div
-          style={{
-            marginTop: "3rem",
-            maxWidth: "80rem",
-            marginLeft: "auto",
-            marginRight: "auto",
-            padding: "2rem 1.5rem",
-            textAlign: "center",
-          }}
-        >
-          <p
-            style={{
-              fontSize: "0.75rem",
-              color: "#888",
-              marginBottom: "0.5rem",
-            }}
-          >
-            Trailer thumbnail (debug)
-          </p>
-
-          <div className="relative overflow-hidden rounded-lg">
-            <img
-              src={trailerSrc}
-              alt={`${anime.title} trailer thumbnail`}
-              onError={() => {
-                if (trailerThumbHi && trailerSrc === trailerThumbHi) {
-                  setTrailerSrc(trailerThumbMd || trailerThumbBase);
-                  return;
-                }
-                if (trailerThumbMd && trailerSrc === trailerThumbMd) {
-                  setTrailerSrc(trailerThumbBase);
-                  return;
-                }
-              }}
-              style={{
-                width: "100%",
-                display: "block",
-              }}
-            />
-
-            <div
-              className="pointer-events-none absolute inset-0"
-              style={{
-                backgroundImage: `url(${overlayMaskUrl})`,
-                backgroundRepeat: "no-repeat",
-                backgroundPosition: "center",
-                backgroundSize: "100% 100%",
-              }}
-            />
-          </div>
-        </div>
-      )}
 
       <GlobalLogModal
         open={logOpen}

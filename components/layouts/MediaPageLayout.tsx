@@ -1,69 +1,146 @@
-// components/layouts/MediaLayout.tsx
+// components/layouts/MediaPageLayout.tsx
 "use client";
 
 import React from "react";
 
-type MediaLayoutProps = {
-  backdropUrl?: string | null;
+type MediaPageLayoutProps = {
+  // Header visuals
+  bannerUrl?: string | null;
+  overlayMaskUrl?: string | null;
+
+  // Poster (optional)
   posterUrl?: string | null;
+  posterAlt?: string;
 
+  // ✅ NEW: lets pages provide the exact poster element (including fallback boxes)
+  // If provided, this renders instead of posterUrl.
+  posterSlot?: React.ReactNode;
+
+  // Title block
   title: string;
-  subtitle?: string | null; // like "Episode 7" or "Chapter 12"
-  metaLine?: string | null; // year • format • etc
+  titleSubBlock?: React.ReactNode; // english/native lines, metadata lines, etc.
 
-  children: React.ReactNode;
+  // Optional header additions (episode navigator, debug buttons, log count, etc.)
+  headerExtras?: React.ReactNode;
+
+  // Action box slot (ActionBox / MangaActionBox)
+  actionSlot?: React.ReactNode;
+
+  // Main-top content (Synopsis/Genres/Tags/etc.)
+  mainTop?: React.ReactNode;
+
+  // 3-column grid slots
+  leftSidebar?: React.ReactNode;
+  feed?: React.ReactNode;
+  rightSidebar?: React.ReactNode;
+
+  // Optional footer / extra content
+  belowGrid?: React.ReactNode;
 };
 
-export default function MediaLayout({
-  backdropUrl,
+export default function MediaPageLayout({
+  bannerUrl,
+  overlayMaskUrl,
+
   posterUrl,
+  posterAlt,
+  posterSlot,
+
   title,
-  subtitle,
-  metaLine,
-  children,
-}: MediaLayoutProps) {
+  titleSubBlock,
+
+  headerExtras,
+  actionSlot,
+
+  mainTop,
+
+  leftSidebar,
+  feed,
+  rightSidebar,
+
+  belowGrid,
+}: MediaPageLayoutProps) {
   return (
-    <div>
-      {/* Backdrop + mask */}
-      <div className="relative">
-        <div className="h-[320px] w-full overflow-hidden bg-black">
-          {backdropUrl ? (
-            <img
-              src={backdropUrl}
-              alt=""
-              className="h-full w-full object-cover opacity-90"
-            />
+    <>
+      {/* ------------------------------------------- */}
+      {/*                  HEADER                     */}
+      {/* ------------------------------------------- */}
+      <div className="mx-auto max-w-5xl px-4 py-8">
+        {/* Banner (Letterboxd structure) */}
+        {bannerUrl ? (
+          <div className="mb-6 h-40 w-full overflow-hidden rounded-lg">
+            <div className="relative h-full w-full">
+              {/* backdrop image */}
+              <div
+                className="absolute inset-0"
+                style={{
+                  backgroundImage: `url(${bannerUrl})`,
+                  backgroundSize: "cover",
+                  backgroundRepeat: "no-repeat",
+                  backgroundPosition: "center 0px",
+                }}
+              />
+
+              {/* overlay mask (optional) */}
+              {overlayMaskUrl ? (
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    backgroundImage: `url(${overlayMaskUrl})`,
+                    backgroundRepeat: "no-repeat",
+                    backgroundPosition: "center",
+                    backgroundSize: "100% 100%",
+                    pointerEvents: "none",
+                  }}
+                />
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Top section */}
+        <div className="mb-8 flex flex-col gap-6 md:flex-row">
+          {/* Poster */}
+          {posterSlot ? (
+            <div className="flex-shrink-0">{posterSlot}</div>
+          ) : posterUrl ? (
+            <div className="flex-shrink-0">
+              <img
+                src={posterUrl}
+                alt={posterAlt || title}
+                className="h-64 w-44 rounded-lg object-cover"
+              />
+            </div>
           ) : null}
-        </div>
 
-        {/* your “Letterboxd-ish” mask goes here */}
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/35 via-black/15 to-[#f5f5f5]" />
-      </div>
+          {/* Title + meta + header extras + action */}
+          <div className="flex-1">
+            <h1 className="mb-1 text-3xl font-bold">{title}</h1>
 
-      {/* Main container */}
-      <div className="mx-auto w-full max-w-[1100px] px-4">
-        {/* Header row */}
-        <div className="-mt-20 flex gap-4">
-          <div className="h-[180px] w-[120px] shrink-0 overflow-hidden rounded-md bg-zinc-200 shadow">
-            {posterUrl ? (
-              <img src={posterUrl} alt="" className="h-full w-full object-cover" />
-            ) : null}
-          </div>
+            {titleSubBlock ? <div className="mb-2">{titleSubBlock}</div> : null}
 
-          <div className="pt-2">
-            <div className="text-[28px] font-semibold leading-tight">{title}</div>
-            {subtitle ? (
-              <div className="mt-1 text-sm text-zinc-600">{subtitle}</div>
-            ) : null}
-            {metaLine ? (
-              <div className="mt-1 text-sm text-zinc-600">{metaLine}</div>
-            ) : null}
+            {headerExtras ? <div className="mt-4">{headerExtras}</div> : null}
+
+            {actionSlot ? <div className="mt-3">{actionSlot}</div> : null}
           </div>
         </div>
 
-        {/* Content */}
-        <div className="mt-6 pb-10">{children}</div>
+        {/* Main-top content (Synopsis/Genres/Tags/etc.) */}
+        {mainTop ? <div>{mainTop}</div> : null}
       </div>
-    </div>
+
+      {/* ------------------------------------------- */}
+      {/*                 MAIN GRID                   */}
+      {/* ------------------------------------------- */}
+      <div className="mx-auto mt-6 max-w-7xl px-6 py-8">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[19rem_minmax(0,41rem)_19rem]">
+          <div>{leftSidebar ?? null}</div>
+          <div>{feed ?? null}</div>
+          <div>{rightSidebar ?? null}</div>
+        </div>
+      </div>
+
+      {belowGrid ? <div>{belowGrid}</div> : null}
+    </>
   );
 }

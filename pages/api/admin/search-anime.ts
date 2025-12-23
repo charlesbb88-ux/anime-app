@@ -94,7 +94,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     items.push({
       source: "tvdb",
-      tvdb_id: v.tvdb_id ?? null,
+      tvdb_id:
+        typeof v.tvdb_id === "number"
+          ? v.tvdb_id
+          : typeof v.tvdb_id === "string" && v.tvdb_id.trim() !== "" && Number.isFinite(Number(v.tvdb_id))
+            ? Number(v.tvdb_id)
+            : null,
+
       title: v.title,
       year: Number.isFinite(yearNum as any) ? (yearNum as number) : null,
       poster_url: v.image_url ?? null,
