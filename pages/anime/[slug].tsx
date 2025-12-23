@@ -1,9 +1,7 @@
 // pages/anime/[slug].tsx
 
-"use client";
-
 import { useEffect, useState } from "react";
-import type { NextPage } from "next";
+import type { NextPage, GetServerSideProps } from "next";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import Image from "next/image";
@@ -11,6 +9,7 @@ import Image from "next/image";
 import { getAnimeBySlug } from "@/lib/anime";
 import type { Anime } from "@/lib/types";
 import { supabase } from "@/lib/supabaseClient";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 // ✅ review INSERT helper (Letterboxd-style: multiple reviews allowed)
 import { createAnimeSeriesReview } from "@/lib/reviews";
@@ -39,14 +38,21 @@ type AnimeTag = {
   category: string | null;
 };
 
+type AnimePageProps = {
+  initialBackdropUrl: string | null;
+};
+
 function normalizeBackdropUrl(url: string) {
+  // TMDB "original" is huge; use a smaller size for faster first paint
   if (url.includes("https://image.tmdb.org/t/p/original/")) {
     return url.replace("/t/p/original/", "/t/p/w1280/");
+    // If you want even faster first paint, use w780:
+    // return url.replace("/t/p/original/", "/t/p/w780/");
   }
   return url; // TVDB stays as-is
 }
 
-const AnimePage: NextPage = () => {
+const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
   const router = useRouter();
 
   const [slug, setSlug] = useState<string | null>(null);
@@ -61,8 +67,8 @@ const AnimePage: NextPage = () => {
   // ✅ MUST be declared up here (before any returns)
   const [trailerSrc, setTrailerSrc] = useState<string | null>(null);
 
-  // ✅ Backdrop from public.anime_artwork
-  const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
+  // ✅ Backdrop from SSR (public.anime_artwork)
+  const [backdropUrl] = useState<string | null>(initialBackdropUrl);
 
   // ✅ Your uploaded overlay (public/masks/white-edge-mask.png)
   const overlayMaskUrl = "/masks/white-edge-mask.png";
@@ -130,73 +136,6 @@ const AnimePage: NextPage = () => {
     run();
     return () => {
       isMounted = false;
-    };
-  }, [slug]);
-
-  // Fetch backdrop artwork (public.anime_artwork)
-  useEffect(() => {
-    if (!slug) {
-      setBackdropUrl(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function run() {
-      // Get anime id quickly by slug (small query)
-      const { data: animeRow, error: animeErr } = await supabase
-        .from("anime")
-        .select("id")
-        .eq("slug", slug)
-        .maybeSingle();
-
-      if (cancelled) return;
-
-      if (animeErr || !animeRow?.id) {
-        setBackdropUrl(null);
-        return;
-      }
-
-      const animeId = animeRow.id;
-
-      // Now fetch backdrops for that id
-      const primary = await supabase
-        .from("anime_artwork")
-        .select("url")
-        .eq("anime_id", animeId)
-        .eq("kind", "backdrop")
-        .eq("is_primary", true)
-        .order("vote", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (cancelled) return;
-
-      if (!primary.error && primary.data?.url) {
-        setBackdropUrl(normalizeBackdropUrl(primary.data.url));
-        return;
-      }
-
-      const fallback = await supabase
-        .from("anime_artwork")
-        .select("url")
-        .eq("anime_id", animeId)
-        .eq("kind", "backdrop")
-        .order("vote", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (cancelled) return;
-
-      setBackdropUrl(
-  fallback.data?.url ? normalizeBackdropUrl(fallback.data.url) : null
-);
-    }
-
-    run();
-
-    return () => {
-      cancelled = true;
     };
   }, [slug]);
 
@@ -379,27 +318,13 @@ const AnimePage: NextPage = () => {
   );
   const spoilerCount = spoilerTags.length;
 
-  // Trailer thumb URLs (for fallback)
-  const trailerThumbBase: string | null =
-    typeof a.trailer_thumbnail_url === "string" && a.trailer_thumbnail_url
-      ? a.trailer_thumbnail_url
-      : null;
-
-  const trailerThumbHi: string | null = trailerThumbBase
-    ? trailerThumbBase.replace("/hqdefault.jpg", "/maxresdefault.jpg")
-    : null;
-
-  const trailerThumbMd: string | null = trailerThumbBase
-    ? trailerThumbBase.replace("/hqdefault.jpg", "/sddefault.jpg")
-    : null;
-
   // ------------------------
   // MAIN ANIME PAGE CONTENT
   // ------------------------
   return (
     <>
       <div className="mx-auto max-w-5xl px-4 pt-0 pb-8">
-        {/* Backdrop (from public.anime_artwork) */}
+        {/* Backdrop (from SSR public.anime_artwork) */}
         {backdropUrl && (
           <div className="w-full">
             <Image
@@ -562,9 +487,7 @@ const AnimePage: NextPage = () => {
                 key={actionBoxNonce}
                 animeId={anime.id}
                 onOpenLog={() => setLogOpen(true)}
-                onShowActivity={() =>
-                  router.push(`/anime/${anime.slug}/activity`)
-                }
+                onShowActivity={() => router.push(`/anime/${anime.slug}/activity`)}
               />
             </div>
           </div>
@@ -626,10 +549,7 @@ const AnimePage: NextPage = () => {
 
                     let percent: number | null = null;
                     if (typeof tag.rank === "number") {
-                      percent = Math.max(
-                        0,
-                        Math.min(100, Math.round(tag.rank))
-                      );
+                      percent = Math.max(0, Math.min(100, Math.round(tag.rank)));
                     }
 
                     return (
@@ -650,8 +570,9 @@ const AnimePage: NextPage = () => {
                           )}
 
                           <span
-                            className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"
-                              }`}
+                            className={`relative ${
+                              isSpoiler ? "text-red-400" : "text-gray-100"
+                            }`}
                           >
                             {tag.name}
                           </span>
@@ -688,10 +609,12 @@ const AnimePage: NextPage = () => {
                   className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
                 >
                   {showSpoilers
-                    ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
-                    }`
-                    : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
-                    }`}
+                    ? `Hide ${spoilerCount} spoiler tag${
+                        spoilerCount === 1 ? "" : "s"
+                      }`
+                    : `Show ${spoilerCount} spoiler tag${
+                        spoilerCount === 1 ? "" : "s"
+                      }`}
                 </button>
               )}
             </>
@@ -768,3 +691,63 @@ const AnimePage: NextPage = () => {
 };
 
 export default AnimePage;
+
+export const getServerSideProps: GetServerSideProps<AnimePageProps> = async (ctx) => {
+  const raw = ctx.params?.slug;
+  const slug =
+    typeof raw === "string" ? raw : Array.isArray(raw) && raw[0] ? raw[0] : null;
+
+  if (!slug) {
+    return { props: { initialBackdropUrl: null } };
+  }
+
+  // 1) Get anime id by slug (server-side)
+  const { data: animeRow, error: animeErr } = await supabaseAdmin
+    .from("anime")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+
+  if (animeErr || !animeRow?.id) {
+    return { props: { initialBackdropUrl: null } };
+  }
+
+    // 2) Get a RANDOM backdrop from anime_artwork (server-side)
+  const { data: arts, error: artErr } = await supabaseAdmin
+    .from("anime_artwork")
+    .select("url, is_primary, vote, width")
+    .eq("anime_id", animeRow.id)
+    .in("kind", ["backdrop", "3"]) // ✅ supports both new + legacy kinds
+    .limit(50); // cap so you don’t pull thousands if something goes crazy
+
+  if (artErr || !arts || arts.length === 0) {
+    return { props: { initialBackdropUrl: null } };
+  }
+
+  // Optional: prefer better ones first (primary/vote/width)
+  const sorted = [...arts].sort((a: any, b: any) => {
+    const ap = a.is_primary ? 1 : 0;
+    const bp = b.is_primary ? 1 : 0;
+    if (bp !== ap) return bp - ap;
+
+    const av = typeof a.vote === "number" ? a.vote : -1;
+    const bv = typeof b.vote === "number" ? b.vote : -1;
+    if (bv !== av) return bv - av;
+
+    const aw = typeof a.width === "number" ? a.width : -1;
+    const bw = typeof b.width === "number" ? b.width : -1;
+    return bw - aw;
+  });
+
+  // Pick randomly from the top N (so it’s random but not ugly/low-res)
+  const topN = sorted.slice(0, Math.min(12, sorted.length));
+  const pick = topN[Math.floor(Math.random() * topN.length)];
+
+  const rawUrl = pick?.url ?? null;
+
+  return {
+    props: {
+      initialBackdropUrl: rawUrl ? normalizeBackdropUrl(rawUrl) : null,
+    },
+  };
+};

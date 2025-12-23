@@ -147,7 +147,7 @@ export default function UserProfilePage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-slate-100 flex items-center justify-center">
+      <main className="min-h-screen flex items-center justify-center">
         <p className="text-slate-600">Loading…</p>
       </main>
     );
@@ -155,7 +155,7 @@ export default function UserProfilePage() {
 
   if (notFound || !profile) {
     return (
-      <main className="min-h-screen bg-slate-100 flex items-center justify-center">
+      <main className="min-h-screen flex items-center justify-center">
         <div className="bg-white shadow-sm rounded-xl px-6 py-5">
           <p className="text-lg font-semibold text-slate-800 mb-2">
             User not found
@@ -175,7 +175,7 @@ export default function UserProfilePage() {
     : "?";
 
   return (
-    <main className="min-h-screen bg-slate-100">
+    <main className="min-h-screen ">
       <div className="max-w-3xl mx-auto px-4 py-8">
         {/* Header */}
         <header className="mb-8 border-b border-slate-200 pb-5">
@@ -217,7 +217,7 @@ export default function UserProfilePage() {
                 {isOwner && (
                   <Link
                     href="/settings"
-                    className="px-3 py-1.5 text-sm rounded-full border border-slate-300 text-slate-700 hover:bg-slate-100 transition"
+                    className="px-3 py-1.5 text-sm rounded-full border border-slate-300 text-slate-700 hover: transition"
                   >
                     Edit profile
                   </Link>

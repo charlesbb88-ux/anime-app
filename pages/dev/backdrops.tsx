@@ -11,13 +11,14 @@ type AnimeSearchRow = {
   slug: string | null;
   image_url: string | null;
   banner_image_url: string | null;
+  anilist_id: number | null;
 };
 
 type ArtworkRow = {
   id: string;
   anime_id: string;
   source: string | null;
-  kind: string | null;
+  kind: string | number | null;
   url: string | null;
   lang: string | null;
   width: number | null;
@@ -60,7 +61,7 @@ export default function DevBackdropsPage() {
       // NOTE: ilike is Postgres case-insensitive match.
       const { data, error } = await supabase
         .from("anime")
-        .select("id, title, slug, image_url, banner_image_url")
+        .select("id, title, slug, image_url, banner_image_url, anilist_id")
         .or(`title.ilike.%${q}%,slug.ilike.%${q}%`)
         .order("title", { ascending: true })
         .limit(20);
@@ -96,13 +97,28 @@ export default function DevBackdropsPage() {
 
       setLoadingBackdrops(true);
 
+      // 1) Find ALL anime rows that represent the same anime (by anilist_id)
+      let animeIds: string[] = [selected.id];
+
+      if (typeof selected.anilist_id === "number") {
+        const { data: rows, error: rowsErr } = await supabase
+          .from("anime")
+          .select("id")
+          .eq("anilist_id", selected.anilist_id);
+
+        if (!rowsErr && rows && rows.length > 0) {
+          animeIds = rows.map((r) => r.id);
+        }
+      }
+
+      // 2) Load artwork for ALL those ids, and match BOTH TMDB + TVDB backdrop kinds
       const { data, error } = await supabase
         .from("anime_artwork")
         .select(
           "id, anime_id, source, kind, url, lang, width, height, vote, is_primary, created_at"
         )
-        .eq("anime_id", selected.id)
-        .eq("kind", "backdrop")
+        .in("anime_id", animeIds)
+        .in("kind", ["backdrop", "3"])
         .order("is_primary", { ascending: false })
         .order("vote", { ascending: false })
         .order("width", { ascending: false });
@@ -192,11 +208,10 @@ export default function DevBackdropsPage() {
                     key={r.id}
                     type="button"
                     onClick={() => setSelected(r)}
-                    className={`flex w-full items-center gap-3 px-3 py-2 text-left transition ${
-                      isActive
-                        ? "bg-blue-500/10"
-                        : "hover:bg-gray-800/40"
-                    }`}
+                    className={`flex w-full items-center gap-3 px-3 py-2 text-left transition ${isActive
+                      ? "bg-blue-500/10"
+                      : "hover:bg-gray-800/40"
+                      }`}
                   >
                     {r.image_url ? (
                       <img
@@ -263,7 +278,7 @@ export default function DevBackdropsPage() {
             </div>
           ) : backdrops.length === 0 ? (
             <div className="px-3 py-6 text-sm text-gray-500">
-              No backdrops found for this anime (kind = <code>backdrop</code>).
+              No backdrops found for this anime (kind = <code>backdrop</code> or <code>3</code>).
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4 p-3 sm:grid-cols-2">
@@ -301,6 +316,11 @@ export default function DevBackdropsPage() {
                       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
                         <span>
                           <span className="text-gray-400">dims:</span> {dims}
+                        </span>
+                        <span>
+                          <span className="text-gray-400">kind:</span>{" "}
+                          {b.kind === null || b.kind === undefined ? "—" : String(b.kind)}{" "}
+                          <span className="text-gray-500">({typeof b.kind})</span>
                         </span>
                         <span>
                           <span className="text-gray-400">vote:</span>{" "}

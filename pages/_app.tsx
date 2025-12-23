@@ -17,17 +17,15 @@ type NextPageWithLayout = AppProps["Component"] & {
 export default function App({ Component, pageProps }: AppProps) {
   const C = Component as NextPageWithLayout;
   const hideHeader = C.hideHeader === true;
-
   const getLayout = C.getLayout ?? ((page) => page);
 
   return (
     <UsernameGate>
       <>
-        <div className="min-h-screen bg-[#f5f5f5] font-sans">
+        <div className="min-h-screen font-sans">
           {!hideHeader && <Header />}
           {getLayout(<C {...pageProps} />)}
         </div>
-
         <AuthModalManager />
       </>
     </UsernameGate>

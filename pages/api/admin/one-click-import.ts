@@ -2,8 +2,8 @@
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { searchTmdbTv, getTmdbTvDetails } from "@/lib/tmdb";
-import { searchTvdb, getTvdbSeriesExtended } from "@/lib/tvdb";
+import { searchTmdbTv } from "@/lib/tmdb";
+import { searchTvdb } from "@/lib/tvdb";
 
 const ADMIN_IMPORT_SECRET = process.env.ANIME_IMPORT_SECRET || "";
 
@@ -52,13 +52,12 @@ function titleScore(a: string, b: string): number {
   if (A === B) return 100;
   if (A.includes(B) || B.includes(A)) return 85;
 
-  // simple token overlap
   const aTokens = new Set(A.split(" "));
   const bTokens = new Set(B.split(" "));
   let overlap = 0;
   for (const t of aTokens) if (bTokens.has(t)) overlap++;
   const denom = Math.max(aTokens.size, bTokens.size) || 1;
-  return Math.round((overlap / denom) * 70); // up to ~70
+  return Math.round((overlap / denom) * 70);
 }
 
 function yearScore(a: number | null, b: number | null): number {
@@ -80,22 +79,35 @@ function episodeScore(a: number | null, b: number | null): number {
 }
 
 async function anilistFetchMediaById(anilistId: number) {
+  // ✅ RESTORED: userPreferred, trailer, tags
   const query = `
     query ($id: Int) {
       Media(id: $id, type: ANIME) {
         id
-        title { romaji english native }
+        title { romaji english native userPreferred }
         description(asHtml: false)
         format
         status
         episodes
+        season
         seasonYear
         startDate { year month day }
         endDate { year month day }
+        source
         genres
         averageScore
         coverImage { extraLarge large medium }
         bannerImage
+        trailer { id site thumbnail }
+        tags {
+          name
+          description
+          rank
+          isAdult
+          isGeneralSpoiler
+          isMediaSpoiler
+          category
+        }
       }
     }
   `;
@@ -132,16 +144,14 @@ function baseUrlFromReq(req: NextApiRequest) {
   return `${proto}://${host}`;
 }
 
-async function callImportAnime(req: NextApiRequest, args: { source: "tmdb" | "tvdb"; sourceId: number; targetAnimeId: string }) {
+async function callImportAnime(
+  req: NextApiRequest,
+  args: { source: "tmdb" | "tvdb"; sourceId: number; targetAnimeId: string }
+) {
   const baseUrl = baseUrlFromReq(req);
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-
-  if (ADMIN_IMPORT_SECRET) {
-    headers["x-import-secret"] = ADMIN_IMPORT_SECRET;
-  }
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (ADMIN_IMPORT_SECRET) headers["x-import-secret"] = ADMIN_IMPORT_SECRET;
 
   const res = await fetch(`${baseUrl}/api/admin/import-anime`, {
     method: "POST",
@@ -167,7 +177,6 @@ async function callImportAnime(req: NextApiRequest, args: { source: "tmdb" | "tv
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  // security (same pattern as your other admin routes)
   if (ADMIN_IMPORT_SECRET) {
     const token =
       (req.headers["x-import-secret"] as string | undefined) ||
@@ -189,7 +198,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: "Provide anilistId OR title" });
   }
 
-  // 1) AniList is the anchor (best for anime identity)
+  // 1) Fetch AniList (anchor)
   let al: any = null;
   if (anilistId) {
     try {
@@ -199,10 +208,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   }
 
+  // ✅ English-first for main display title
+  const titleEnglish = al?.title?.english ?? null;
+  const titleRomaji = al?.title?.romaji ?? null;
+  const titleNative = al?.title?.native ?? null;
+  const titlePreferred = al?.title?.userPreferred ?? null;
+
   const title =
-    al?.title?.english ||
-    al?.title?.romaji ||
-    al?.title?.native ||
+    titleEnglish ||
+    titleRomaji ||
+    titlePreferred ||
+    titleNative ||
     fallbackTitle ||
     "Untitled";
 
@@ -217,15 +233,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     fallbackEpisodes ??
     null;
 
-  const startDate =
-    al?.startDate ? anilistDateToISO(al.startDate) : null;
-
-  const endDate =
-    al?.endDate ? anilistDateToISO(al.endDate) : null;
+  const startDate = al?.startDate ? anilistDateToISO(al.startDate) : null;
+  const endDate = al?.endDate ? anilistDateToISO(al.endDate) : null;
 
   const slug = slugifyTitle(title);
 
-  // 2) Upsert ONE anime row (your internal truth)
+  const trailerSite = al?.trailer?.site ?? null;
+  const trailerId = al?.trailer?.id ?? null;
+  const trailerThumb = al?.trailer?.thumbnail ?? null;
+
+  // 2) Upsert ONE anime row (internal truth)
   const animePayload: Record<string, any> = {
     title,
     slug,
@@ -233,26 +250,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     image_url: al?.coverImage?.extraLarge || al?.coverImage?.large || null,
     banner_image_url: al?.bannerImage || null,
 
-    title_english: al?.title?.english || null,
-    title_native: al?.title?.native || null,
-    title_preferred: al?.title?.romaji || al?.title?.english || null,
+    title_english: titleEnglish,
+    title_native: titleNative,
+    title_preferred: titlePreferred || titleEnglish || titleRomaji || null,
 
     description: al?.description || null,
     format: al?.format || "TV",
     status: al?.status || null,
-    season: null,
+    season: al?.season || null,
     season_year: year,
     start_date: startDate ? toDateOnly(startDate) : null,
     end_date: endDate ? toDateOnly(endDate) : null,
     average_score: typeof al?.averageScore === "number" ? al.averageScore : null,
-    source: null,
+    source: al?.source || null,
     genres: Array.isArray(al?.genres) && al.genres.length ? al.genres : null,
+
+    trailer_site: trailerSite,
+    trailer_id: trailerId,
+    trailer_thumbnail_url: trailerThumb,
 
     anilist_id: anilistId ?? null,
   };
 
-  // if anime already exists by anilist_id, update that row; else upsert by slug
+  // If anime exists by anilist_id, update that row; else upsert by slug
   let animeId: string | null = null;
+
   if (anilistId) {
     const existing = await supabaseAdmin
       .from("anime")
@@ -262,9 +284,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (existing.data?.id) {
       animeId = existing.data.id as string;
-      const upd = await supabaseAdmin.from("anime").update(animePayload).eq("id", animeId).select("id").single();
+      const upd = await supabaseAdmin
+        .from("anime")
+        .update(animePayload)
+        .eq("id", animeId)
+        .select("id, total_episodes")
+        .single();
+
       if (upd.error) return res.status(500).json({ error: upd.error.message });
-      animeId = upd.data.id;
+      animeId = upd.data.id as string;
     }
   }
 
@@ -272,13 +300,68 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const up = await supabaseAdmin
       .from("anime")
       .upsert(animePayload, { onConflict: "slug" })
-      .select("id")
+      .select("id, total_episodes")
       .single();
 
     if (up.error || !up.data?.id) {
       return res.status(500).json({ error: up.error?.message || "Failed to upsert anime" });
     }
     animeId = up.data.id as string;
+  }
+
+  // 2b) ✅ Episode stub creation (best-effort)
+  const finalTotalEpisodes =
+    typeof animePayload.total_episodes === "number" && animePayload.total_episodes > 0
+      ? animePayload.total_episodes
+      : null;
+
+  if (finalTotalEpisodes) {
+    try {
+      const episodesPayload = Array.from({ length: finalTotalEpisodes }, (_, idx) => ({
+        anime_id: animeId,
+        episode_number: idx + 1,
+      }));
+
+      const { error: episodesError } = await supabaseAdmin
+        .from("anime_episodes")
+        .upsert(episodesPayload, { onConflict: "anime_id,episode_number" });
+
+      if (episodesError) console.error("Episode stub upsert error:", episodesError);
+    } catch (e) {
+      console.error("Episode stub creation error:", e);
+    }
+  }
+
+  // 2c) ✅ Tag sync restored (delete + insert)
+  try {
+    const { error: deleteError } = await supabaseAdmin
+      .from("anime_tags")
+      .delete()
+      .eq("anime_id", animeId);
+
+    if (deleteError) console.error("anime_tags delete error:", deleteError);
+
+    const rawTags = Array.isArray(al?.tags) ? al.tags : [];
+
+    const tagRows = rawTags
+      .filter((t: any) => t && t.name)
+      .map((t: any) => ({
+        anime_id: animeId,
+        name: t.name,
+        description: t.description ?? null,
+        rank: t.rank ?? null,
+        is_adult: t.isAdult ?? null,
+        is_general_spoiler: t.isGeneralSpoiler ?? null,
+        is_media_spoiler: t.isMediaSpoiler ?? null,
+        category: t.category ?? null,
+      }));
+
+    if (tagRows.length) {
+      const { error: insertError } = await supabaseAdmin.from("anime_tags").insert(tagRows);
+      if (insertError) console.error("anime_tags insert error:", insertError);
+    }
+  } catch (e) {
+    console.error("anime_tags sync unexpected error:", e);
   }
 
   // 3) Search TMDB + TVDB for best match
@@ -291,7 +374,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const s =
         titleScore(title, r.title) +
         yearScore(year, r.year ?? null) +
-        episodeScore(episodes, null); // TMDB search results don't give episode counts
+        episodeScore(episodes, null);
       const confidence = Math.max(0, Math.min(100, Math.round((s / 140) * 100)));
       if (!best || confidence > best.confidence) best = { ...r, score: s, confidence };
     }
@@ -299,49 +382,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   })();
 
   const bestTvdb = (() => {
-  let best: any = null;
+    let best: any = null;
 
-  for (const r of tvdbSearch.data ?? []) {
-    const rYear = toInt(r.year);
+    for (const r of tvdbSearch.data ?? []) {
+      const rYear = toInt(r.year);
 
-    // TVDB often returns Japanese name in r.title, but English aliases exist in r.raw.aliases / translations.
-    const candidates: string[] = [];
+      const candidates: string[] = [];
 
-const eng = r?.raw?.translations?.eng;
-if (eng) candidates.push(eng); // put English first
+      const eng = r?.raw?.translations?.eng;
+      if (eng) candidates.push(String(eng));
 
-if (r.title) candidates.push(String(r.title)); // then whatever TVDB search title is
+      if (r.title) candidates.push(String(r.title));
 
-const aliases = r?.raw?.aliases;
-if (Array.isArray(aliases)) {
-  for (const a of aliases) {
-    if (typeof a === "string" && a.trim()) candidates.push(a.trim());
-  }
-}
-
-    const translations = r?.raw?.translations;
-    if (translations && typeof translations === "object") {
-      for (const v of Object.values(translations)) {
-        if (typeof v === "string" && v.trim()) candidates.push(v.trim());
+      const aliases = r?.raw?.aliases;
+      if (Array.isArray(aliases)) {
+        for (const a of aliases) {
+          if (typeof a === "string" && a.trim()) candidates.push(a.trim());
+        }
       }
+
+      const translations = r?.raw?.translations;
+      if (translations && typeof translations === "object") {
+        for (const v of Object.values(translations)) {
+          if (typeof v === "string" && v.trim()) candidates.push(v.trim());
+        }
+      }
+
+      let bestTitlePoints = 0;
+      for (const c of candidates) {
+        bestTitlePoints = Math.max(bestTitlePoints, titleScore(title, c));
+      }
+
+      const s = bestTitlePoints + yearScore(year, rYear);
+      const confidence = Math.max(0, Math.min(100, Math.round((s / 125) * 100)));
+
+      if (!best || confidence > best.confidence) best = { ...r, score: s, confidence };
     }
 
-    // score title against the BEST candidate (english alias usually wins)
-    let bestTitlePoints = 0;
-    for (const c of candidates) {
-      bestTitlePoints = Math.max(bestTitlePoints, titleScore(title, c));
-    }
+    return best;
+  })();
 
-    const s = bestTitlePoints + yearScore(year, rYear);
-    const confidence = Math.max(0, Math.min(100, Math.round((s / 125) * 100)));
-
-    if (!best || confidence > best.confidence) best = { ...r, score: s, confidence };
-  }
-
-  return best;
-})();
-
-  // 4) If we found candidates, we run your importer routes but FORCE into same animeId
+  // 4) Import into same animeId (patch importers will not overwrite AniList)
   const importResults: any = { tmdb: null, tvdb: null };
 
   if (bestTmdb?.tmdb_id && bestTmdb.confidence >= 60) {
@@ -360,18 +441,15 @@ if (Array.isArray(aliases)) {
     });
   }
 
-  // 5) Pull back what got written into external links for this anime_id
+  // 5) Pull external links + anime row for visibility
   const links = await supabaseAdmin
     .from("anime_external_links")
-    .select("id, anime_id, source, external_id, external_type, title, year, start_date, episodes, status, confidence, match_method, notes, created_at")
+    .select(
+      "id, anime_id, source, external_id, external_type, title, year, start_date, episodes, status, confidence, match_method, notes, created_at"
+    )
     .eq("anime_id", animeId);
 
-  // extra: show the anime row too
-  const animeRow = await supabaseAdmin
-    .from("anime")
-    .select("*")
-    .eq("id", animeId)
-    .single();
+  const animeRow = await supabaseAdmin.from("anime").select("*").eq("id", animeId).single();
 
   return res.status(200).json({
     success: true,
