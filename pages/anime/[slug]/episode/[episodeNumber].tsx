@@ -1,14 +1,16 @@
 // pages/anime/[slug]/episode/[episodeNumber].tsx
 
-"use client";
-
 import { useRouter } from "next/router";
-import type { NextPage } from "next";
+import type { NextPage, GetServerSideProps } from "next";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import Image from "next/image";
 
 import type { Anime, AnimeEpisode } from "@/lib/types";
 import { getAnimeBySlug, getAnimeEpisode } from "@/lib/anime";
+
+import { supabase } from "@/lib/supabaseClient";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 // ✅ episode review helper
 import { createAnimeEpisodeReview } from "@/lib/reviews";
@@ -27,7 +29,21 @@ import GlobalLogModal from "@/components/reviews/GlobalLogModal";
 // ✅ Letterboxd-style action box
 import ActionBox from "@/components/actions/ActionBox";
 
-const AnimeEpisodePage: NextPage = () => {
+type AnimeEpisodePageProps = {
+  initialBackdropUrl: string | null;
+};
+
+function normalizeBackdropUrl(url: string) {
+  // TMDB "original" is huge; use a smaller size for faster first paint
+  if (url.includes("https://image.tmdb.org/t/p/original/")) {
+    return url.replace("/t/p/original/", "/t/p/w1280/");
+  }
+  return url; // TVDB stays as-is
+}
+
+const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
+  initialBackdropUrl,
+}) => {
   const router = useRouter();
   const { slug, episodeNumber } = router.query;
 
@@ -58,6 +74,9 @@ const AnimeEpisodePage: NextPage = () => {
 
   // ✅ open/close the global log modal
   const [logOpen, setLogOpen] = useState(false);
+
+  // ✅ Backdrop from SSR (public.anime_episode_artwork) — random every reload
+  const [backdropUrl] = useState<string | null>(initialBackdropUrl);
 
   // Normalize slug and episodeNumber to strings
   const slugString = Array.isArray(slug) ? slug[0] : slug ?? "";
@@ -256,18 +275,23 @@ const AnimeEpisodePage: NextPage = () => {
     );
   }
 
-  const a: any = anime;
-
   return (
     <>
       <main className="min-h-screen">
         <div className="mx-auto max-w-5xl px-4 py-8">
-          {a?.banner_image_url && (
-            <img
-              src={a.banner_image_url}
-              alt={`${anime?.title ?? slugString} banner`}
-              className="mb-6 h-40 w-full rounded-lg object-cover"
-            />
+          {/* ✅ Episode backdrop (SSR random from public.anime_episode_artwork) */}
+          {backdropUrl && (
+            <div className="mb-6 w-full">
+              <Image
+                src={backdropUrl}
+                alt=""
+                width={1600}
+                height={900}
+                priority
+                sizes="(max-width: 1024px) 100vw, 1024px"
+                style={{ width: "100%", height: "auto" }}
+              />
+            </div>
           )}
 
           <div className="mb-6 flex flex-col gap-6 md:flex-row">
@@ -291,7 +315,9 @@ const AnimeEpisodePage: NextPage = () => {
               <h1 className="mb-2 text-3xl font-bold text-gray-100">
                 {anime?.title ?? slugString}
                 <span className="text-gray-500"> — </span>
-                <span className="text-gray-100">Episode {episodeNum}</span>
+                <span className="text-gray-100">
+                  Episode {episodeNum}
+                </span>
               </h1>
 
               {episode?.title && (
@@ -387,19 +413,20 @@ const AnimeEpisodePage: NextPage = () => {
                 </div>
               )}
 
-              {/* ✅ NEW: ActionBox (series marks) that opens episode modal */}
+              {/* ✅ ActionBox (series marks) that opens episode modal */}
               {anime && episode && (
                 <div className="mt-3">
                   <ActionBox
                     key={actionBoxNonce}
                     animeId={anime.id}
-                    animeEpisodeId={episode.id}   // ✅ THIS IS THE FIX
+                    animeEpisodeId={episode.id}
                     onOpenLog={() => setLogOpen(true)}
                     onShowActivity={() =>
-                      router.push(`/anime/${slugString}/episode/${episodeNum}/activity`)
+                      router.push(
+                        `/anime/${slugString}/episode/${episodeNum}/activity`
+                      )
                     }
                   />
-
                 </div>
               )}
             </div>
@@ -482,7 +509,9 @@ const AnimeEpisodePage: NextPage = () => {
         open={logOpen}
         onClose={() => setLogOpen(false)}
         title={
-          anime ? `${anime.title} — Episode ${episodeNum}` : `Episode ${episodeNum}`
+          anime
+            ? `${anime.title} — Episode ${episodeNum}`
+            : `Episode ${episodeNum}`
         }
         posterUrl={anime?.image_url ?? null}
         animeId={anime?.id ?? null}
@@ -496,7 +525,7 @@ const AnimeEpisodePage: NextPage = () => {
           // ✅ refresh episode feed so new review shows immediately
           setFeedNonce((n) => n + 1);
 
-          // ✅ optional: refresh marks UI (watched/liked/watchlist/rating)
+          // ✅ refresh marks UI (watched/liked/watchlist/rating)
           setActionBoxNonce((n) => n + 1);
         }}
       />
@@ -505,3 +534,76 @@ const AnimeEpisodePage: NextPage = () => {
 };
 
 export default AnimeEpisodePage;
+
+export const getServerSideProps: GetServerSideProps<
+  AnimeEpisodePageProps
+> = async (ctx) => {
+  const rawSlug = ctx.params?.slug;
+  const slug =
+    typeof rawSlug === "string"
+      ? rawSlug
+      : Array.isArray(rawSlug) && rawSlug[0]
+      ? rawSlug[0]
+      : null;
+
+  const rawEp = ctx.params?.episodeNumber;
+  const epStr =
+    typeof rawEp === "string"
+      ? rawEp
+      : Array.isArray(rawEp) && rawEp[0]
+      ? rawEp[0]
+      : null;
+
+  const episodeNum = epStr ? parseInt(epStr, 10) : NaN;
+
+  if (!slug || !Number.isFinite(episodeNum) || episodeNum <= 0) {
+    return { props: { initialBackdropUrl: null } };
+  }
+
+  // 1) get anime id by slug
+  const { data: animeRow, error: animeErr } = await supabaseAdmin
+    .from("anime")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+
+  if (animeErr || !animeRow?.id) {
+    return { props: { initialBackdropUrl: null } };
+  }
+
+  // 2) get episode id by (anime_id, episode_number)
+  // NOTE: if your episodes table uses a different column name than "episode_number",
+  // change the .eq("episode_number", episodeNum) line to match.
+  const { data: epRow, error: epErr } = await supabaseAdmin
+    .from("anime_episodes")
+    .select("id")
+    .eq("anime_id", animeRow.id)
+    .eq("episode_number", episodeNum)
+    .maybeSingle();
+
+  if (epErr || !epRow?.id) {
+    return { props: { initialBackdropUrl: null } };
+  }
+
+  // 3) pull episode artwork + pick random backdrop
+  // NOTE: if your FK column is named "anime_episode_id", change it here.
+  const { data: arts, error: artsErr } = await supabaseAdmin
+    .from("anime_episode_artwork")
+    .select("url")
+    .eq("anime_episode_id", epRow.id);
+
+  if (artsErr || !arts || arts.length === 0) {
+    return { props: { initialBackdropUrl: null } };
+  }
+
+  const urls = arts.map((r) => r.url).filter(Boolean) as string[];
+  const picked = urls.length
+    ? urls[Math.floor(Math.random() * urls.length)]
+    : null;
+
+  return {
+    props: {
+      initialBackdropUrl: picked ? normalizeBackdropUrl(picked) : null,
+    },
+  };
+};
