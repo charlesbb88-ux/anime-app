@@ -323,172 +323,195 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
   // ------------------------
   return (
     <>
-      <div className="mx-auto max-w-5xl px-4 pt-0 pb-8">
+      <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
         {/* Backdrop (from SSR public.anime_artwork) */}
         {backdropUrl && (
-          <div className="w-full">
+          <div className="relative h-[620px] w-full overflow-hidden">
             <Image
               src={backdropUrl}
               alt=""
-              width={1600}
-              height={900}
+              width={1920}
+              height={1080}
               priority
-              sizes="(max-width: 1024px) 100vw, 1024px"
-              style={{ width: "100%", height: "auto" }}
+              sizes="100vw"
+              className="h-full w-full object-cover object-bottom"
+            />
+
+            {/* OVERLAY */}
+            <img
+              src="/overlays/my-overlay.png"
+              alt=""
+              className="pointer-events-none absolute inset-0 h-full w-full object-cover"
             />
           </div>
         )}
 
+
         {/* Top section */}
-        <div className="mb-8 flex flex-col gap-6 md:flex-row">
-          <div className="flex-shrink-0">
-            {anime.image_url ? (
-              <img
-                src={anime.image_url}
-                alt={anime.title}
-                className="h-84 w-56 rounded-lg object-cover"
-              />
-            ) : (
-              <div className="flex h-64 w-44 items-center justify-center rounded-lg bg-gray-800 text-4xl font-bold text-gray-200">
-                {anime.title[0] ?? "?"}
-              </div>
-            )}
-          </div>
-
-          <div className="flex-1">
-            <h1 className="mb-1 text-3xl font-bold">{anime.title}</h1>
-
-            {(a.title_english || a.title_native) && (
-              <div className="mb-2 text-sm text-gray-400">
-                {a.title_english && (
-                  <div>
-                    <span className="font-semibold text-gray-300">English:</span>{" "}
-                    {a.title_english}
-                  </div>
-                )}
-                {a.title_native && (
-                  <div>
-                    <span className="font-semibold text-gray-300">Native:</span>{" "}
-                    {a.title_native}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <p className="mb-1 text-sm text-gray-400">
-              Episodes:{" "}
-              <span className="font-semibold text-gray-100">
-                {anime.total_episodes ?? "Unknown"}
-              </span>
-            </p>
-
-            <p className="mb-1 text-sm text-gray-400">
-              Format:{" "}
-              <span className="font-semibold text-gray-100">
-                {a.format ?? "—"}
-              </span>
-            </p>
-
-            <p className="mb-1 text-sm text-gray-400">
-              Status:{" "}
-              <span className="font-semibold text-gray-100">
-                {a.status ?? "—"}
-              </span>
-            </p>
-
-            {(a.start_date || a.end_date) && (
-              <p className="mb-1 text-sm text-gray-400">
-                Aired:{" "}
-                <span className="font-semibold text-gray-100">
-                  {a.start_date ?? "?"}{" "}
-                  {(a.start_date || a.end_date) && " – "} {a.end_date ?? "?"}
-                </span>
-              </p>
-            )}
-
-            {(a.season || a.season_year) && (
-              <p className="mb-1 text-sm text-gray-400">
-                Season:{" "}
-                <span className="font-semibold text-gray-100">
-                  {a.season ?? "?"} {a.season_year ?? ""}
-                </span>
-              </p>
-            )}
-
-            {typeof a.average_score === "number" && (
-              <p className="mb-1 text-sm text-gray-400">
-                Score:{" "}
-                <span className="font-semibold text-gray-100">
-                  {a.average_score}/100
-                </span>
-              </p>
-            )}
-
-            {a.source && (
-              <p className="mb-2 text-sm text-gray-400">
-                Source:{" "}
-                <span className="font-semibold text-gray-100">{a.source}</span>
-              </p>
-            )}
-
-            {/* ✅ Episode Navigator */}
-            {slug && (
-              <div className="mt-4">
-                <EpisodeNavigator
-                  slug={slug}
-                  totalEpisodes={anime.total_episodes}
-                  currentEpisodeNumber={null}
+        <div className="-mt-5 relative z-10">
+          <div className="mb-8 flex flex-row gap-6">
+            <div className="flex-shrink-0">
+              {anime.image_url ? (
+                <img
+                  src={anime.image_url}
+                  alt={anime.title}
+                  className="h-84 w-56 rounded-lg object-cover border border-white/100"
                 />
-              </div>
-            )}
-
-            <p className="mt-2 text-xs text-gray-500">
-              Anime ID: <code className="text-[10px]">{anime.id}</code>
-            </p>
-
-            {/* ✅ NEW (temporary): test save review button + tiny status */}
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={handleTestSaveReview}
-                disabled={savingReview}
-                className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-1 text-xs font-medium text-gray-200 hover:bg-gray-900/60 disabled:opacity-60"
-              >
-                {savingReview ? "Saving…" : "Test: Save review"}
-              </button>
-
-              {/* ✅ Existing: opens your modal */}
-              <button
-                type="button"
-                onClick={() => setLogOpen(true)}
-                className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-1 text-xs font-medium text-gray-200 hover:bg-gray-900/60"
-              >
-                Log
-              </button>
-
-              {typeof mySeriesLogCount === "number" && (
-                <span className="text-xs text-gray-400">
-                  You logged this{" "}
-                  <span className="font-semibold text-gray-200">
-                    {mySeriesLogCount}
-                  </span>{" "}
-                  time{mySeriesLogCount === 1 ? "" : "s"}
-                </span>
-              )}
-
-              {reviewSaveMsg && (
-                <span className="text-xs text-gray-400">{reviewSaveMsg}</span>
+              ) : (
+                <div className="flex h-64 w-44 items-center justify-center rounded-lg bg-gray-800 text-4xl font-bold text-gray-200">
+                  {anime.title[0] ?? "?"}
+                </div>
               )}
             </div>
 
-            {/* ✅ NEW: Letterboxd-style action box (reusable) */}
-            <div className="mt-3">
-              <ActionBox
-                key={actionBoxNonce}
-                animeId={anime.id}
-                onOpenLog={() => setLogOpen(true)}
-                onShowActivity={() => router.push(`/anime/${anime.slug}/activity`)}
-              />
+            <div className="flex-1">
+              <h1 className="mb-1 text-3xl font-bold">{anime.title}</h1>
+              {/* rest of your title/meta content stays here */}
+
+
+              {/* Row 2: meta on left + ActionBox on right */}
+              <div className="flex items-start justify-between gap-6">
+                {/* LEFT: everything that used to be under the title */}
+                <div className="flex-1">
+                  {(a.title_english || a.title_native) && (
+                    <div className="mb-2 text-sm text-gray-400">
+                      {a.title_english && (
+                        <div>
+                          <span className="font-semibold text-gray-300">English:</span>{" "}
+                          {a.title_english}
+                        </div>
+                      )}
+                      {a.title_native && (
+                        <div>
+                          <span className="font-semibold text-gray-300">Native:</span>{" "}
+                          {a.title_native}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <p className="mb-1 text-sm text-gray-400">
+                    Episodes:{" "}
+                    <span className="font-semibold text-gray-100">
+                      {anime.total_episodes ?? "Unknown"}
+                    </span>
+                  </p>
+
+                  <p className="mb-1 text-sm text-gray-400">
+                    Format:{" "}
+                    <span className="font-semibold text-gray-100">{a.format ?? "—"}</span>
+                  </p>
+
+                  <p className="mb-1 text-sm text-gray-400">
+                    Status:{" "}
+                    <span className="font-semibold text-gray-100">{a.status ?? "—"}</span>
+                  </p>
+
+                  {(a.start_date || a.end_date) && (
+                    <p className="mb-1 text-sm text-gray-400">
+                      Aired:{" "}
+                      <span className="font-semibold text-gray-100">
+                        {a.start_date ?? "?"} {(a.start_date || a.end_date) && " – "}{" "}
+                        {a.end_date ?? "?"}
+                      </span>
+                    </p>
+                  )}
+
+                  {(a.season || a.season_year) && (
+                    <p className="mb-1 text-sm text-gray-400">
+                      Season:{" "}
+                      <span className="font-semibold text-gray-100">
+                        {a.season ?? "?"} {a.season_year ?? ""}
+                      </span>
+                    </p>
+                  )}
+
+                  {typeof a.average_score === "number" && (
+                    <p className="mb-1 text-sm text-gray-400">
+                      Score:{" "}
+                      <span className="font-semibold text-gray-100">
+                        {a.average_score}/100
+                      </span>
+                    </p>
+                  )}
+
+                  {a.source && (
+                    <p className="mb-2 text-sm text-gray-400">
+                      Source: <span className="font-semibold text-gray-100">{a.source}</span>
+                    </p>
+                  )}
+
+                  {/* ✅ Episode Navigator */}
+                  {slug && (
+                    <div className="mt-4">
+                      <EpisodeNavigator
+                        slug={slug}
+                        totalEpisodes={anime.total_episodes}
+                        currentEpisodeNumber={null}
+                      />
+                    </div>
+                  )}
+
+                  <p className="mt-2 text-xs text-gray-500">
+                    Anime ID: <code className="text-[10px]">{anime.id}</code>
+                  </p>
+
+                  {/* ✅ test buttons / log count */}
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleTestSaveReview}
+                      disabled={savingReview}
+                      className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-1 text-xs font-medium text-gray-200 hover:bg-gray-900/60 disabled:opacity-60"
+                    >
+                      {savingReview ? "Saving…" : "Test: Save review"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setLogOpen(true)}
+                      className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-1 text-xs font-medium text-gray-200 hover:bg-gray-900/60"
+                    >
+                      Log
+                    </button>
+
+                    {typeof mySeriesLogCount === "number" && (
+                      <span className="text-xs text-gray-400">
+                        You logged this{" "}
+                        <span className="font-semibold text-gray-200">
+                          {mySeriesLogCount}
+                        </span>{" "}
+                        time{mySeriesLogCount === 1 ? "" : "s"}
+                      </span>
+                    )}
+
+                    {reviewSaveMsg && (
+                      <span className="text-xs text-gray-400">{reviewSaveMsg}</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* RIGHT: ActionBox */}
+                <div className="flex-shrink-0 pt-1">
+                  <ActionBox
+                    key={actionBoxNonce}
+                    animeId={anime.id}
+                    onOpenLog={() => setLogOpen(true)}
+                    onShowActivity={() => router.push(`/anime/${anime.slug}/activity`)}
+                  />
+                </div>
+              </div>
+
+
+              {/* ✅ NEW: Letterboxd-style action box (reusable) */}
+              <div className="mt-3">
+                <ActionBox
+                  key={actionBoxNonce}
+                  animeId={anime.id}
+                  onOpenLog={() => setLogOpen(true)}
+                  onShowActivity={() => router.push(`/anime/${anime.slug}/activity`)}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -570,9 +593,8 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                           )}
 
                           <span
-                            className={`relative ${
-                              isSpoiler ? "text-red-400" : "text-gray-100"
-                            }`}
+                            className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"
+                              }`}
                           >
                             {tag.name}
                           </span>
@@ -609,12 +631,10 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                   className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
                 >
                   {showSpoilers
-                    ? `Hide ${spoilerCount} spoiler tag${
-                        spoilerCount === 1 ? "" : "s"
-                      }`
-                    : `Show ${spoilerCount} spoiler tag${
-                        spoilerCount === 1 ? "" : "s"
-                      }`}
+                    ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
+                    }`
+                    : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
+                    }`}
                 </button>
               )}
             </>
@@ -714,7 +734,7 @@ export const getServerSideProps: GetServerSideProps<AnimePageProps> = async (ctx
     return { props: { initialBackdropUrl: null } };
   }
 
-    // 2) Get a RANDOM backdrop from anime_artwork (server-side)
+  // 2) Get a RANDOM backdrop from anime_artwork (server-side)
   const { data: arts, error: artErr } = await supabaseAdmin
     .from("anime_artwork")
     .select("url, is_primary, vote, width")
