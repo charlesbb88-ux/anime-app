@@ -2,7 +2,7 @@
 
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
@@ -24,7 +24,6 @@ export default function EpisodeNavigator({
   className,
 }: Props) {
   const router = useRouter();
-  const [gotoValue, setGotoValue] = useState("");
 
   const total = typeof totalEpisodes === "number" ? totalEpisodes : null;
   const hasTotal =
@@ -113,29 +112,10 @@ export default function EpisodeNavigator({
     router.push(`${episodeBase}/${n}`);
   };
 
-  const onGoToEnter = () => {
-    const value = gotoValue.trim();
-    if (!value) return;
-
-    const nRaw = Number(value);
-    if (!Number.isFinite(nRaw)) return;
-
-    let n = Math.trunc(nRaw);
-    if (n < 1) n = 1;
-
-    if (hasTotal) {
-      const t = total as number;
-      n = clamp(n, 1, t);
-    }
-
-    setGotoValue("");
-    goToEpisode(n);
-  };
-
   return (
     <div
       className={[
-        "w-full rounded-lg border border-gray-800 bg-gray-900/40 px-4 py-3",
+        "w-full min-w-0 overflow-hidden rounded-lg border border-gray-800 bg-gray-900/40 px-4 py-3",
         className ?? "",
       ].join(" ")}
     >
@@ -170,7 +150,7 @@ export default function EpisodeNavigator({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {/* Main anime page button */}
             <Link
               href={animeHref}
@@ -250,9 +230,9 @@ export default function EpisodeNavigator({
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="flex-1 overflow-x-auto">
-            <div className="flex w-max items-center gap-2 pr-2">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="min-w-0 flex-1 overflow-x-auto">
+            <div className="flex items-center gap-2 pr-2">
               {hasTotal ? (
                 episodes.map((item, idx) => {
                   if (item === "…") {
@@ -290,21 +270,6 @@ export default function EpisodeNavigator({
                 </div>
               )}
             </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-600">Go to</span>
-            <input
-              type="text"
-              inputMode="numeric"
-              placeholder="e.g. 12"
-              value={gotoValue}
-              onChange={(e) => setGotoValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") onGoToEnter();
-              }}
-              className="w-20 rounded-md border border-gray-800 bg-black/20 px-2 py-1 text-xs text-gray-200 placeholder:text-gray-600 outline-none focus:border-gray-600"
-            />
           </div>
         </div>
       </div>

@@ -16,8 +16,6 @@ import { createAnimeSeriesReview } from "@/lib/reviews";
 
 import EpisodeNavigator from "@/components/EpisodeNavigator";
 
-import LeftSidebar from "../../components/LeftSidebar";
-import RightSidebar from "../../components/RightSidebar";
 import PostFeed from "../../components/PostFeed";
 
 // ✅ Global Log modal
@@ -348,14 +346,14 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
 
 
         {/* Top section */}
-        <div className="-mt-5 relative z-10">
-          <div className="mb-8 flex flex-row gap-6">
+        <div className="-mt-5 relative z-10 px-3">
+          <div className="mb-8 flex flex-row gap-7">
             <div className="flex-shrink-0">
               {anime.image_url ? (
                 <img
                   src={anime.image_url}
                   alt={anime.title}
-                  className="h-84 w-56 rounded-lg object-cover border border-white/100"
+                  className="h-84 w-56 rounded-md object-cover border border-black/100"
                 />
               ) : (
                 <div className="flex h-64 w-44 items-center justify-center rounded-lg bg-gray-800 text-4xl font-bold text-gray-200">
@@ -364,86 +362,42 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
               )}
             </div>
 
-            <div className="flex-1">
-              <h1 className="mb-1 text-3xl font-bold">{anime.title}</h1>
-              {/* rest of your title/meta content stays here */}
+            <div className="min-w-100 flex-1">
+              {/* ROW 1 — TITLE (full width, can be tall) */}
+              <h1 className="mb-2 text-4xl font-bold leading-tight">
+                {anime.title}
+              </h1>
 
+              {/* ROW 2 — LEFT CONTENT + ActionBox pinned top-right */}
+              <div className="relative w-full">
+                {/* RIGHT SIDE: ActionBox (pinned, won't move) */}
+                <div className="absolute right-0 top-1">
+                  <ActionBox
+                    key={actionBoxNonce}
+                    animeId={anime.id}
+                    onOpenLog={() => setLogOpen(true)}
+                    onShowActivity={() => router.push(`/anime/${anime.slug}/activity`)}
+                  />
+                </div>
 
-              {/* Row 2: meta on left + ActionBox on right */}
-              <div className="flex items-start justify-between gap-6">
-                {/* LEFT: everything that used to be under the title */}
-                <div className="flex-1">
-                  {(a.title_english || a.title_native) && (
-                    <div className="mb-2 text-sm text-gray-400">
-                      {a.title_english && (
-                        <div>
-                          <span className="font-semibold text-gray-300">English:</span>{" "}
-                          {a.title_english}
-                        </div>
-                      )}
-                      {a.title_native && (
-                        <div>
-                          <span className="font-semibold text-gray-300">Native:</span>{" "}
-                          {a.title_native}
-                        </div>
-                      )}
+                {/* LEFT SIDE: reserve space so text never goes under ActionBox */}
+                <div className="min-w-0 pr-[260px]">
+                  {/* ✅ SYNOPSIS goes here (between poster and actionbox) */}
+                  {a.description && (
+                    <div className="mt-6 mb-3">
+                      <p className="whitespace-pre-line text-base text-black">
+                        {a.description
+                          .replace(/<br\s*\/?>/gi, "\n")
+                          .replace(/\(Source:.*?\)/gi, "")
+                          .replace(/<i>.*?<\/i>/gi, "")
+                          .trim()}
+                      </p>
                     </div>
-                  )}
-
-                  <p className="mb-1 text-sm text-gray-400">
-                    Episodes:{" "}
-                    <span className="font-semibold text-gray-100">
-                      {anime.total_episodes ?? "Unknown"}
-                    </span>
-                  </p>
-
-                  <p className="mb-1 text-sm text-gray-400">
-                    Format:{" "}
-                    <span className="font-semibold text-gray-100">{a.format ?? "—"}</span>
-                  </p>
-
-                  <p className="mb-1 text-sm text-gray-400">
-                    Status:{" "}
-                    <span className="font-semibold text-gray-100">{a.status ?? "—"}</span>
-                  </p>
-
-                  {(a.start_date || a.end_date) && (
-                    <p className="mb-1 text-sm text-gray-400">
-                      Aired:{" "}
-                      <span className="font-semibold text-gray-100">
-                        {a.start_date ?? "?"} {(a.start_date || a.end_date) && " – "}{" "}
-                        {a.end_date ?? "?"}
-                      </span>
-                    </p>
-                  )}
-
-                  {(a.season || a.season_year) && (
-                    <p className="mb-1 text-sm text-gray-400">
-                      Season:{" "}
-                      <span className="font-semibold text-gray-100">
-                        {a.season ?? "?"} {a.season_year ?? ""}
-                      </span>
-                    </p>
-                  )}
-
-                  {typeof a.average_score === "number" && (
-                    <p className="mb-1 text-sm text-gray-400">
-                      Score:{" "}
-                      <span className="font-semibold text-gray-100">
-                        {a.average_score}/100
-                      </span>
-                    </p>
-                  )}
-
-                  {a.source && (
-                    <p className="mb-2 text-sm text-gray-400">
-                      Source: <span className="font-semibold text-gray-100">{a.source}</span>
-                    </p>
                   )}
 
                   {/* ✅ Episode Navigator */}
                   {slug && (
-                    <div className="mt-4">
+                    <div className="mt-4 min-w-0 overflow-hidden">
                       <EpisodeNavigator
                         slug={slug}
                         totalEpisodes={anime.total_episodes}
@@ -452,81 +406,17 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                     </div>
                   )}
 
-                  <p className="mt-2 text-xs text-gray-500">
-                    Anime ID: <code className="text-[10px]">{anime.id}</code>
-                  </p>
-
-                  {/* ✅ test buttons / log count */}
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleTestSaveReview}
-                      disabled={savingReview}
-                      className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-1 text-xs font-medium text-gray-200 hover:bg-gray-900/60 disabled:opacity-60"
-                    >
-                      {savingReview ? "Saving…" : "Test: Save review"}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setLogOpen(true)}
-                      className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-1 text-xs font-medium text-gray-200 hover:bg-gray-900/60"
-                    >
-                      Log
-                    </button>
-
-                    {typeof mySeriesLogCount === "number" && (
-                      <span className="text-xs text-gray-400">
-                        You logged this{" "}
-                        <span className="font-semibold text-gray-200">
-                          {mySeriesLogCount}
-                        </span>{" "}
-                        time{mySeriesLogCount === 1 ? "" : "s"}
-                      </span>
-                    )}
-
-                    {reviewSaveMsg && (
-                      <span className="text-xs text-gray-400">{reviewSaveMsg}</span>
-                    )}
+                  <div className="mx-auto mt-6 max-w-6xl px-4 pb-12">
+                    {/* ✅ key forces PostFeed remount so the new review appears immediately */}
+                    <PostFeed key={feedNonce} animeId={anime.id} />
                   </div>
-                </div>
 
-                {/* RIGHT: ActionBox */}
-                <div className="flex-shrink-0 pt-1">
-                  <ActionBox
-                    key={actionBoxNonce}
-                    animeId={anime.id}
-                    onOpenLog={() => setLogOpen(true)}
-                    onShowActivity={() => router.push(`/anime/${anime.slug}/activity`)}
-                  />
                 </div>
               </div>
-
-
-              {/* ✅ NEW: Letterboxd-style action box (reusable) */}
-              <div className="mt-3">
-                <ActionBox
-                  key={actionBoxNonce}
-                  animeId={anime.id}
-                  onOpenLog={() => setLogOpen(true)}
-                  onShowActivity={() => router.push(`/anime/${anime.slug}/activity`)}
-                />
-              </div>
+              {/* EVERYTHING BELOW stays the same */}
             </div>
           </div>
         </div>
-
-        {/* Synopsis */}
-        {a.description && (
-          <div className="mb-6">
-            <h2 className="mb-1 text-sm font-semibold text-gray-300">
-              Synopsis
-            </h2>
-            <p className="whitespace-pre-line text-sm text-gray-200">
-              {a.description}
-            </p>
-          </div>
-        )}
 
         {/* Genres */}
         {hasGenres && (
@@ -641,40 +531,72 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
           )}
         </div>
 
+        {/* Meta info stays below synopsis */}
+        {(a.title_english || a.title_native) && (
+          <div className="mb-2 text-sm text-gray-400">
+            {a.title_english && (
+              <div>
+                <span className="font-semibold text-gray-300">English:</span>{" "}
+                {a.title_english}
+              </div>
+            )}
+            {a.title_native && (
+              <div>
+                <span className="font-semibold text-gray-300">Native:</span>{" "}
+                {a.title_native}
+              </div>
+            )}
+          </div>
+        )}
+
+        <p className="mb-1 text-sm text-gray-400">
+          Episodes:{" "}
+          <span className="font-semibold text-gray-100">
+            {anime.total_episodes ?? "Unknown"}
+          </span>
+        </p>
+
+        <p className="mb-1 text-sm text-gray-400">
+          Format:{" "}
+          <span className="font-semibold text-gray-100">{a.format ?? "—"}</span>
+        </p>
+
+        <p className="mb-1 text-sm text-gray-400">
+          Status:{" "}
+          <span className="font-semibold text-gray-100">{a.status ?? "—"}</span>
+        </p>
+
+        {(a.start_date || a.end_date) && (
+          <p className="mb-1 text-sm text-gray-400">
+            Aired:{" "}
+            <span className="font-semibold text-gray-100">
+              {a.start_date ?? "?"} – {a.end_date ?? "?"}
+            </span>
+          </p>
+        )}
+
+        {(a.season || a.season_year) && (
+          <p className="mb-1 text-sm text-gray-400">
+            Season:{" "}
+            <span className="font-semibold text-gray-100">
+              {a.season ?? "?"} {a.season_year ?? ""}
+            </span>
+          </p>
+        )}
+
+        {typeof a.average_score === "number" && (
+          <p className="mb-1 text-sm text-gray-400">
+            Score:{" "}
+            <span className="font-semibold text-gray-100">
+              {a.average_score}/100
+            </span>
+          </p>
+        )}
+
         {/* Back link */}
         <Link href="/" className="text-xs text-blue-400 hover:text-blue-300">
           ← Back home
         </Link>
-      </div>
-
-      {/* ------------------------------------------- */}
-      {/*     DISCUSSION FEED SECTION — SMALL GAP     */}
-      {/* ------------------------------------------- */}
-      <div
-        style={{
-          marginTop: "1.5rem",
-          maxWidth: "80rem",
-          marginLeft: "auto",
-          marginRight: "auto",
-          padding: "2rem 1.5rem",
-          display: "grid",
-          gridTemplateColumns:
-            "minmax(0, 19rem) minmax(0, 41rem) minmax(0, 19rem)",
-          gap: "1rem",
-        }}
-      >
-        <div>
-          <LeftSidebar />
-        </div>
-
-        <div>
-          {/* ✅ key forces PostFeed remount so the new review appears immediately */}
-          <PostFeed key={feedNonce} animeId={anime.id} />
-        </div>
-
-        <div>
-          <RightSidebar />
-        </div>
       </div>
 
       <GlobalLogModal
