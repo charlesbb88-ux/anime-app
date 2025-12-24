@@ -346,7 +346,7 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
               <img
                 src={anime.image_url}
                 alt={anime.title}
-                className="h-64 w-44 rounded-lg object-cover"
+                className="h-84 w-56 rounded-lg object-cover"
               />
             ) : (
               <div className="flex h-64 w-44 items-center justify-center rounded-lg bg-gray-800 text-4xl font-bold text-gray-200">
@@ -689,6 +689,8 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
     </>
   );
 };
+
+(AnimePage as any).headerTransparent = true;
 
 export default AnimePage;
 

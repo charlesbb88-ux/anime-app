@@ -1,3 +1,4 @@
+// components/Header.tsx
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
@@ -13,12 +14,15 @@ type Profile = {
   avatar_url: string | null;
 };
 
-export default function Header() {
+export default function Header({ transparent = false }: { transparent?: boolean }) {
   const [user, setUser] = useState<UserType | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+
+  // ✅ AniList-style show/hide
+  const [isHidden, setIsHidden] = useState(false);
 
   const menuRef = useRef<HTMLDivElement | null>(null);
 
@@ -47,11 +51,8 @@ export default function Header() {
       const u = data.user ?? null;
       setUser(u);
 
-      if (u) {
-        fetchProfile(u.id);
-      } else {
-        setProfile(null);
-      }
+      if (u) fetchProfile(u.id);
+      else setProfile(null);
 
       setAuthChecking(false);
     });
@@ -63,11 +64,8 @@ export default function Header() {
         const u = session?.user ?? null;
         setUser(u);
 
-        if (u) {
-          fetchProfile(u.id);
-        } else {
-          setProfile(null);
-        }
+        if (u) fetchProfile(u.id);
+        else setProfile(null);
 
         setAuthChecking(false);
       }
@@ -94,8 +92,63 @@ export default function Header() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [isUserMenuOpen]);
 
-  // ---- name / initial helpers using profile.username ----
+  // ✅ AniList behavior:
+  // - scroll down => hide (after a small threshold)
+  // - any scroll up => show immediately
+  // - near top => always show
+  // - if user menu open => keep visible
+  useEffect(() => {
+    let lastY = typeof window !== "undefined" ? window.scrollY : 0;
+    let rafId: number | null = null;
 
+    const SHOW_AT_TOP_Y = 10;
+    const HIDE_AFTER_Y = 60;
+    const DOWN_DEADZONE = 4;
+
+    const onScroll = () => {
+      if (rafId != null) return;
+
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+
+        const y = window.scrollY;
+
+        if (y <= SHOW_AT_TOP_Y) {
+          setIsHidden(false);
+          lastY = y;
+          return;
+        }
+
+        if (isUserMenuOpen) {
+          setIsHidden(false);
+          lastY = y;
+          return;
+        }
+
+        const delta = y - lastY;
+
+        // down
+        if (delta > DOWN_DEADZONE) {
+          if (y > HIDE_AFTER_Y) setIsHidden(true);
+        }
+
+        // up (ANY amount)
+        if (delta < 0) {
+          setIsHidden(false);
+        }
+
+        lastY = y;
+      });
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (rafId != null) window.cancelAnimationFrame(rafId);
+    };
+  }, [isUserMenuOpen]);
+
+  // ---- name / initial helpers using profile.username ----
   function getEmailPrefix(u: UserType | null) {
     if (!u) return "";
     const email: string = u.email || "";
@@ -142,25 +195,31 @@ export default function Header() {
         style={{
           width: "100%",
           padding: "0.75rem 1.5rem",
-          borderBottom: "1px solid #ddd",
-          background: "#ffffff",
+          borderBottom: transparent ? "none" : "1px solid #ddd",
+          background: transparent ? "transparent" : "#ffffff",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          position: "sticky",
+
+          // ✅ key change:
+          // transparent pages should OVERLAY the content, not push it down
+          position: transparent ? "fixed" : "sticky",
           top: 0,
           zIndex: 50,
+
+          // ✅ AniList show/hide (keep your existing variables)
+          transform: isHidden ? "translateY(-110%)" : "translateY(0)",
+          transition: "transform 140ms ease-out",
+          willChange: "transform",
+
+          // optional, helps readability on backdrops:
+          backdropFilter: "none",
+          WebkitBackdropFilter: "none",
         }}
       >
+
         {/* Left: brand + nav links */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "1.5rem",
-          }}
-        >
-          {/* Brand → home */}
+        <div style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
           <Link
             href="/"
             style={{
@@ -174,7 +233,6 @@ export default function Header() {
             AnimeApp
           </Link>
 
-          {/* Simple nav links */}
           <nav
             style={{
               display: "flex",
@@ -209,13 +267,8 @@ export default function Header() {
         </div>
 
         {/* Right: auth / user menu */}
-        <div
-          style={{ position: "relative", minWidth: "2.5rem" }}
-          ref={menuRef}
-        >
-          {/* While auth is still checking, render nothing on the right to avoid flicker */}
+        <div style={{ position: "relative", minWidth: "2.5rem" }} ref={menuRef}>
           {authChecking ? null : user ? (
-            // USER MENU BUTTON (avatar + name)
             <button
               type="button"
               onClick={() => setIsUserMenuOpen((prev) => !prev)}
@@ -276,7 +329,6 @@ export default function Header() {
               </span>
             </button>
           ) : (
-            // LOGIN BUTTON
             <button
               type="button"
               onClick={() => setIsAuthOpen(true)}
@@ -295,7 +347,6 @@ export default function Header() {
             </button>
           )}
 
-          {/* USER MENU (Profile + Logout) */}
           {user && isUserMenuOpen && (
             <div
               style={{
@@ -353,7 +404,6 @@ export default function Header() {
         </div>
       </header>
 
-      {/* LOGIN MODAL */}
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
     </>
   );
