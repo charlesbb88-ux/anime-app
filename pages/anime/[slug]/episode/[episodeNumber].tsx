@@ -34,11 +34,25 @@ type AnimeEpisodePageProps = {
 };
 
 function normalizeBackdropUrl(url: string) {
-  // TMDB "original" is huge; use a smaller size for faster first paint
-  if (url.includes("https://image.tmdb.org/t/p/original/")) {
-    return url.replace("/t/p/original/", "/t/p/w1280/");
+  if (!url) return url;
+
+  // Only touch TMDB urls
+  if (url.includes("https://image.tmdb.org/t/p/")) {
+    // If it was original, keep original (highest quality)
+    if (url.includes("/t/p/original/")) return url;
+
+    // If it was w1280, upgrade to w1920 (much sharper on desktop)
+    if (url.includes("/t/p/w1280/")) return url.replace("/t/p/w1280/", "/t/p/w1920/");
+
+    // If it was w780, upgrade too
+    if (url.includes("/t/p/w780/")) return url.replace("/t/p/w780/", "/t/p/w1920/");
+
+    // Otherwise leave whatever size it already is
+    return url;
   }
-  return url; // TVDB stays as-is
+
+  // TVDB / anything else: leave as-is
+  return url;
 }
 
 const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
@@ -76,7 +90,7 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
   const [logOpen, setLogOpen] = useState(false);
 
   // ✅ Backdrop from SSR (public.anime_episode_artwork) — random every reload
-  const [backdropUrl] = useState<string | null>(initialBackdropUrl);
+  const backdropUrl = initialBackdropUrl;
 
   // Normalize slug and episodeNumber to strings
   const slugString = Array.isArray(slug) ? slug[0] : slug ?? "";
@@ -86,6 +100,7 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
 
   const episodeNum = Number(episodeNumberString);
   const isValidEpisodeNumber = Number.isInteger(episodeNum) && episodeNum > 0;
+
 
   // Load anime by slug once the router is ready and slug is valid
   useEffect(() => {
@@ -288,6 +303,8 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                 width={1600}
                 height={900}
                 priority
+                quality={95}
+                unoptimized={backdropUrl.includes("artworks.thetvdb.com")}
                 sizes="(max-width: 1024px) 100vw, 1024px"
                 style={{ width: "100%", height: "auto" }}
               />
@@ -543,16 +560,16 @@ export const getServerSideProps: GetServerSideProps<
     typeof rawSlug === "string"
       ? rawSlug
       : Array.isArray(rawSlug) && rawSlug[0]
-      ? rawSlug[0]
-      : null;
+        ? rawSlug[0]
+        : null;
 
   const rawEp = ctx.params?.episodeNumber;
   const epStr =
     typeof rawEp === "string"
       ? rawEp
       : Array.isArray(rawEp) && rawEp[0]
-      ? rawEp[0]
-      : null;
+        ? rawEp[0]
+        : null;
 
   const episodeNum = epStr ? parseInt(epStr, 10) : NaN;
 
