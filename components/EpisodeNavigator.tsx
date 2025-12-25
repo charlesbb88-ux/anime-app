@@ -630,7 +630,7 @@ export default function EpisodeNavigator({
                 isActive ? "ring-black/15 bg-white" : "",
               ].join(" ")}
             >
-              <div className="flex h-full overflow-hidden rounded-md">
+              <div className="flex h-full overflow-hidden rounded-sm">
                 <div className={[thumbSize, "bg-black/5"].join(" ")}>
                   {imageUrl ? (
                     <img

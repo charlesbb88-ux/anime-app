@@ -346,10 +346,23 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
             <div className="min-w-100 flex-1">
               {/* ROW 1 — TITLE */}
               <h1 className="mb-2 text-4xl font-bold leading-tight">
-                {anime?.title ?? slugString}
-                <span className="text-gray-500"> — </span>
-                <span>Episode {episodeNum}</span>
+                {episode?.title ? (
+                  episode.title
+                ) : (
+                  <>Episode {episodeNum}</>
+                )}
               </h1>
+
+              <div className="text-sm text-gray-600">
+                <Link
+                  href={`/anime/${slugString}`}
+                  className="hover:text-gray-900"
+                >
+                  {anime?.title ?? slugString}
+                </Link>
+                <span className="mx-1">•</span>
+                <span>Episode {episodeNum}</span>
+              </div>
 
               {/* ROW 2 — LEFT CONTENT + ActionBox pinned top-right */}
               <div className="relative w-full">
@@ -373,17 +386,7 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                 {/* LEFT SIDE: reserve space so content never goes under ActionBox */}
                 <div className="min-w-0 pr-[260px]">
                   {/* Episode title + synopsis (this is the “synopsis area” like series page) */}
-                  {episode?.title && (
-                    <div className="mt-4">
-                      <p className="text-sm text-gray-700">
-                        <span className="font-semibold text-gray-900">
-                          Episode title:
-                        </span>{" "}
-                        {episode.title}
-                      </p>
-                    </div>
-                  )}
-
+                  
                   {episode?.synopsis ? (
                     <div className="mt-6 mb-3">
                       <p className="whitespace-pre-line text-base text-black">
@@ -615,10 +618,10 @@ export const getServerSideProps: GetServerSideProps<
 
   // 3) pull episode artwork + pick random backdrop
   const { data: arts, error: artsErr } = await supabaseAdmin
-  .from("anime_episode_artwork")
-  .select("url")
-  .eq("anime_episode_id", epRow.id)
-  .neq("source", "tvdb"); // ❌ remove TVDB entirely
+    .from("anime_episode_artwork")
+    .select("url")
+    .eq("anime_episode_id", epRow.id)
+    .neq("source", "tvdb"); // ❌ remove TVDB entirely
 
   if (artsErr || !arts || arts.length === 0) {
     return { props: { initialBackdropUrl: null } };
