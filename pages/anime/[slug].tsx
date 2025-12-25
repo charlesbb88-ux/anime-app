@@ -530,7 +530,7 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
             </>
           )}
         </div>
-
+ 
         {/* Meta info stays below synopsis */}
         {(a.title_english || a.title_native) && (
           <div className="mb-2 text-sm text-gray-400">

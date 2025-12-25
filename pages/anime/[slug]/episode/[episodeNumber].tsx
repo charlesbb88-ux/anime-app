@@ -615,9 +615,10 @@ export const getServerSideProps: GetServerSideProps<
 
   // 3) pull episode artwork + pick random backdrop
   const { data: arts, error: artsErr } = await supabaseAdmin
-    .from("anime_episode_artwork")
-    .select("url")
-    .eq("anime_episode_id", epRow.id);
+  .from("anime_episode_artwork")
+  .select("url")
+  .eq("anime_episode_id", epRow.id)
+  .neq("source", "tvdb"); // ❌ remove TVDB entirely
 
   if (artsErr || !arts || arts.length === 0) {
     return { props: { initialBackdropUrl: null } };
