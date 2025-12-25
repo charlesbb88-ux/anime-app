@@ -35,8 +35,25 @@ type ActivityItem =
       type: "watched" | "liked" | "watchlist" | "rating";
       title: string;
       logged_at: string;
-      // ⭐ rating uses HALF-STARS stored as 1..10
+      stars?: number | null; // half-stars 1..10
+    }
+  | {
+      id: string;
+      kind: "group";
+      type: "anime_series_group";
+      title: string;
+      logged_at: string;
+      actions: Array<"reviewed" | "liked" | "watched" | "watchlist" | "rated">;
+
       stars?: number | null;
+
+      review_rating?: number | null;
+      review_content?: string | null;
+      contains_spoilers?: boolean;
+
+      log_rating?: number | null;
+      log_note?: string | null;
+      visibility?: "public" | "friends" | "private";
     };
 
 function getAnimeDisplayTitle(anime: any): string {
@@ -84,7 +101,7 @@ function clampInt(n: number, min: number, max: number) {
 }
 
 function computeStarFillPercent(halfStars: number, starIndex: number) {
-  const starHalfStart = (starIndex - 1) * 2; // 0,2,4,6,8
+  const starHalfStart = (starIndex - 1) * 2;
   const remaining = halfStars - starHalfStart;
 
   if (remaining >= 2) return 100 as const;
@@ -123,6 +140,42 @@ function HalfStarsRow({ halfStars }: { halfStars: number }) {
   );
 }
 
+/* -------------------- Grouping helpers -------------------- */
+
+function joinWithCommasAnd(parts: string[]) {
+  if (parts.length <= 1) return parts[0] ?? "";
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
+}
+
+function actionWord(a: "reviewed" | "liked" | "watched" | "watchlist" | "rated") {
+  if (a === "watchlist") return "added to your watchlist";
+  if (a === "rated") return "rated";
+  if (a === "reviewed") return "reviewed";
+  if (a === "liked") return "liked";
+  return "watched";
+}
+
+function buildGroupedPrefix(
+  actions: Array<"reviewed" | "liked" | "watched" | "watchlist" | "rated">
+) {
+  const hasWatchlist = actions.includes("watchlist");
+  const main = actions.filter((a) => a !== "watchlist");
+  const mainWords = main.map(actionWord);
+  const mainPhrase = joinWithCommasAnd(mainWords);
+
+  if (hasWatchlist && main.length > 0) return `You ${mainPhrase}, and added`;
+  if (hasWatchlist && main.length === 0) return `You added`;
+  return `You ${mainPhrase}`;
+}
+
+// Bucket timestamps to the same second
+function bucketToSecond(iso: string) {
+  const ms = new Date(iso).getTime();
+  if (!Number.isFinite(ms)) return iso;
+  return String(Math.floor(ms / 1000));
+}
+
 const AnimeActivityPage: NextPage = () => {
   const router = useRouter();
   const { slug } = router.query as { slug?: string };
@@ -154,7 +207,6 @@ const AnimeActivityPage: NextPage = () => {
         return;
       }
 
-      // ✅ fetch anime by slug
       const animeRes = await supabase
         .from("anime")
         .select("id, title, title_english, title_native, title_preferred")
@@ -190,8 +242,6 @@ const AnimeActivityPage: NextPage = () => {
           .eq("anime_id", anime.id)
           .order("logged_at", { ascending: false }),
 
-        // ✅ episode logs
-        // expects table: anime_episode_logs with anime_episode_id -> anime_episodes table
         supabase
           .from("anime_episode_logs")
           .select(
@@ -203,7 +253,6 @@ const AnimeActivityPage: NextPage = () => {
           .eq("anime_id", anime.id)
           .order("logged_at", { ascending: false }),
 
-        // ✅ Reviews table: series review = anime_id set AND anime_episode_id null
         supabase
           .from("reviews")
           .select("id, created_at, rating, content, contains_spoilers")
@@ -259,16 +308,9 @@ const AnimeActivityPage: NextPage = () => {
 
       if (!mounted) return;
 
-      if (seriesLogs.error)
-        console.error("Anime activity: seriesLogs error", seriesLogs.error);
-      if (episodeLogs.error)
-        console.error("Anime activity: episodeLogs error", episodeLogs.error);
-      if (seriesReviews.error)
-        console.error("Anime activity: seriesReviews error", seriesReviews.error);
-
       const merged: ActivityItem[] = [];
 
-      // ✅ MARKS (same behavior: always show them if they exist)
+      // marks
       if (watchedMark.data?.id) {
         merged.push({
           id: watchedMark.data.id,
@@ -278,7 +320,6 @@ const AnimeActivityPage: NextPage = () => {
           logged_at: watchedMark.data.created_at,
         });
       }
-
       if (likedMark.data?.id) {
         merged.push({
           id: likedMark.data.id,
@@ -288,7 +329,6 @@ const AnimeActivityPage: NextPage = () => {
           logged_at: likedMark.data.created_at,
         });
       }
-
       if (watchlistMark.data?.id) {
         merged.push({
           id: watchlistMark.data.id,
@@ -298,7 +338,6 @@ const AnimeActivityPage: NextPage = () => {
           logged_at: watchlistMark.data.created_at,
         });
       }
-
       if (ratingMark.data?.id) {
         merged.push({
           id: ratingMark.data.id,
@@ -310,7 +349,7 @@ const AnimeActivityPage: NextPage = () => {
         });
       }
 
-      // ✅ Reviews (series)
+      // series reviews
       seriesReviews.data?.forEach((row: any) => {
         merged.push({
           id: row.id,
@@ -324,7 +363,7 @@ const AnimeActivityPage: NextPage = () => {
         });
       });
 
-      // ✅ Series logs
+      // series logs
       seriesLogs.data?.forEach((row: any) => {
         merged.push({
           id: row.id,
@@ -338,7 +377,7 @@ const AnimeActivityPage: NextPage = () => {
         });
       });
 
-      // ✅ Episode logs
+      // episode logs (never grouped)
       episodeLogs.data?.forEach((row: any) => {
         const rowTitle = getAnimeDisplayTitle(row?.anime) || animeTitle;
 
@@ -358,12 +397,137 @@ const AnimeActivityPage: NextPage = () => {
         });
       });
 
-      merged.sort(
+      // Group ONLY when there is a REAL series log in the bucket.
+      const seriesBucketMap = new Map<string, ActivityItem[]>();
+      const passthrough: ActivityItem[] = [];
+
+      for (const it of merged) {
+        const isSeriesLevel =
+          (it.kind === "mark" &&
+            (it.type === "watched" ||
+              it.type === "liked" ||
+              it.type === "watchlist" ||
+              it.type === "rating")) ||
+          (it.kind === "review" && it.type === "anime_series_review") ||
+          (it.kind === "log" && it.type === "anime_series");
+
+        if (!isSeriesLevel) {
+          passthrough.push(it);
+          continue;
+        }
+
+        const key = `${bucketToSecond(it.logged_at)}::${it.title}`;
+        const arr = seriesBucketMap.get(key) ?? [];
+        arr.push(it);
+        seriesBucketMap.set(key, arr);
+      }
+
+      const regrouped: ActivityItem[] = [];
+
+      for (const [, bucket] of seriesBucketMap.entries()) {
+        const hasSeriesLog = bucket.some(
+          (x) => x.kind === "log" && x.type === "anime_series"
+        );
+
+        // If there's no actual log row, DO NOT GROUP anything in this bucket.
+        if (!hasSeriesLog) {
+          regrouped.push(...bucket);
+          continue;
+        }
+
+        // If it has a series log but nothing else, keep it as-is.
+        if (bucket.length <= 1) {
+          regrouped.push(bucket[0]);
+          continue;
+        }
+
+        // ✅ Build actions from flags (stable + never misses "reviewed")
+        let didWatched = false;
+        let didLiked = false;
+        let didWatchlist = false;
+        let didRated = false;
+        let didReviewed = false;
+
+        let stars: number | null = null;
+
+        let review_rating: number | null = null;
+        let review_content: string | null = null;
+        let contains_spoilers: boolean | undefined = undefined;
+
+        let log_rating: number | null = null;
+        let log_note: string | null = null;
+        let visibility: "public" | "friends" | "private" | undefined = undefined;
+
+        const sorted = [...bucket].sort(
+          (a, b) =>
+            new Date(a.logged_at).getTime() - new Date(b.logged_at).getTime()
+        );
+
+        const logged_at = sorted[0].logged_at;
+        const title = sorted[0].title;
+
+        for (const it of bucket) {
+          if (it.kind === "log" && it.type === "anime_series") {
+            didWatched = true;
+            log_rating = it.rating ?? null;
+            log_note = it.note ?? null;
+            visibility = it.visibility;
+          } else if (it.kind === "mark") {
+            if (it.type === "watched") didWatched = true;
+            if (it.type === "liked") didLiked = true;
+            if (it.type === "watchlist") didWatchlist = true;
+            if (it.type === "rating") {
+              didRated = true;
+              stars = typeof it.stars === "number" ? it.stars : stars;
+            }
+          } else if (it.kind === "review") {
+            didReviewed = true;
+            review_rating = typeof it.rating === "number" ? it.rating : null;
+            review_content = it.content ?? null;
+            contains_spoilers = Boolean(it.contains_spoilers);
+          }
+        }
+
+        const actions: Array<
+          "reviewed" | "liked" | "watched" | "watchlist" | "rated"
+        > = [];
+
+        // ✅ desired order:
+        if (didWatched) actions.push("watched");
+        if (didLiked) actions.push("liked");
+        if (didRated) actions.push("rated");
+        if (didReviewed) actions.push("reviewed");
+        if (didWatchlist) actions.push("watchlist");
+
+        // If somehow it collapses to only one action, don't group.
+        if (actions.length < 2) {
+          regrouped.push(...bucket);
+          continue;
+        }
+
+        regrouped.push({
+          id: `group-${bucketToSecond(logged_at)}-${title}`,
+          kind: "group",
+          type: "anime_series_group",
+          title,
+          logged_at,
+          actions,
+          stars,
+          review_rating,
+          review_content,
+          contains_spoilers,
+          log_rating,
+          log_note,
+          visibility,
+        });
+      }
+
+      const finalItems = [...regrouped, ...passthrough].sort(
         (a, b) =>
           new Date(b.logged_at).getTime() - new Date(a.logged_at).getTime()
       );
 
-      setItems(merged);
+      setItems(finalItems);
       setLoading(false);
     }
 
@@ -384,9 +548,7 @@ const AnimeActivityPage: NextPage = () => {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-6 text-2xl font-semibold tracking-tight">
-        {pageTitle}
-      </h1>
+      <h1 className="mb-6 text-2xl font-semibold tracking-tight">{pageTitle}</h1>
 
       {error ? (
         <div className="text-sm text-red-300">{error}</div>
@@ -395,6 +557,40 @@ const AnimeActivityPage: NextPage = () => {
       ) : (
         <ul className="space-y-4">
           {items.map((item) => {
+            if (item.kind === "group") {
+              const hs = clampInt(Number(item.stars ?? 0), 0, 10);
+              const prefix = buildGroupedPrefix(item.actions);
+              const hasWatchlist = item.actions.includes("watchlist");
+
+              return (
+                <li
+                  key={`group-${item.id}`}
+                  className="rounded-md border border-neutral-800 p-4"
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="text-sm font-medium">
+                      {prefix}{" "}
+                      <span className="font-bold text-black">{item.title}</span>
+                      {hs > 0 ? <HalfStarsRow halfStars={hs} /> : null}
+                      {hasWatchlist ? (
+                        <span className="ml-1"> to your watchlist</span>
+                      ) : null}
+                      <span className="ml-1">
+                        {" "}
+                        on {formatOnFullDate(item.logged_at)}
+                      </span>
+                    </div>
+
+                    <div className="whitespace-nowrap text-xs text-neutral-500">
+                      {formatRelativeShort(item.logged_at)}
+                    </div>
+                  </div>
+
+                  {/* ✅ grouped rows: NO "Rating:" line, and NO text boxes */}
+                </li>
+              );
+            }
+
             if (item.kind === "mark" && item.type === "watched") {
               return (
                 <li
@@ -407,7 +603,6 @@ const AnimeActivityPage: NextPage = () => {
                       <span className="font-bold text-black">{item.title}</span>{" "}
                       as watched
                     </div>
-
                     <div className="whitespace-nowrap text-xs text-neutral-500">
                       {formatRelativeShort(item.logged_at)}
                     </div>
@@ -427,7 +622,6 @@ const AnimeActivityPage: NextPage = () => {
                       You liked{" "}
                       <span className="font-bold text-black">{item.title}</span>
                     </div>
-
                     <div className="whitespace-nowrap text-xs text-neutral-500">
                       {formatRelativeShort(item.logged_at)}
                     </div>
@@ -448,7 +642,6 @@ const AnimeActivityPage: NextPage = () => {
                       <span className="font-bold text-black">{item.title}</span>{" "}
                       to your watchlist
                     </div>
-
                     <div className="whitespace-nowrap text-xs text-neutral-500">
                       {formatRelativeShort(item.logged_at)}
                     </div>
@@ -471,7 +664,6 @@ const AnimeActivityPage: NextPage = () => {
                       <span className="font-bold text-black">{item.title}</span>
                       {hs > 0 ? <HalfStarsRow halfStars={hs} /> : null}
                     </div>
-
                     <div className="whitespace-nowrap text-xs text-neutral-500">
                       {formatRelativeShort(item.logged_at)}
                     </div>
@@ -491,7 +683,6 @@ const AnimeActivityPage: NextPage = () => {
                       You reviewed{" "}
                       <span className="font-bold text-black">{item.title}</span>
                     </div>
-
                     <div className="whitespace-nowrap text-xs text-neutral-500">
                       {formatRelativeShort(item.logged_at)}
                     </div>
@@ -514,7 +705,6 @@ const AnimeActivityPage: NextPage = () => {
                       <span className="font-bold text-black">{item.title}</span>{" "}
                       on {formatOnFullDate(item.logged_at)}
                     </div>
-
                     <div className="whitespace-nowrap text-xs text-neutral-500">
                       {formatRelativeShort(item.logged_at)}
                     </div>
@@ -533,7 +723,7 @@ const AnimeActivityPage: NextPage = () => {
               );
             }
 
-            // anime episode logs
+            // episode logs
             return (
               <li
                 key={`log-${item.type}-${item.id}`}
