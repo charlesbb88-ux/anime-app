@@ -7,6 +7,8 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import { Heart, MessageSquare } from "lucide-react";
 
+import ProfileTopNav from "@/components/profile/ProfileTopNav";
+
 import { supabase } from "@/lib/supabaseClient";
 import {
   listJournalEntriesByUserId,
@@ -17,6 +19,14 @@ import {
   upsertReviewForLog,
   setLogReviewId,
 } from "@/lib/journal";
+
+type Profile = {
+  id: string;
+  username: string;
+  avatar_url: string | null;
+  bio: string | null;
+  created_at: string;
+};
 
 /* ---------------------- small helpers ---------------------- */
 
@@ -49,14 +59,14 @@ function groupByMonth(rows: JournalEntryRow[]): Group[] {
   return groups;
 }
 
-async function getProfileIdByUsername(username: string) {
+async function getProfileByUsername(username: string) {
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, username")
+    .select("id, username, avatar_url, bio, created_at")
     .eq("username", username)
     .maybeSingle();
 
-  return { profileId: data?.id ?? null, error };
+  return { profile: (data as Profile | null) ?? null, error };
 }
 
 function pickFirstString(obj: any, keys: string[]) {
@@ -315,7 +325,9 @@ const UsernameJournalPage: NextPage = () => {
   const router = useRouter();
   const usernameParam = router.query.username;
 
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
+
   const [rows, setRows] = useState<JournalEntryRow[]>([]);
   const [media, setMedia] = useState<MediaMaps>({
     animeById: {},
@@ -435,17 +447,18 @@ const UsernameJournalPage: NextPage = () => {
       typeof usernameParam === "string"
         ? usernameParam
         : Array.isArray(usernameParam)
-        ? usernameParam[0]
-        : null;
+          ? usernameParam[0]
+          : null;
 
     if (!u) return;
 
     (async () => {
       setErrorMsg(null);
+      setProfile(null);
       setProfileId(null);
       setRows([]);
 
-      const { profileId: pid, error } = await getProfileIdByUsername(u);
+      const { profile: prof, error } = await getProfileByUsername(u);
 
       if (error) {
         setErrorMsg(error.message ?? "Failed to load profile.");
@@ -453,14 +466,15 @@ const UsernameJournalPage: NextPage = () => {
         return;
       }
 
-      if (!pid) {
+      if (!prof?.id) {
         setErrorMsg("User not found.");
         setLoading(false);
         return;
       }
 
-      setProfileId(pid);
-      await loadInitial(pid);
+      setProfile(prof);
+      setProfileId(prof.id);
+      await loadInitial(prof.id);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usernameParam]);
@@ -607,286 +621,275 @@ const UsernameJournalPage: NextPage = () => {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-white">{pageTitle}</h1>
+    <main className="min-h-screen">
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        {profile ? (
+          <ProfileTopNav
+            username={profile.username}
+            avatarUrl={profile.avatar_url}
+            bio={profile.bio}
+          />
+        ) : null}
 
-        <div className="flex items-center gap-3 text-sm">
-          <button
-            className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-white/90 hover:bg-white/10 disabled:opacity-50"
-            onClick={() => profileId && loadInitial(profileId)}
-            disabled={!profileId}
-          >
-            Refresh
-          </button>
+        {errorMsg && (
+          <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            {errorMsg}
+          </div>
+        )}
 
-          <Link
-            href="/"
-            className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-white/90 hover:bg-white/10"
-          >
-            Home
-          </Link>
-        </div>
-      </div>
+        <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
+          {/* header row */}
+          <div className="grid grid-cols-[84px_1fr_90px_140px_70px_70px] gap-0 border-b border-white/10 px-4 py-3 text-xs text-white/60">
+            <div>DAY</div>
+            <div>TITLE</div>
+            <div className="text-center">YEAR</div>
+            <div className="text-center">RATING</div>
+            <div className="text-center">LIKE</div>
+            <div className="text-center">REVIEW</div>
+          </div>
 
-      {errorMsg && (
-        <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          {errorMsg}
-        </div>
-      )}
+          {loading ? (
+            <div className="px-4 py-8 text-sm text-white/70">Loading…</div>
+          ) : rows.length === 0 ? (
+            <div className="px-4 py-8 text-sm text-white/70">No journal entries (or they’re private).</div>
+          ) : (
+            <div>
+              {groups.map((g) => (
+                <div key={g.key} className="border-b border-white/10 last:border-b-0">
+                  <div className="px-4 py-3 text-xs font-semibold tracking-wide text-white/60">{g.label}</div>
 
-      <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
-        {/* header row */}
-        <div className="grid grid-cols-[84px_1fr_90px_140px_70px_70px] gap-0 border-b border-white/10 px-4 py-3 text-xs text-white/60">
-          <div>DAY</div>
-          <div>TITLE</div>
-          <div className="text-center">YEAR</div>
-          <div className="text-center">RATING</div>
-          <div className="text-center">LIKE</div>
-          <div className="text-center">REVIEW</div>
-        </div>
+                  {g.items.map((r) => {
+                    const d = new Date(r.logged_at);
+                    const day = dayNumber(d);
+                    const display = getDisplay(r);
+                    const isBusy = busyRow === r.log_id;
 
-        {loading ? (
-          <div className="px-4 py-8 text-sm text-white/70">Loading…</div>
-        ) : rows.length === 0 ? (
-          <div className="px-4 py-8 text-sm text-white/70">No journal entries (or they’re private).</div>
-        ) : (
-          <div>
-            {groups.map((g) => (
-              <div key={g.key} className="border-b border-white/10 last:border-b-0">
-                <div className="px-4 py-3 text-xs font-semibold tracking-wide text-white/60">{g.label}</div>
-
-                {g.items.map((r) => {
-                  const d = new Date(r.logged_at);
-                  const day = dayNumber(d);
-                  const display = getDisplay(r);
-                  const isBusy = busyRow === r.log_id;
-
-                  return (
-                    <div
-                      key={`${r.kind}:${r.log_id}`}
-                      className="grid grid-cols-[84px_1fr_90px_140px_70px_70px] items-center gap-0 border-t border-white/5 px-4 py-3 text-sm text-white/90 hover:bg-white/5"
-                    >
-                      {/* day */}
-                      <div className="flex items-center gap-3 text-white/70">
-                        <div className="w-10 text-2xl font-semibold leading-none text-white/60">{day}</div>
-                      </div>
-
-                      {/* title cell */}
-                      <div className="flex min-w-0 items-center gap-3">
-                        {display.posterUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={display.posterUrl}
-                            alt=""
-                            className="h-[42px] w-[28px] shrink-0 rounded object-cover"
-                            loading="lazy"
-                          />
-                        ) : (
-                          <div className="h-[42px] w-[28px] rounded bg-white/10" />
-                        )}
-
-                        <div className="min-w-0">
-                          <div className="flex items-baseline gap-2">
-                            {display.href ? (
-                              <Link href={display.href} className="truncate font-semibold text-white hover:underline">
-                                {display.title}
-                              </Link>
-                            ) : (
-                              <div className="truncate font-semibold text-white">{display.title}</div>
-                            )}
-                          </div>
-
-                          {display.subtitle ? (
-                            <div className="truncate text-xs text-white/55">{display.subtitle}</div>
-                          ) : null}
-
-                          {/* ✅ REMOVE review/note text from the container */}
+                    return (
+                      <div
+                        key={`${r.kind}:${r.log_id}`}
+                        className="grid grid-cols-[84px_1fr_90px_140px_70px_70px] items-center gap-0 border-t border-white/5 px-4 py-3 text-sm text-white/90 hover:bg-white/5"
+                      >
+                        {/* day */}
+                        <div className="flex items-center gap-3 text-white/70">
+                          <div className="w-10 text-2xl font-semibold leading-none text-white/60">{day}</div>
                         </div>
-                      </div>
 
-                      {/* year */}
-                      <div className="text-center text-xs text-white/55">
-                        {typeof display.year === "number" ? display.year : "—"}
-                      </div>
+                        {/* title cell */}
+                        <div className="flex min-w-0 items-center gap-3">
+                          {display.posterUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={display.posterUrl}
+                              alt=""
+                              className="h-[42px] w-[28px] shrink-0 rounded object-cover"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="h-[42px] w-[28px] rounded bg-white/10" />
+                          )}
 
-                      {/* rating */}
-                      <div className="text-center">
-                        <StarRating
-                          value={r.rating == null ? null : Math.round(Number(r.rating))}
-                          disabled={isBusy}
-                          onChange={(next) => onChangeRating(r, next)}
-                        />
-                      </div>
+                          <div className="min-w-0">
+                            <div className="flex items-baseline gap-2">
+                              {display.href ? (
+                                <Link href={display.href} className="truncate font-semibold text-white hover:underline">
+                                  {display.title}
+                                </Link>
+                              ) : (
+                                <div className="truncate font-semibold text-white">{display.title}</div>
+                              )}
+                            </div>
 
-                      {/* like */}
-                      <div className="text-center">
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => onToggleLike(r)}
-                          className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/10 disabled:opacity-50"
-                          title="Like"
-                        >
-                          <Heart
-                            className={`h-4 w-4 ${r.liked ? "text-red-400" : "text-white/35"}`}
-                            fill={r.liked ? "currentColor" : "none"}
+                            {display.subtitle ? (
+                              <div className="truncate text-xs text-white/55">{display.subtitle}</div>
+                            ) : null}
+
+                            {/* ✅ REMOVE review/note text from the container */}
+                          </div>
+                        </div>
+
+                        {/* year */}
+                        <div className="text-center text-xs text-white/55">
+                          {typeof display.year === "number" ? display.year : "—"}
+                        </div>
+
+                        {/* rating */}
+                        <div className="text-center">
+                          <StarRating
+                            value={r.rating == null ? null : Math.round(Number(r.rating))}
+                            disabled={isBusy}
+                            onChange={(next) => onChangeRating(r, next)}
                           />
-                        </button>
-                      </div>
+                        </div>
 
-                      {/* review column: show icon only if review exists */}
-                      <div className="text-center">
-                        {r.review_id ? (
+                        {/* like */}
+                        <div className="text-center">
                           <button
                             type="button"
-                            onClick={() => openReviewEditor(r)}
-                            className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/10"
-                            title="Edit review"
+                            disabled={isBusy}
+                            onClick={() => onToggleLike(r)}
+                            className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/10 disabled:opacity-50"
+                            title="Like"
                           >
-                            <MessageSquare className="h-4 w-4 text-white/80" />
+                            <Heart
+                              className={`h-4 w-4 ${r.liked ? "text-red-400" : "text-white/35"}`}
+                              fill={r.liked ? "currentColor" : "none"}
+                            />
                           </button>
-                        ) : (
-                          <div className="inline-flex items-center justify-center p-1" title="No review">
-                            <MessageSquare className="h-4 w-4 text-white/20" />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
+                        </div>
 
-            <div className="px-4 py-4">
-              <button
-                className="w-full rounded-lg border border-white/10 bg-white/5 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-50"
-                onClick={loadMore}
-                disabled={loadingMore || !cursor || !profileId}
-              >
-                {loadingMore ? "Loading…" : "Load more"}
-              </button>
+                        {/* review column: show icon only if review exists */}
+                        <div className="text-center">
+                          {r.review_id ? (
+                            <button
+                              type="button"
+                              onClick={() => openReviewEditor(r)}
+                              className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/10"
+                              title="Edit review"
+                            >
+                              <MessageSquare className="h-4 w-4 text-white/80" />
+                            </button>
+                          ) : (
+                            <div className="inline-flex items-center justify-center p-1" title="No review">
+                              <MessageSquare className="h-4 w-4 text-white/20" />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+
+              <div className="px-4 py-4">
+                <button
+                  className="w-full rounded-lg border border-white/10 bg-white/5 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-50"
+                  onClick={loadMore}
+                  disabled={loadingMore || !cursor || !profileId}
+                >
+                  {loadingMore ? "Loading…" : "Load more"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Review Modal */}
+        {reviewModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+            <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 shadow-xl">
+              <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-white">Review — {reviewModal.title}</div>
+                  <div className="text-xs text-white/50">This review is tied to this specific log entry.</div>
+                </div>
+
+                <button
+                  type="button"
+                  className="rounded-md px-2 py-1 text-sm text-white/70 hover:bg-white/10"
+                  onClick={() => setReviewModal(newModalState())}
+                  disabled={reviewModal.saving}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="space-y-4 px-5 py-4">
+                {reviewModal.error && (
+                  <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                    {reviewModal.error}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="sm:col-span-1">
+                    <div className="mb-1 text-xs text-white/60">Visibility</div>
+                    <select
+                      className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+                      value={reviewModal.visibility}
+                      onChange={(e) => setReviewModal((m) => ({ ...m, visibility: e.target.value as any }))}
+                      disabled={reviewModal.saving}
+                    >
+                      <option value="public">public</option>
+                      <option value="friends">friends</option>
+                      <option value="private">private</option>
+                    </select>
+                  </div>
+
+                  <div className="sm:col-span-1">
+                    <div className="mb-1 text-xs text-white/60">Spoilers</div>
+                    <label className="flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
+                      <input
+                        type="checkbox"
+                        checked={reviewModal.containsSpoilers}
+                        onChange={(e) => setReviewModal((m) => ({ ...m, containsSpoilers: e.target.checked }))}
+                        disabled={reviewModal.saving}
+                      />
+                      Contains spoilers
+                    </label>
+                  </div>
+
+                  <div className="sm:col-span-1">
+                    <div className="mb-1 text-xs text-white/60">Rating</div>
+                    <div className="rounded-md border border-white/10 bg-white/5 px-2 py-2">
+                      <StarRating
+                        value={reviewModal.rating}
+                        disabled={reviewModal.saving}
+                        onChange={(next) => setReviewModal((m) => ({ ...m, rating: next }))}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-1 text-xs text-white/60">Author liked</div>
+                  <label className="flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
+                    <input
+                      type="checkbox"
+                      checked={reviewModal.authorLiked}
+                      onChange={(e) => setReviewModal((m) => ({ ...m, authorLiked: e.target.checked }))}
+                      disabled={reviewModal.saving}
+                    />
+                    Mark as liked for this log
+                  </label>
+                </div>
+
+                <div>
+                  <div className="mb-1 text-xs text-white/60">Review</div>
+                  <textarea
+                    className="min-h-[180px] w-full resize-y rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/30"
+                    placeholder="Write your review…"
+                    value={reviewModal.content}
+                    onChange={(e) => setReviewModal((m) => ({ ...m, content: e.target.value }))}
+                    disabled={reviewModal.saving}
+                  />
+                  <div className="mt-1 text-xs text-white/40">Review text is required (your DB schema enforces this).</div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between border-t border-white/10 px-5 py-4">
+                <button
+                  type="button"
+                  className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-50"
+                  onClick={() => setReviewModal(newModalState())}
+                  disabled={reviewModal.saving}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  className="rounded-md bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-white/90 disabled:opacity-50"
+                  onClick={saveReviewFromModal}
+                  disabled={reviewModal.saving}
+                >
+                  {reviewModal.saving ? "Saving…" : "Save review"}
+                </button>
+              </div>
             </div>
           </div>
         )}
       </div>
-
-      {/* Review Modal */}
-      {reviewModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-          <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 shadow-xl">
-            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-white">Review — {reviewModal.title}</div>
-                <div className="text-xs text-white/50">This review is tied to this specific log entry.</div>
-              </div>
-
-              <button
-                type="button"
-                className="rounded-md px-2 py-1 text-sm text-white/70 hover:bg-white/10"
-                onClick={() => setReviewModal(newModalState())}
-                disabled={reviewModal.saving}
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="space-y-4 px-5 py-4">
-              {reviewModal.error && (
-                <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                  {reviewModal.error}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div className="sm:col-span-1">
-                  <div className="mb-1 text-xs text-white/60">Visibility</div>
-                  <select
-                    className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
-                    value={reviewModal.visibility}
-                    onChange={(e) => setReviewModal((m) => ({ ...m, visibility: e.target.value as any }))}
-                    disabled={reviewModal.saving}
-                  >
-                    <option value="public">public</option>
-                    <option value="friends">friends</option>
-                    <option value="private">private</option>
-                  </select>
-                </div>
-
-                <div className="sm:col-span-1">
-                  <div className="mb-1 text-xs text-white/60">Spoilers</div>
-                  <label className="flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
-                    <input
-                      type="checkbox"
-                      checked={reviewModal.containsSpoilers}
-                      onChange={(e) => setReviewModal((m) => ({ ...m, containsSpoilers: e.target.checked }))}
-                      disabled={reviewModal.saving}
-                    />
-                    Contains spoilers
-                  </label>
-                </div>
-
-                <div className="sm:col-span-1">
-                  <div className="mb-1 text-xs text-white/60">Rating</div>
-                  <div className="rounded-md border border-white/10 bg-white/5 px-2 py-2">
-                    <StarRating
-                      value={reviewModal.rating}
-                      disabled={reviewModal.saving}
-                      onChange={(next) => setReviewModal((m) => ({ ...m, rating: next }))}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <div className="mb-1 text-xs text-white/60">Author liked</div>
-                <label className="flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
-                  <input
-                    type="checkbox"
-                    checked={reviewModal.authorLiked}
-                    onChange={(e) => setReviewModal((m) => ({ ...m, authorLiked: e.target.checked }))}
-                    disabled={reviewModal.saving}
-                  />
-                  Mark as liked for this log
-                </label>
-              </div>
-
-              <div>
-                <div className="mb-1 text-xs text-white/60">Review</div>
-                <textarea
-                  className="min-h-[180px] w-full resize-y rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/30"
-                  placeholder="Write your review…"
-                  value={reviewModal.content}
-                  onChange={(e) => setReviewModal((m) => ({ ...m, content: e.target.value }))}
-                  disabled={reviewModal.saving}
-                />
-                <div className="mt-1 text-xs text-white/40">Review text is required (your DB schema enforces this).</div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between border-t border-white/10 px-5 py-4">
-              <button
-                type="button"
-                className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-50"
-                onClick={() => setReviewModal(newModalState())}
-                disabled={reviewModal.saving}
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                className="rounded-md bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-white/90 disabled:opacity-50"
-                onClick={saveReviewFromModal}
-                disabled={reviewModal.saving}
-              >
-                {reviewModal.saving ? "Saving…" : "Save review"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    </main>
   );
 };
 

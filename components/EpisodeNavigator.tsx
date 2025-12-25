@@ -586,10 +586,6 @@ export default function EpisodeNavigator({
 
   return (
     <div className={["min-w-0", className ?? ""].join(" ")}>
-      <div className="mb-2 text-sm font-semibold text-black/70">
-        Continue tracking
-      </div>
-
       <div
         ref={scrollerRef}
         className={[

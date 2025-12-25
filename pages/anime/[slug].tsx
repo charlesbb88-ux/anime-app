@@ -348,7 +348,8 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
         {/* Top section */}
         <div className="-mt-5 relative z-10 px-3">
           <div className="mb-8 flex flex-row gap-7">
-            <div className="flex-shrink-0">
+            <div className="flex-shrink-0 w-56">
+              {/* Poster */}
               {anime.image_url ? (
                 <img
                   src={anime.image_url}
@@ -356,10 +357,120 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                   className="h-84 w-56 rounded-md object-cover border border-black/100"
                 />
               ) : (
-                <div className="flex h-64 w-44 items-center justify-center rounded-lg bg-gray-800 text-4xl font-bold text-gray-200">
+                <div className="flex h-64 w-56 items-center justify-center rounded-lg bg-gray-800 text-4xl font-bold text-gray-200">
                   {anime.title[0] ?? "?"}
                 </div>
               )}
+
+              {/* Genres (moved here) */}
+              {hasGenres && (
+                <div className="mt-4">
+                  <h2 className="mb-1 text-sm font-semibold text-black-300">Genres</h2>
+                  <div className="flex flex-wrap gap-2">
+                    {genres.map((g) => (
+                      <span
+                        key={g}
+                        className="rounded-full bg-gray-800 px-3 py-1 text-xs text-gray-100"
+                      >
+                        {g}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Tags (moved here) */}
+              <div className="mt-5">
+                <div className="mb-1 flex items-center gap-2">
+                  <h2 className="text-base font-semibold text-black-300">Tags</h2>
+                  {tagsLoading && (
+                    <span className="text-[10px] uppercase tracking-wide text-gray-500">
+                      Loading…
+                    </span>
+                  )}
+                </div>
+
+                {!tagsLoading && tags.length === 0 ? (
+                  <p className="text-sm text-gray-500">No tags imported yet for this anime.</p>
+                ) : (
+                  <>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex w-full flex-col gap-1">
+                        {tags.map((tag) => {
+                          const isSpoiler =
+                            tag.is_general_spoiler || tag.is_media_spoiler;
+
+                          if (isSpoiler && !showSpoilers) return null;
+
+                          let percent: number | null = null;
+                          if (typeof tag.rank === "number") {
+                            percent = Math.max(0, Math.min(100, Math.round(tag.rank)));
+                          }
+
+                          return (
+                            <div key={tag.id} className="group relative inline-flex">
+                              <span
+                                className="
+                      relative inline-flex w-full items-center justify-between
+                      rounded-full border border-gray-700 bg-gray-900/80
+                      px-3 py-[3px] text-[13px] font-medium
+                      whitespace-nowrap overflow-hidden
+                    "
+                              >
+                                {percent !== null && (
+                                  <span
+                                    className="pointer-events-none absolute inset-y-0 left-0 bg-blue-500/20"
+                                    style={{ width: `${percent}%` }}
+                                  />
+                                )}
+
+                                <span
+                                  className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"
+                                    }`}
+                                >
+                                  {tag.name}
+                                </span>
+
+                                {percent !== null && (
+                                  <span className="relative text-[11px] font-semibold text-gray-200">
+                                    {percent}%
+                                  </span>
+                                )}
+                              </span>
+
+                              {tag.description && (
+                                <div
+                                  className="
+                        pointer-events-none absolute left-0 top-full z-20 mt-1 w-64
+                        rounded-md bg-black px-3 py-2 text-xs text-gray-100 shadow-lg
+                        opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0
+                        transition duration-200 delay-150
+                      "
+                                >
+                                  {tag.description}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {spoilerCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowSpoilers((prev) => !prev)}
+                        className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
+                      >
+                        {showSpoilers
+                          ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`
+                          : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`
+                        }
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
 
             <div className="min-w-100 flex-1">
@@ -418,119 +529,6 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
           </div>
         </div>
 
-        {/* Genres */}
-        {hasGenres && (
-          <div className="mb-6">
-            <h2 className="mb-1 text-sm font-semibold text-gray-300">Genres</h2>
-            <div className="flex flex-wrap gap-2">
-              {genres.map((g) => (
-                <span
-                  key={g}
-                  className="rounded-full bg-gray-800 px-3 py-1 text-xs text-gray-100"
-                >
-                  {g}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Tags */}
-        <div className="mb-8">
-          <div className="mb-1 flex items-center gap-2">
-            <h2 className="text-base font-semibold text-gray-300">Tags</h2>
-            {tagsLoading && (
-              <span className="text-[10px] uppercase tracking-wide text-gray-500">
-                Loading…
-              </span>
-            )}
-          </div>
-
-          {!tagsLoading && tags.length === 0 ? (
-            <p className="text-sm text-gray-500">
-              No tags imported yet for this anime.
-            </p>
-          ) : (
-            <>
-              <div className="flex flex-col gap-1">
-                <div className="flex w-full max-w-[13.5rem] flex-col gap-1">
-                  {tags.map((tag) => {
-                    const isSpoiler =
-                      tag.is_general_spoiler || tag.is_media_spoiler;
-
-                    if (isSpoiler && !showSpoilers) return null;
-
-                    let percent: number | null = null;
-                    if (typeof tag.rank === "number") {
-                      percent = Math.max(0, Math.min(100, Math.round(tag.rank)));
-                    }
-
-                    return (
-                      <div key={tag.id} className="group relative inline-flex">
-                        <span
-                          className="
-                            relative inline-flex w-full items-center justify-between
-                            rounded-full border border-gray-700 bg-gray-900/80
-                            px-3 py-[3px] text-[13px] font-medium
-                            whitespace-nowrap overflow-hidden
-                          "
-                        >
-                          {percent !== null && (
-                            <span
-                              className="pointer-events-none absolute inset-y-0 left-0 bg-blue-500/20"
-                              style={{ width: `${percent}%` }}
-                            />
-                          )}
-
-                          <span
-                            className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"
-                              }`}
-                          >
-                            {tag.name}
-                          </span>
-
-                          {percent !== null && (
-                            <span className="relative text-[11px] font-semibold text-gray-200">
-                              {percent}%
-                            </span>
-                          )}
-                        </span>
-
-                        {tag.description && (
-                          <div
-                            className="
-                              pointer-events-none absolute left-0 top-full z-20 mt-1 w-64
-                              rounded-md bg-black px-3 py-2 text-xs text-gray-100 shadow-lg
-                              opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0
-                              transition duration-200 delay-150
-                            "
-                          >
-                            {tag.description}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {spoilerCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setShowSpoilers((prev) => !prev)}
-                  className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
-                >
-                  {showSpoilers
-                    ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
-                    }`
-                    : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
-                    }`}
-                </button>
-              )}
-            </>
-          )}
-        </div>
- 
         {/* Meta info stays below synopsis */}
         {(a.title_english || a.title_native) && (
           <div className="mb-2 text-sm text-gray-400">
