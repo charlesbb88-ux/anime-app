@@ -374,7 +374,7 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                 <img
                   src={anime.image_url}
                   alt={anime.title}
-                  className="h-84 w-56 rounded-md object-cover border border-black/100"
+                  className="h-84 w-56 rounded-md object-cover border-2 border-black/100"
                 />
               ) : (
                 <div className="flex h-64 w-56 items-center justify-center rounded-lg bg-gray-800 text-4xl font-bold text-gray-200">

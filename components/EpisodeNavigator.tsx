@@ -579,91 +579,99 @@ export default function EpisodeNavigator({
 
   // ---- styles ----
   const cardBase =
-    "group relative shrink-0 rounded-sm bg-white/80 ring-1 ring-black/5 shadow-sm transition";
-  const cardHover = "hover:bg-white hover:shadow-md hover:ring-black/10";
+    "group relative shrink-0 rounded-xs bg-[var(--card-bg)] ring-1 ring-[var(--ring)] shadow-sm transition";
+  const cardHover = "hover:bg-[var(--card-bg-hover)] hover:shadow-md hover:ring-black/10";
   const cardSize = "h-[120px] w-[240px]";
   const thumbSize = "h-full w-[120px] shrink-0";
 
   return (
-    <div className={["min-w-0", className ?? ""].join(" ")}>
-      <div
-        ref={scrollerRef}
-        className={[
-          "scrollbar-none relative flex gap-3 overflow-x-auto py-1",
-          "select-none touch-pan-y",
-          dragging ? "cursor-grabbing" : "cursor-grab",
-        ].join(" ")}
-        onPointerDown={onPointerDown}
-        onWheel={onWheel}
-      >
-        {numericEpisodeNumbers.map((n, idx) => {
-          const meta = metaByNumber[n];
-          const title = meta?.title ?? `Episode ${n}`;
-          const imageUrl = meta?.imageUrl ?? null;
+    <div
+      className={["min-w-0", className ?? ""].join(" ")}
+      style={{
+        "--card-bg": "rgba(245, 250, 255, 1)",
+        "--card-bg-hover": "white",
+        "--ring": "rgba(245, 250, 255, 1)",
+      } as React.CSSProperties}
+    >
+      <div className="w-full overflow-hidden rounded-sm border border-black bg-black">
+        <div
+          ref={scrollerRef}
+          className={[
+            "scrollbar-none relative flex gap-3 overflow-x-auto",
+            "select-none touch-pan-y",
+            "px-0 py-2", // breathing room from the border
+            dragging ? "cursor-grabbing" : "cursor-grab",
+          ].join(" ")}
+          onPointerDown={onPointerDown}
+          onWheel={onWheel}
+        >
+          {numericEpisodeNumbers.map((n, idx) => {
+            const meta = metaByNumber[n];
+            const title = meta?.title ?? `Episode ${n}`;
+            const imageUrl = meta?.imageUrl ?? null;
 
-          const metaLine = `S${pad2(1)} · E${pad2(n)}`;
-          const isActive = currentSafe === n;
+            const metaLine = `S${pad2(1)} · E${pad2(n)}`;
+            const isActive = currentSafe === n;
 
-          return (
-            <Link
-              key={n}
-              href={`${episodeBase}/${n}`}
-              ref={(node) => {
-                cardRefs.current[idx] = node;
-              }}
-              onClick={(e) => {
-                if (dragRef.current.blockNextClick) {
-                  e.preventDefault();
-                  dragRef.current.blockNextClick = false;
-                }
-              }}
-              draggable={false}
-              onDragStart={(e) => e.preventDefault()}
-              className={[
-                cardBase,
-                cardHover,
-                cardSize,
-                isActive ? "ring-black/15 bg-white" : "",
-              ].join(" ")}
-            >
-              <div className="flex h-full overflow-hidden rounded-sm">
-                <div className={[thumbSize, "bg-black/5"].join(" ")}>
-                  {imageUrl ? (
-                    <img
-                      src={imageUrl}
-                      alt=""
-                      className="h-full w-full object-cover"
-                      draggable={false}
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  ) : null}
-                </div>
-
-                <div className="flex min-w-0 flex-1 flex-col justify-start px-3 py-3">
-                  {/* TOP: season/episode */}
-                  <div className="text-xs font-medium text-black/50">
-                    {metaLine}
+            return (
+              <Link
+                key={n}
+                href={`${episodeBase}/${n}`}
+                ref={(node) => {
+                  cardRefs.current[idx] = node;
+                }}
+                onClick={(e) => {
+                  if (dragRef.current.blockNextClick) {
+                    e.preventDefault();
+                    dragRef.current.blockNextClick = false;
+                  }
+                }}
+                draggable={false}
+                onDragStart={(e) => e.preventDefault()}
+                className={[
+                  // 🔒 cards unchanged
+                  cardBase,
+                  cardHover,
+                  cardSize,
+                  isActive ? "ring-black/15 bg-white" : "",
+                ].join(" ")}
+              >
+                <div className="flex h-full overflow-hidden rounded-xs">
+                  <div className={[thumbSize, "bg-black/5"].join(" ")}>
+                    {imageUrl ? (
+                      <img
+                        src={imageUrl}
+                        alt=""
+                        className="h-full w-full object-cover"
+                        draggable={false}
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    ) : null}
                   </div>
 
-                  {/* BELOW: title (wrap, no truncation) */}
-                  <div
-                    className="mt-1 text-sm font-semibold text-black/90 break-words leading-snug flex-1 min-h-0"
-                    style={{
-                      display: "-webkit-box",
-                      WebkitLineClamp: 4,
-                      WebkitBoxOrient: "vertical",
-                      overflow: "hidden",
-                    }}
-                  >
-                    {title}
+                  <div className="flex min-w-0 flex-1 flex-col justify-start px-3 py-3">
+                    <div className="text-xs font-medium text-black/50">
+                      {metaLine}
+                    </div>
+
+                    <div
+                      className="mt-1 text-sm font-semibold text-black/90 break-words leading-snug flex-1 min-h-0"
+                      style={{
+                        display: "-webkit-box",
+                        WebkitLineClamp: 4,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {title}
+                    </div>
                   </div>
                 </div>
-
-              </div>
-            </Link>
-          );
-        })}
+              </Link>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

@@ -2,49 +2,56 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { NextPage } from "next";
+import type { NextPage, GetServerSideProps } from "next";
 import { useRouter } from "next/router";
+import Link from "next/link";
 
 import { supabase } from "@/lib/supabaseClient";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import MediaHeaderLayout from "@/components/layouts/MediaHeaderLayout";
 
 const CARD_CLASS = "bg-black p-4 text-neutral-100";
+
+function postHref(postId: string) {
+  return `/posts/${postId}`;
+}
 
 type Visibility = "public" | "friends" | "private";
 
 type ActivityItem =
   | {
-      id: string;
-      kind: "log";
-      type: "anime_series" | "anime_episode";
-      title: string;
-      subLabel?: string;
-      rating: number | null; // 0..100 (from logs)
-      note: string | null;
-      logged_at: string;
-      visibility: Visibility;
+    id: string;
+    kind: "log";
+    type: "anime_series" | "anime_episode";
+    title: string;
+    subLabel?: string;
+    rating: number | null; // 0..100 (from logs)
+    note: string | null;
+    logged_at: string;
+    visibility: Visibility;
 
-      // series snapshot flags (only for anime_series logs)
-      liked?: boolean | null;
-      review_id?: string | null;
-    }
+    // series snapshot flags (only for anime_series logs)
+    liked?: boolean | null;
+    review_id?: string | null;
+  }
   | {
-      id: string;
-      kind: "review";
-      type: "anime_series_review";
-      title: string;
-      logged_at: string; // reviews.created_at
-      rating: number | null; // 0..100
-      content: string | null;
-      contains_spoilers: boolean;
-    }
+    id: string;
+    kind: "review";
+    type: "anime_series_review";
+    title: string;
+    logged_at: string; // reviews.created_at
+    rating: number | null; // 0..100
+    content: string | null;
+    contains_spoilers: boolean;
+  }
   | {
-      id: string;
-      kind: "mark";
-      type: "watched" | "liked" | "watchlist" | "rating";
-      title: string;
-      logged_at: string; // user_marks.created_at
-      stars?: number | null; // half-stars 1..10 (only for rating mark)
-    };
+    id: string;
+    kind: "mark";
+    type: "watched" | "liked" | "watchlist" | "rating";
+    title: string;
+    logged_at: string; // user_marks.created_at
+    stars?: number | null; // half-stars 1..10 (only for rating mark)
+  };
 
 function getAnimeDisplayTitle(anime: any): string {
   return (
@@ -54,6 +61,18 @@ function getAnimeDisplayTitle(anime: any): string {
     anime?.title ||
     "Unknown anime"
   );
+}
+
+type AnimeActivityPageProps = {
+  initialBackdropUrl: string | null;
+};
+
+function normalizeBackdropUrl(url: string) {
+  // TMDB "original" is huge; use a smaller size for faster first paint
+  if (url.includes("https://image.tmdb.org/t/p/original/")) {
+    return url.replace("/t/p/original/", "/t/p/w1280/");
+  }
+  return url; // TVDB stays as-is
 }
 
 /* -------------------- Dates -------------------- */
@@ -153,18 +172,27 @@ function actionWord(a: "reviewed" | "liked" | "watched" | "rated") {
   return "watched";
 }
 
-function buildSnapshotPrefix(actions: Array<"reviewed" | "liked" | "watched" | "rated">) {
+function buildSnapshotPrefix(
+  actions: Array<"reviewed" | "liked" | "watched" | "rated">
+) {
   return `You ${joinWithCommasAnd(actions.map(actionWord))}`;
 }
 
-const AnimeActivityPage: NextPage = () => {
+const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({ initialBackdropUrl }) => {
   const router = useRouter();
   const { slug } = router.query as { slug?: string };
 
   const [loading, setLoading] = useState(true);
+  const [backdropUrl] = useState<string | null>(initialBackdropUrl);
+  const [posterUrl, setPosterUrl] = useState<string | null>(null);
   const [pageTitle, setPageTitle] = useState<string>("Your activity");
+
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  const [reviewIdToPostId, setReviewIdToPostId] = useState<Record<string, string>>(
+    {}
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -190,7 +218,9 @@ const AnimeActivityPage: NextPage = () => {
 
       const animeRes = await supabase
         .from("anime")
-        .select("id, title, title_english, title_native, title_preferred")
+        .select(
+          "id, title, title_english, title_native, title_preferred, image_url"
+        )
         .eq("slug", slug)
         .maybeSingle();
 
@@ -206,6 +236,8 @@ const AnimeActivityPage: NextPage = () => {
       const animeTitle = getAnimeDisplayTitle(anime);
       setPageTitle(`Your activity · ${animeTitle}`);
 
+      setPosterUrl(anime?.image_url ?? null);
+
       const [
         seriesLogsRes,
         episodeLogsRes,
@@ -215,7 +247,6 @@ const AnimeActivityPage: NextPage = () => {
         watchlistMarkRes,
         ratingMarkRes,
       ] = await Promise.all([
-        // ✅ SERIES LOG SNAPSHOT ANCHOR
         supabase
           .from("anime_series_logs")
           .select("id, logged_at, rating, note, visibility, liked, review_id")
@@ -234,7 +265,6 @@ const AnimeActivityPage: NextPage = () => {
           .eq("anime_id", anime.id)
           .order("logged_at", { ascending: false }),
 
-        // series reviews (we will filter out those attached to series logs)
         supabase
           .from("reviews")
           .select("id, created_at, rating, content, contains_spoilers")
@@ -243,7 +273,6 @@ const AnimeActivityPage: NextPage = () => {
           .is("anime_episode_id", null)
           .order("created_at", { ascending: false }),
 
-        // marks (latest for this anime series)
         supabase
           .from("user_marks")
           .select("id, created_at")
@@ -289,6 +318,40 @@ const AnimeActivityPage: NextPage = () => {
           .maybeSingle(),
       ]);
 
+      // -------------------- Step 2: build review_id -> post_id map --------------------
+      const reviewIdsToResolve = new Set<string>();
+
+      for (const row of seriesLogsRes.data ?? []) {
+        if ((row as any)?.review_id) reviewIdsToResolve.add(String((row as any).review_id));
+      }
+
+      for (const r of seriesReviewsRes.data ?? []) {
+        if ((r as any)?.id) reviewIdsToResolve.add(String((r as any).id));
+      }
+
+      let nextReviewIdToPostId: Record<string, string> = {};
+
+      if (reviewIdsToResolve.size > 0) {
+        const reviewIdList = Array.from(reviewIdsToResolve);
+
+        const postsRes = await supabase
+          .from("posts")
+          .select("id, review_id")
+          .eq("user_id", user.id)
+          .eq("anime_id", anime.id)
+          .in("review_id", reviewIdList);
+
+        if (postsRes.data) {
+          for (const p of postsRes.data as any[]) {
+            if (!p?.id || !p?.review_id) continue;
+            nextReviewIdToPostId[String(p.review_id)] = String(p.id);
+          }
+        }
+      }
+
+      if (mounted) setReviewIdToPostId(nextReviewIdToPostId);
+      // -------------------------------------------------------------------------------
+
       if (!mounted) return;
 
       const merged: ActivityItem[] = [];
@@ -300,8 +363,13 @@ const AnimeActivityPage: NextPage = () => {
         const loggedAtIso = String(row?.logged_at ?? "");
         const ms = new Date(loggedAtIso).getTime();
 
-        const liked = typeof row?.liked === "boolean" ? row.liked : Boolean(row?.liked);
-        const hasRating = typeof row?.rating === "number" && Number.isFinite(row.rating) && row.rating > 0;
+        const liked =
+          typeof row?.liked === "boolean" ? row.liked : Boolean(row?.liked);
+
+        const hasRating =
+          typeof row?.rating === "number" &&
+          Number.isFinite(row.rating) &&
+          row.rating > 0;
 
         const reviewId = row?.review_id ? String(row.review_id) : null;
         if (reviewId) attachedReviewIds.add(reviewId);
@@ -310,22 +378,20 @@ const AnimeActivityPage: NextPage = () => {
           ms: Number.isFinite(ms) ? ms : null,
           liked,
           hasRating,
-          hasWatched: true, // log implies watched
+          hasWatched: true,
         };
       });
 
-      // ✅ Key change: suppress mark ONLY if there's a nearby series log that already includes that action
       function shouldSuppressMarkBecauseOfNearbySeriesLog(
         markType: "watched" | "liked" | "rating" | "watchlist",
         markCreatedAtIso: string
       ) {
-        if (markType === "watchlist") return false; // do not touch watchlist behavior
+        if (markType === "watchlist") return false;
 
         const markMs = new Date(markCreatedAtIso).getTime();
         if (!Number.isFinite(markMs)) return false;
 
-        // window for "this mark was part of the log submit"
-        const windowMs = 2 * 60 * 1000; // 2 minutes
+        const windowMs = 2 * 60 * 1000;
 
         for (const snap of seriesLogSnapshots) {
           if (snap.ms == null) continue;
@@ -340,8 +406,11 @@ const AnimeActivityPage: NextPage = () => {
         return false;
       }
 
-      // ✅ Marks (keep non-log marks, suppress only those that came from a log submit)
-      function maybePushMark(mark: any, type: "watched" | "liked" | "watchlist" | "rating") {
+      function maybePushMark(
+        mark: any,
+        type: "watched" | "liked" | "watchlist" | "rating",
+        animeTitle: string
+      ) {
         if (!mark?.id || !mark?.created_at) return;
 
         const createdAt = String(mark.created_at);
@@ -367,12 +436,12 @@ const AnimeActivityPage: NextPage = () => {
         });
       }
 
-      maybePushMark(watchedMarkRes.data, "watched");
-      maybePushMark(likedMarkRes.data, "liked");
-      maybePushMark(watchlistMarkRes.data, "watchlist");
-      maybePushMark(ratingMarkRes.data, "rating");
+      maybePushMark(watchedMarkRes.data, "watched", animeTitle);
+      maybePushMark(likedMarkRes.data, "liked", animeTitle);
+      maybePushMark(watchlistMarkRes.data, "watchlist", animeTitle);
+      maybePushMark(ratingMarkRes.data, "rating", animeTitle);
 
-      // ✅ Standalone series reviews (ONLY if not attached to a snapshot series log)
+      // Standalone series reviews (only if not attached to snapshot logs)
       (seriesReviewsRes.data ?? []).forEach((row: any) => {
         if (!row?.id || !row?.created_at) return;
         if (attachedReviewIds.has(String(row.id))) return;
@@ -389,7 +458,7 @@ const AnimeActivityPage: NextPage = () => {
         });
       });
 
-      // ✅ Series logs rendered as stable snapshots
+      // Series logs
       (seriesLogsRes.data ?? []).forEach((row: any) => {
         merged.push({
           id: String(row.id),
@@ -405,7 +474,7 @@ const AnimeActivityPage: NextPage = () => {
         });
       });
 
-      // ✅ Episode logs (never grouped)
+      // Episode logs
       (episodeLogsRes.data ?? []).forEach((row: any) => {
         const rowTitle = getAnimeDisplayTitle(row?.anime) || animeTitle;
 
@@ -449,161 +518,295 @@ const AnimeActivityPage: NextPage = () => {
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-6 text-2xl font-semibold tracking-tight">{pageTitle}</h1>
+    <MediaHeaderLayout
+      backdropUrl={backdropUrl}
+      posterUrl={posterUrl}
+      title={pageTitle}
+      backdropHeightClassName="h-[620px]"
+      overlaySrc="/overlays/my-overlay4.png"
+    >
+      {/* IMPORTANT: do NOT center/max-width this if you want it to feel like the series page */}
+      <div className="min-w-0">
+        {error ? (
+          <div className="text-sm text-red-300">{error}</div>
+        ) : items.length === 0 ? (
+          <div className="text-sm text-neutral-500">No activity yet.</div>
+        ) : (
+          <ul className="space-y-1">
+            {items.map((item) => {
+              // ✅ SERIES SNAPSHOT CARD (from anime_series_logs only)
+              if (item.kind === "log" && item.type === "anime_series") {
+                const actions: Array<"watched" | "liked" | "rated" | "reviewed"> =
+                  [];
 
-      {error ? (
-        <div className="text-sm text-red-300">{error}</div>
-      ) : items.length === 0 ? (
-        <div className="text-sm text-neutral-500">No activity yet.</div>
-      ) : (
-        <ul className="space-y-1">
-          {items.map((item) => {
-            // ✅ SERIES SNAPSHOT CARD (from anime_series_logs only)
-            if (item.kind === "log" && item.type === "anime_series") {
-              const actions: Array<"watched" | "liked" | "rated" | "reviewed"> = [];
+                actions.push("watched");
+                if (item.liked) actions.push("liked");
 
-              actions.push("watched"); // log = watched anchor
-              if (item.liked) actions.push("liked");
+                const hs = rating100ToHalfStars(item.rating);
+                if (hs !== null) actions.push("rated");
 
-              const hs = rating100ToHalfStars(item.rating);
-              if (hs !== null) actions.push("rated");
+                if (item.review_id) actions.push("reviewed");
 
-              if (item.review_id) actions.push("reviewed");
+                const prefix = buildSnapshotPrefix(actions);
 
-              const prefix = buildSnapshotPrefix(actions);
+                const postId = item.review_id
+                  ? reviewIdToPostId[String(item.review_id)]
+                  : undefined;
 
-              return (
-                <li key={`series-snap-${item.id}`} className={CARD_CLASS}>
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="text-sm font-medium">
-                      {prefix} <span className="font-bold text-white">{item.title}</span>
-                      {hs !== null ? <HalfStarsRow halfStars={hs} /> : null}
-                      <span className="ml-1"> on {formatOnFullDate(item.logged_at)}</span>
+                return (
+                  <li key={`series-snap-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        {postId ? (
+                          <Link
+                            href={postHref(postId)}
+                            className="inline hover:underline"
+                            title="View review post"
+                          >
+                            {prefix}{" "}
+                            <span className="font-bold text-white">
+                              {item.title}
+                            </span>
+                            {hs !== null ? <HalfStarsRow halfStars={hs} /> : null}
+                            <span className="ml-1">
+                              {" "}
+                              on {formatOnFullDate(item.logged_at)}
+                            </span>
+                          </Link>
+                        ) : (
+                          <>
+                            {prefix}{" "}
+                            <span className="font-bold text-white">
+                              {item.title}
+                            </span>
+                            {hs !== null ? <HalfStarsRow halfStars={hs} /> : null}
+                            <span className="ml-1">
+                              {" "}
+                              on {formatOnFullDate(item.logged_at)}
+                            </span>
+                          </>
+                        )}
+                      </div>
+
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
+                    </div>
+                  </li>
+                );
+              }
+
+              // ✅ MARKS
+              if (item.kind === "mark" && item.type === "watched") {
+                return (
+                  <li key={`watched-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        You marked{" "}
+                        <span className="font-bold text-white">{item.title}</span>{" "}
+                        as watched
+                      </div>
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
+                    </div>
+                  </li>
+                );
+              }
+
+              if (item.kind === "mark" && item.type === "liked") {
+                return (
+                  <li key={`liked-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        You liked{" "}
+                        <span className="font-bold text-white">{item.title}</span>
+                      </div>
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
+                    </div>
+                  </li>
+                );
+              }
+
+              if (item.kind === "mark" && item.type === "watchlist") {
+                return (
+                  <li key={`watchlist-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        You added{" "}
+                        <span className="font-bold text-white">{item.title}</span>{" "}
+                        to your watchlist
+                      </div>
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
+                    </div>
+                  </li>
+                );
+              }
+
+              if (item.kind === "mark" && item.type === "rating") {
+                const hs = clampInt(Number(item.stars ?? 0), 0, 10);
+
+                return (
+                  <li key={`rating-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        You rated{" "}
+                        <span className="font-bold text-white">{item.title}</span>
+                        {hs > 0 ? <HalfStarsRow halfStars={hs} /> : null}
+                      </div>
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
+                    </div>
+                  </li>
+                );
+              }
+
+              // ✅ Standalone series review
+              if (item.kind === "review") {
+                const postId = reviewIdToPostId[String(item.id)];
+
+                return (
+                  <li key={`review-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        {postId ? (
+                          <Link
+                            href={postHref(postId)}
+                            className="inline hover:underline"
+                            title="View review post"
+                          >
+                            You reviewed{" "}
+                            <span className="font-bold text-white">
+                              {item.title}
+                            </span>
+                          </Link>
+                        ) : (
+                          <>
+                            You reviewed{" "}
+                            <span className="font-bold text-white">
+                              {item.title}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
+                    </div>
+                  </li>
+                );
+              }
+
+              // ✅ Episode logs
+              if (item.kind === "log" && item.type === "anime_episode") {
+                return (
+                  <li key={`episode-log-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        {item.title}
+                        {item.subLabel ? (
+                          <span className="ml-2 text-neutral-400">
+                            · {item.subLabel}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
                     </div>
 
-                    <div className="whitespace-nowrap text-xs text-neutral-100">
-                      {formatRelativeShort(item.logged_at)}
-                    </div>
-                  </div>
-                </li>
-              );
-            }
-
-            // ✅ MARKS (non-log stuff)
-            if (item.kind === "mark" && item.type === "watched") {
-              return (
-                <li key={`watched-${item.id}`} className={CARD_CLASS}>
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="text-sm font-medium">
-                      You marked <span className="font-bold text-white">{item.title}</span> as watched
-                    </div>
-                    <div className="whitespace-nowrap text-xs text-neutral-100">
-                      {formatRelativeShort(item.logged_at)}
-                    </div>
-                  </div>
-                </li>
-              );
-            }
-
-            if (item.kind === "mark" && item.type === "liked") {
-              return (
-                <li key={`liked-${item.id}`} className={CARD_CLASS}>
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="text-sm font-medium">
-                      You liked <span className="font-bold text-white">{item.title}</span>
-                    </div>
-                    <div className="whitespace-nowrap text-xs text-neutral-100">
-                      {formatRelativeShort(item.logged_at)}
-                    </div>
-                  </div>
-                </li>
-              );
-            }
-
-            if (item.kind === "mark" && item.type === "watchlist") {
-              return (
-                <li key={`watchlist-${item.id}`} className={CARD_CLASS}>
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="text-sm font-medium">
-                      You added <span className="font-bold text-white">{item.title}</span> to your watchlist
-                    </div>
-                    <div className="whitespace-nowrap text-xs text-neutral-100">
-                      {formatRelativeShort(item.logged_at)}
-                    </div>
-                  </div>
-                </li>
-              );
-            }
-
-            if (item.kind === "mark" && item.type === "rating") {
-              const hs = clampInt(Number(item.stars ?? 0), 0, 10);
-
-              return (
-                <li key={`rating-${item.id}`} className={CARD_CLASS}>
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="text-sm font-medium">
-                      You rated <span className="font-bold text-white">{item.title}</span>
-                      {hs > 0 ? <HalfStarsRow halfStars={hs} /> : null}
-                    </div>
-                    <div className="whitespace-nowrap text-xs text-neutral-100">
-                      {formatRelativeShort(item.logged_at)}
-                    </div>
-                  </div>
-                </li>
-              );
-            }
-
-            // ✅ Standalone series review (only if not attached to a snapshot)
-            if (item.kind === "review") {
-              return (
-                <li key={`review-${item.id}`} className={CARD_CLASS}>
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="text-sm font-medium">
-                      You reviewed <span className="font-bold text-white">{item.title}</span>
-                    </div>
-                    <div className="whitespace-nowrap text-xs text-neutral-100">
-                      {formatRelativeShort(item.logged_at)}
-                    </div>
-                  </div>
-                </li>
-              );
-            }
-
-            // ✅ Episode logs
-            if (item.kind === "log" && item.type === "anime_episode") {
-              return (
-                <li key={`episode-log-${item.id}`} className={CARD_CLASS}>
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="text-sm font-medium">
-                      {item.title}
-                      {item.subLabel ? (
-                        <span className="ml-2 text-neutral-400">· {item.subLabel}</span>
-                      ) : null}
+                    <div className="mt-1 text-xs text-neutral-100">
+                      anime episode
                     </div>
 
-                    <div className="whitespace-nowrap text-xs text-neutral-100">
-                      {formatRelativeShort(item.logged_at)}
-                    </div>
-                  </div>
+                    {item.rating !== null ? (
+                      <div className="mt-2 text-sm">Rating: {item.rating}</div>
+                    ) : null}
 
-                  <div className="mt-1 text-xs text-neutral-100">anime episode</div>
+                    {item.note ? (
+                      <div className="mt-1 line-clamp-2 text-sm text-neutral-400">
+                        {item.note}
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              }
 
-                  {item.rating !== null ? <div className="mt-2 text-sm">Rating: {item.rating}</div> : null}
-
-                  {item.note ? (
-                    <div className="mt-1 line-clamp-2 text-sm text-neutral-400">{item.note}</div>
-                  ) : null}
-                </li>
-              );
-            }
-
-            return null;
-          })}
-        </ul>
-      )}
-    </main>
+              return null;
+            })}
+          </ul>
+        )}
+      </div>
+    </MediaHeaderLayout>
   );
 };
 
+(AnimeActivityPage as any).headerTransparent = true;
+
 export default AnimeActivityPage;
+
+export const getServerSideProps: GetServerSideProps<AnimeActivityPageProps> = async (ctx) => {
+  const raw = ctx.params?.slug;
+  const slug =
+    typeof raw === "string" ? raw : Array.isArray(raw) && raw[0] ? raw[0] : null;
+
+  if (!slug) {
+    return { props: { initialBackdropUrl: null } };
+  }
+
+  // 1) Get anime id by slug (server-side)
+  const { data: animeRow, error: animeErr } = await supabaseAdmin
+    .from("anime")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+
+  if (animeErr || !animeRow?.id) {
+    return { props: { initialBackdropUrl: null } };
+  }
+
+  // 2) Get a RANDOM backdrop from anime_artwork (server-side)
+  const { data: arts, error: artErr } = await supabaseAdmin
+    .from("anime_artwork")
+    .select("url, is_primary, vote, width")
+    .eq("anime_id", animeRow.id)
+    .in("kind", ["backdrop", "3"]) // supports both new + legacy kinds
+    .limit(50);
+
+  if (artErr || !arts || arts.length === 0) {
+    return { props: { initialBackdropUrl: null } };
+  }
+
+  // Prefer better ones first (primary/vote/width)
+  const sorted = [...arts].sort((a: any, b: any) => {
+    const ap = a.is_primary ? 1 : 0;
+    const bp = b.is_primary ? 1 : 0;
+    if (bp !== ap) return bp - ap;
+
+    const av = typeof a.vote === "number" ? a.vote : -1;
+    const bv = typeof b.vote === "number" ? b.vote : -1;
+    if (bv !== av) return bv - av;
+
+    const aw = typeof a.width === "number" ? a.width : -1;
+    const bw = typeof b.width === "number" ? b.width : -1;
+    return bw - aw;
+  });
+
+  // Pick randomly from top N (random but not ugly/low-res)
+  const topN = sorted.slice(0, Math.min(12, sorted.length));
+  const pick = topN[Math.floor(Math.random() * topN.length)];
+
+  const rawUrl = pick?.url ?? null;
+
+  return {
+    props: {
+      initialBackdropUrl: rawUrl ? normalizeBackdropUrl(rawUrl) : null,
+    },
+  };
+};
