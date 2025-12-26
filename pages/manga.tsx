@@ -8,6 +8,7 @@ type Manga = {
   title: string;
   slug: string;
   image_url: string | null;
+  cover_image_url: string | null; // ✅ NEW
   banner_image_url: string | null;
   total_chapters: number | null;
   total_volumes: number | null;
@@ -33,6 +34,7 @@ const MangaIndexPage: NextPage = () => {
           title,
           slug,
           image_url,
+          cover_image_url,
           banner_image_url,
           total_chapters,
           total_volumes
@@ -76,9 +78,7 @@ const MangaIndexPage: NextPage = () => {
           <p className="text-sm text-gray-400">Loading manga from catalog…</p>
         )}
 
-        {error && !loading && (
-          <p className="text-sm text-red-400">{error}</p>
-        )}
+        {error && !loading && <p className="text-sm text-red-400">{error}</p>}
 
         {!loading && !error && mangaList.length === 0 && (
           <p className="text-sm text-gray-400">
@@ -93,7 +93,9 @@ const MangaIndexPage: NextPage = () => {
         {!loading && !error && mangaList.length > 0 && (
           <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {mangaList.map((manga) => {
-              const cover = manga.image_url;
+              // ✅ Prefer cached cover, fallback to legacy image_url
+              const cover = manga.cover_image_url || manga.image_url;
+
               const chapters = manga.total_chapters;
               const volumes = manga.total_volumes;
 
@@ -112,6 +114,7 @@ const MangaIndexPage: NextPage = () => {
                           src={cover}
                           alt={manga.title}
                           className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+                          loading="lazy"
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-gray-400">
@@ -137,7 +140,7 @@ const MangaIndexPage: NextPage = () => {
                     </div>
                   </div>
                 </Link>
-            );
+              );
             })}
           </div>
         )}

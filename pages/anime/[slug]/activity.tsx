@@ -466,7 +466,7 @@ const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({ initialBackdropUr
           type: "anime_series",
           title: animeTitle,
           rating: typeof row.rating === "number" ? row.rating : null,
-          note: row.note ?? null,
+          note: null,
           logged_at: String(row.logged_at),
           visibility: (row.visibility as Visibility) ?? "public",
           liked: typeof row.liked === "boolean" ? row.liked : Boolean(row.liked),
@@ -702,38 +702,35 @@ const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({ initialBackdropUr
                 );
               }
 
-              // ✅ Episode logs
+              // ✅ Episode logs (snapshot style — NO body text)
               if (item.kind === "log" && item.type === "anime_episode") {
+                const actions: Array<"watched" | "liked" | "rated"> = [];
+
+                actions.push("watched");
+                if (item.liked) actions.push("liked");
+
+                const hs = rating100ToHalfStars(item.rating);
+                if (hs !== null) actions.push("rated");
+
+                const prefix = buildSnapshotPrefix(actions as any);
+
                 return (
-                  <li key={`episode-log-${item.id}`} className={CARD_CLASS}>
+                  <li key={`episode-snap-${item.id}`} className={CARD_CLASS}>
                     <div className="flex items-center justify-between gap-4">
                       <div className="text-sm font-medium">
-                        {item.title}
+                        {prefix}{" "}
+                        <span className="font-bold text-white">{item.title}</span>
                         {item.subLabel ? (
-                          <span className="ml-2 text-neutral-400">
-                            · {item.subLabel}
-                          </span>
+                          <span className="ml-2 text-neutral-400">· {item.subLabel}</span>
                         ) : null}
+                        {hs !== null ? <HalfStarsRow halfStars={hs} /> : null}
+                        <span className="ml-1"> on {formatOnFullDate(item.logged_at)}</span>
                       </div>
 
                       <div className="whitespace-nowrap text-xs text-neutral-100">
                         {formatRelativeShort(item.logged_at)}
                       </div>
                     </div>
-
-                    <div className="mt-1 text-xs text-neutral-100">
-                      anime episode
-                    </div>
-
-                    {item.rating !== null ? (
-                      <div className="mt-2 text-sm">Rating: {item.rating}</div>
-                    ) : null}
-
-                    {item.note ? (
-                      <div className="mt-1 line-clamp-2 text-sm text-neutral-400">
-                        {item.note}
-                      </div>
-                    ) : null}
                   </li>
                 );
               }

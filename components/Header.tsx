@@ -218,153 +218,184 @@ export default function Header({ transparent = false }: { transparent?: boolean 
         }}
       >
 
-        {/* Left: brand + nav links */}
-        <div style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
-          <Link
-            href="/"
-            style={{
-              fontWeight: 700,
-              fontSize: "1.1rem",
-              textDecoration: "none",
-              color: "#000",
-              cursor: "pointer",
-            }}
-          >
-            AnimeApp
-          </Link>
+        <div
+          style={{
+            width: "100%",
+            maxWidth: "65rem", // max-w-6xl
+            margin: "0 auto",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
 
-          <nav
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.75rem",
-              fontSize: "0.95rem",
-            }}
-          >
+          {/* Left: brand + nav links */}
+          <div style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
             <Link
-              href="/anime"
+              href="/"
               style={{
+                fontWeight: 700,
+                fontSize: "1.1rem",
                 textDecoration: "none",
-                color: "#333",
-                padding: "0.2rem 0.45rem",
-                borderRadius: 6,
+                color: "#000",
+                cursor: "pointer",
               }}
             >
-              Anime
+              AnimeApp
             </Link>
-            <Link
-              href="/manga"
-              style={{
-                textDecoration: "none",
-                color: "#333",
-                padding: "0.2rem 0.45rem",
-                borderRadius: 6,
-              }}
-            >
-              Manga
-            </Link>
-          </nav>
-        </div>
 
-        {/* Right: auth / user menu */}
-        <div style={{ position: "relative", minWidth: "2.5rem" }} ref={menuRef}>
-          {authChecking ? null : user ? (
-            <button
-              type="button"
-              onClick={() => setIsUserMenuOpen((prev) => !prev)}
+            <nav
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: "0.55rem",
-                border: "none",
-                background: "transparent",
-                cursor: "pointer",
-                padding: 0,
+                gap: "0.75rem",
+                fontSize: "0.95rem",
               }}
             >
-              <div
+              <Link
+                href="/anime"
                 style={{
-                  width: "2.1rem",
-                  height: "2.1rem",
-                  borderRadius: "50%",
-                  background: "#e5e5e5",
-                  border: "1px solid #d0d0d0",
-                  flexShrink: 0,
+                  textDecoration: "none",
+                  color: "#333",
+                  padding: "0.2rem 0.45rem",
+                  borderRadius: 6,
+                }}
+              >
+                Anime
+              </Link>
+              <Link
+                href="/manga"
+                style={{
+                  textDecoration: "none",
+                  color: "#333",
+                  padding: "0.2rem 0.45rem",
+                  borderRadius: 6,
+                }}
+              >
+                Manga
+              </Link>
+            </nav>
+          </div>
+
+          {/* Right: auth / user menu */}
+          <div style={{ position: "relative", minWidth: "2.5rem" }} ref={menuRef}>
+            {authChecking ? null : user ? (
+              <button
+                type="button"
+                onClick={() => setIsUserMenuOpen((prev) => !prev)}
+                style={{
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: "center",
-                  fontWeight: 600,
-                  fontSize: "0.95rem",
-                  overflow: "hidden",
+                  gap: "0.55rem",
+                  border: "none",
+                  background: "transparent",
+                  cursor: "pointer",
+                  padding: 0,
                 }}
               >
-                {profile?.avatar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={profile.avatar_url}
-                    alt={displayName || "Your avatar"}
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "cover",
-                      display: "block",
-                    }}
-                  />
-                ) : (
-                  (initial || "U")
-                )}
-              </div>
+                <div
+                  style={{
+                    width: "2.1rem",
+                    height: "2.1rem",
+                    borderRadius: "50%",
+                    background: "#e5e5e5",
+                    border: "1px solid #d0d0d0",
+                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: 600,
+                    fontSize: "0.95rem",
+                    overflow: "hidden",
+                  }}
+                >
+                  {profile?.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={profile.avatar_url}
+                      alt={displayName || "Your avatar"}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                        display: "block",
+                      }}
+                    />
+                  ) : (
+                    (initial || "U")
+                  )}
+                </div>
 
-              <span
+                <span
+                  style={{
+                    fontSize: "0.95rem",
+                    color: "#333",
+                    maxWidth: "9rem",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {displayName || "User"}
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsAuthOpen(true)}
                 style={{
-                  fontSize: "0.95rem",
-                  color: "#333",
-                  maxWidth: "9rem",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
+                  padding: "0.4rem 1rem",
+                  borderRadius: 999,
+                  border: "1px solid #000",
+                  background: "#000",
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
                 }}
               >
-                {displayName || "User"}
-              </span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setIsAuthOpen(true)}
-              style={{
-                padding: "0.4rem 1rem",
-                borderRadius: 999,
-                border: "1px solid #000",
-                background: "#000",
-                color: "#fff",
-                cursor: "pointer",
-                fontSize: "0.9rem",
-                fontWeight: 500,
-              }}
-            >
-              Log in
-            </button>
-          )}
+                Log in
+              </button>
+            )}
 
-          {user && isUserMenuOpen && (
-            <div
-              style={{
-                position: "absolute",
-                top: "2.6rem",
-                right: 0,
-                background: "#fff",
-                border: "1px solid #ddd",
-                borderRadius: 8,
-                boxShadow: "0 4px 12px rgba(0, 0, 0, 0.12)",
-                minWidth: "150px",
-                zIndex: 100,
-              }}
-            >
-              {profile?.username && (
+            {user && isUserMenuOpen && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "2.6rem",
+                  right: 0,
+                  background: "#fff",
+                  border: "1px solid #ddd",
+                  borderRadius: 8,
+                  boxShadow: "0 4px 12px rgba(0, 0, 0, 0.12)",
+                  minWidth: "150px",
+                  zIndex: 100,
+                }}
+              >
+                {profile?.username && (
+                  <button
+                    type="button"
+                    onClick={handleGoProfile}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "0.6rem 0.85rem",
+                      border: "none",
+                      background: "transparent",
+                      cursor: "pointer",
+                      fontSize: "0.9rem",
+                      color: "#333",
+                      borderBottom: "1px solid #eee",
+                    }}
+                  >
+                    Profile
+                  </button>
+                )}
+
                 <button
                   type="button"
-                  onClick={handleGoProfile}
+                  onClick={handleLogout}
                   style={{
                     display: "block",
                     width: "100%",
@@ -374,33 +405,14 @@ export default function Header({ transparent = false }: { transparent?: boolean 
                     background: "transparent",
                     cursor: "pointer",
                     fontSize: "0.9rem",
-                    color: "#333",
-                    borderBottom: "1px solid #eee",
+                    color: "#b00000",
                   }}
                 >
-                  Profile
+                  Log out
                 </button>
-              )}
-
-              <button
-                type="button"
-                onClick={handleLogout}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  textAlign: "left",
-                  padding: "0.6rem 0.85rem",
-                  border: "none",
-                  background: "transparent",
-                  cursor: "pointer",
-                  fontSize: "0.9rem",
-                  color: "#b00000",
-                }}
-              >
-                Log out
-              </button>
-            </div>
-          )}
+              </div>
+            )}
+          </div>
         </div>
       </header>
 

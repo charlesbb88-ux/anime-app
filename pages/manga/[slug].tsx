@@ -565,6 +565,9 @@ const MangaPage: NextPage = () => {
           )}
         </div>
 
+        <Link href={`/manga/${slug}/art`}>Art</Link>
+
+
         <Link href="/" className="text-xs text-blue-400 hover:text-blue-300">
           ← Back home
         </Link>

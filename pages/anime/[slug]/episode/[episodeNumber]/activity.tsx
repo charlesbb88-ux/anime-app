@@ -1,54 +1,82 @@
+// pages/anime/[slug]/episode/[episodeNumber]/activity.tsx
 "use client";
 
 import { useEffect, useState } from "react";
-import type { NextPage } from "next";
+import type { NextPage, GetServerSideProps } from "next";
 import { useRouter } from "next/router";
+import Link from "next/link";
 
 import { supabase } from "@/lib/supabaseClient";
-import { getAnimeBySlug } from "@/lib/anime";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import MediaHeaderLayout from "@/components/layouts/MediaHeaderLayout";
+
+const CARD_CLASS = "bg-black p-4 text-neutral-100";
+
+function postHref(postId: string) {
+  return `/posts/${postId}`;
+}
+
+type Visibility = "public" | "friends" | "private";
 
 type ActivityItem =
   | {
-      id: string;
-      kind: "log";
-      type: "anime_episode";
-      title: string;
-      subLabel?: string;
-      rating: number | null;
-      note: string | null;
-      logged_at: string;
-      visibility: "public" | "friends" | "private";
-    }
+    id: string;
+    kind: "log";
+    type: "anime_episode";
+    title: string;
+    subLabel?: string;
+    rating: number | null; // 0..100
+    note: null; // ✅ never show notes on this page
+    logged_at: string;
+    visibility: Visibility;
+
+    // episode snapshot flags (from anime_episode_logs)
+    liked?: boolean | null;
+
+    // ✅ if the log submit also created a review, store it so we can suppress the standalone review
+    review_id?: string | null;
+  }
   | {
-      id: string;
-      kind: "review";
-      type: "anime_episode_review";
-      title: string;
-      subLabel?: string;
-      logged_at: string; // created_at from reviews
-      rating: number | null; // 0..100
-      content: string | null;
-      contains_spoilers: boolean;
-    }
+    id: string;
+    kind: "review";
+    type: "anime_episode_review";
+    title: string;
+    subLabel?: string;
+    logged_at: string; // reviews.created_at
+    rating: number | null; // 0..100
+    content: string | null;
+    contains_spoilers: boolean;
+  }
   | {
-      id: string;
-      kind: "mark";
-      type: "watched" | "liked" | "watchlist" | "rating";
-      title: string;
-      subLabel?: string;
-      logged_at: string;
-      // rating uses HALF-STARS stored as 1..10
-      stars?: number | null;
-    };
+    id: string;
+    kind: "mark";
+    type: "watched" | "liked" | "watchlist" | "rating";
+    title: string;
+    subLabel?: string;
+    logged_at: string; // user_marks.created_at
+    stars?: number | null; // half-stars 1..10 (only for rating mark)
+  };
 
 function getAnimeDisplayTitle(anime: any): string {
   return (
     anime?.title_english ||
-    anime?.title_romaji ||
+    anime?.title_preferred ||
     anime?.title_native ||
     anime?.title ||
     "Unknown anime"
   );
+}
+
+/* -------------------- Server backdrop normalization -------------------- */
+
+function normalizeBackdropUrl(url: string) {
+  if (!url) return url;
+
+  // TMDB original -> w1280 (faster)
+  if (url.includes("https://image.tmdb.org/t/p/original/")) {
+    return url.replace("/t/p/original/", "/t/p/w1280/");
+  }
+  return url;
 }
 
 /* -------------------- Dates -------------------- */
@@ -79,7 +107,7 @@ function formatOnFullDate(iso: string) {
   });
 }
 
-/* -------------------- Half-star visuals (same idea as ActionBox) -------------------- */
+/* -------------------- Half-star visuals -------------------- */
 
 function clampInt(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.round(n)));
@@ -125,7 +153,42 @@ function HalfStarsRow({ halfStars }: { halfStars: number }) {
   );
 }
 
-const AnimeEpisodeActivityPage: NextPage = () => {
+// Convert a 0..100 rating to half-stars 1..10
+function rating100ToHalfStars(rating: number | null): number | null {
+  if (typeof rating !== "number" || !Number.isFinite(rating)) return null;
+  const clamped = clampInt(rating, 0, 100);
+  if (clamped <= 0) return null;
+  return clampInt(Math.round(clamped / 10), 1, 10);
+}
+
+function joinWithCommasAnd(parts: string[]) {
+  if (parts.length <= 1) return parts[0] ?? "";
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
+}
+
+function actionWord(a: "reviewed" | "liked" | "watched" | "rated") {
+  if (a === "rated") return "rated";
+  if (a === "reviewed") return "reviewed";
+  if (a === "liked") return "liked";
+  return "watched";
+}
+
+function buildSnapshotPrefix(
+  actions: Array<"reviewed" | "liked" | "watched" | "rated">
+) {
+  return `You ${joinWithCommasAnd(actions.map(actionWord))}`;
+}
+
+/* -------------------- Props -------------------- */
+
+type AnimeEpisodeActivityPageProps = {
+  initialBackdropUrl: string | null;
+};
+
+const AnimeEpisodeActivityPage: NextPage<AnimeEpisodeActivityPageProps> = ({
+  initialBackdropUrl,
+}) => {
   const router = useRouter();
   const { slug, episodeNumber } = router.query as {
     slug?: string;
@@ -133,9 +196,17 @@ const AnimeEpisodeActivityPage: NextPage = () => {
   };
 
   const [loading, setLoading] = useState(true);
+
+  const [backdropUrl] = useState<string | null>(initialBackdropUrl);
+  const [posterUrl, setPosterUrl] = useState<string | null>(null);
+
   const [pageTitle, setPageTitle] = useState<string>("Your activity");
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  const [reviewIdToPostId, setReviewIdToPostId] = useState<Record<string, string>>(
+    {}
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -154,7 +225,6 @@ const AnimeEpisodeActivityPage: NextPage = () => {
         return;
       }
 
-      // prevent "Loading…" getting stuck on first render timing
       if (!slug || !episodeNumber) {
         if (mounted) setLoading(false);
         return;
@@ -167,21 +237,26 @@ const AnimeEpisodeActivityPage: NextPage = () => {
         return;
       }
 
-      const res: any = await getAnimeBySlug(slug);
-      const anime = res?.data ?? null;
-      const animeErr = res?.error ?? null;
+      // 1) Load anime
+      const animeRes = await supabase
+        .from("anime")
+        .select("id, title, title_english, title_native, title_preferred, image_url")
+        .eq("slug", slug)
+        .maybeSingle();
 
       if (!mounted) return;
 
-      if (animeErr || !anime?.id) {
+      const anime = animeRes.data ?? null;
+      if (animeRes.error || !anime?.id) {
         setError("Anime not found.");
         setLoading(false);
         return;
       }
 
       const animeTitle = getAnimeDisplayTitle(anime);
+      setPosterUrl(anime?.image_url ?? null);
 
-      // ✅ find the episode row for this anime + episode_number
+      // 2) Find episode row (by anime_id + episode_number)
       const episodeRes = await supabase
         .from("anime_episodes")
         .select("id, episode_number")
@@ -190,10 +265,6 @@ const AnimeEpisodeActivityPage: NextPage = () => {
         .maybeSingle();
 
       if (!mounted) return;
-
-      if (episodeRes.error) {
-        console.error("Episode activity: episode lookup error", episodeRes.error);
-      }
 
       const episodeRow = episodeRes.data ?? null;
       if (!episodeRow?.id) {
@@ -204,153 +275,242 @@ const AnimeEpisodeActivityPage: NextPage = () => {
 
       setPageTitle(`Your activity · ${animeTitle} · Episode ${epNum}`);
 
-      const [episodeLogs, episodeReviews, watchedMark, likedMark, watchlistMark, ratingMark] =
-        await Promise.all([
-          supabase
-            .from("anime_episode_logs")
-            .select("id, logged_at, rating, note, visibility")
-            .eq("user_id", user.id)
-            .eq("anime_id", anime.id)
-            .eq("anime_episode_id", episodeRow.id)
-            .order("logged_at", { ascending: false }),
+      // 3) Load activity sources
+      const [
+        episodeLogsRes,
+        episodeReviewsRes,
+        watchedMarkRes,
+        likedMarkRes,
+        watchlistMarkRes,
+        ratingMarkRes,
+      ] = await Promise.all([
+        supabase
+          .from("anime_episode_logs")
+          // ✅ IMPORTANT: include review_id so we can suppress the standalone review row
+          .select("id, logged_at, rating, note, visibility, liked, review_id")
+          .eq("user_id", user.id)
+          .eq("anime_id", anime.id)
+          .eq("anime_episode_id", episodeRow.id)
+          .order("logged_at", { ascending: false }),
 
-          // ✅ Reviews table: episode review = anime_id set AND anime_episode_id = this episode
-          supabase
-            .from("reviews")
-            .select("id, created_at, rating, content, contains_spoilers")
-            .eq("user_id", user.id)
-            .eq("anime_id", anime.id)
-            .eq("anime_episode_id", episodeRow.id)
-            .order("created_at", { ascending: false }),
+        supabase
+          .from("reviews")
+          .select("id, created_at, rating, content, contains_spoilers")
+          .eq("user_id", user.id)
+          .eq("anime_id", anime.id)
+          .eq("anime_episode_id", episodeRow.id)
+          .order("created_at", { ascending: false }),
 
-          supabase
-            .from("user_marks")
-            .select("id, created_at")
-            .eq("user_id", user.id)
-            .eq("kind", "watched")
-            .eq("anime_id", anime.id)
-            .eq("anime_episode_id", episodeRow.id)
-            .is("manga_id", null)
-            .is("manga_chapter_id", null)
-            .maybeSingle(),
+        supabase
+          .from("user_marks")
+          .select("id, created_at")
+          .eq("user_id", user.id)
+          .eq("kind", "watched")
+          .eq("anime_id", anime.id)
+          .eq("anime_episode_id", episodeRow.id)
+          .is("manga_id", null)
+          .is("manga_chapter_id", null)
+          .maybeSingle(),
 
-          supabase
-            .from("user_marks")
-            .select("id, created_at")
-            .eq("user_id", user.id)
-            .eq("kind", "liked")
-            .eq("anime_id", anime.id)
-            .eq("anime_episode_id", episodeRow.id)
-            .is("manga_id", null)
-            .is("manga_chapter_id", null)
-            .maybeSingle(),
+        supabase
+          .from("user_marks")
+          .select("id, created_at")
+          .eq("user_id", user.id)
+          .eq("kind", "liked")
+          .eq("anime_id", anime.id)
+          .eq("anime_episode_id", episodeRow.id)
+          .is("manga_id", null)
+          .is("manga_chapter_id", null)
+          .maybeSingle(),
 
-          supabase
-            .from("user_marks")
-            .select("id, created_at")
-            .eq("user_id", user.id)
-            .eq("kind", "watchlist")
-            .eq("anime_id", anime.id)
-            .eq("anime_episode_id", episodeRow.id)
-            .is("manga_id", null)
-            .is("manga_chapter_id", null)
-            .maybeSingle(),
+        supabase
+          .from("user_marks")
+          .select("id, created_at")
+          .eq("user_id", user.id)
+          .eq("kind", "watchlist")
+          .eq("anime_id", anime.id)
+          .eq("anime_episode_id", episodeRow.id)
+          .is("manga_id", null)
+          .is("manga_chapter_id", null)
+          .maybeSingle(),
 
-          supabase
-            .from("user_marks")
-            .select("id, created_at, stars")
-            .eq("user_id", user.id)
-            .eq("kind", "rating")
-            .eq("anime_id", anime.id)
-            .eq("anime_episode_id", episodeRow.id)
-            .is("manga_id", null)
-            .is("manga_chapter_id", null)
-            .maybeSingle(),
-        ]);
+        supabase
+          .from("user_marks")
+          .select("id, created_at, stars")
+          .eq("user_id", user.id)
+          .eq("kind", "rating")
+          .eq("anime_id", anime.id)
+          .eq("anime_episode_id", episodeRow.id)
+          .is("manga_id", null)
+          .is("manga_chapter_id", null)
+          .maybeSingle(),
+      ]);
+
+      // -------------------- Step: suppress duplicate reviews (same as series page) --------------------
+      const attachedReviewIds = new Set<string>();
+      for (const row of episodeLogsRes.data ?? []) {
+        const rid = (row as any)?.review_id ? String((row as any).review_id) : null;
+        if (rid) attachedReviewIds.add(rid);
+      }
+      // ---------------------------------------------------------------------------------------------
+
+      // -------------------- Step: review_id -> post_id map (include attached + standalone) ----------
+      const reviewIdsToResolve = new Set<string>();
+
+      for (const row of episodeLogsRes.data ?? []) {
+        if ((row as any)?.review_id) reviewIdsToResolve.add(String((row as any).review_id));
+      }
+      for (const r of episodeReviewsRes.data ?? []) {
+        if ((r as any)?.id) reviewIdsToResolve.add(String((r as any).id));
+      }
+
+      let nextReviewIdToPostId: Record<string, string> = {};
+
+      if (reviewIdsToResolve.size > 0) {
+        const reviewIdList = Array.from(reviewIdsToResolve);
+
+        const postsRes = await supabase
+          .from("posts")
+          .select("id, review_id")
+          .eq("user_id", user.id)
+          .eq("anime_id", anime.id)
+          .eq("anime_episode_id", episodeRow.id)
+          .in("review_id", reviewIdList);
+
+        if (postsRes.data) {
+          for (const p of postsRes.data as any[]) {
+            if (!p?.id || !p?.review_id) continue;
+            nextReviewIdToPostId[String(p.review_id)] = String(p.id);
+          }
+        }
+      }
+
+      if (mounted) setReviewIdToPostId(nextReviewIdToPostId);
+      // ---------------------------------------------------------------------------------------------
 
       if (!mounted) return;
-
-      if (episodeLogs.error) console.error("Episode activity: episodeLogs error", episodeLogs.error);
-      if (episodeReviews.error)
-        console.error("Episode activity: episodeReviews error", episodeReviews.error);
 
       const merged: ActivityItem[] = [];
       const subLabel = `Episode ${epNum}`;
 
-      if (watchedMark.data?.id) {
+      // Build log snapshots for suppressing marks created by "log submit"
+      const episodeLogSnapshots = (episodeLogsRes.data ?? []).map((row: any) => {
+        const iso = String(row?.logged_at ?? "");
+        const ms = new Date(iso).getTime();
+
+        const liked =
+          typeof row?.liked === "boolean" ? row.liked : Boolean(row?.liked);
+
+        const hasRating =
+          typeof row?.rating === "number" &&
+          Number.isFinite(row.rating) &&
+          row.rating > 0;
+
+        return {
+          ms: Number.isFinite(ms) ? ms : null,
+          hasWatched: true,
+          liked,
+          hasRating,
+        };
+      });
+
+      function shouldSuppressMarkBecauseOfNearbyEpisodeLog(
+        markType: "watched" | "liked" | "rating" | "watchlist",
+        markCreatedAtIso: string
+      ) {
+        if (markType === "watchlist") return false;
+
+        const markMs = new Date(markCreatedAtIso).getTime();
+        if (!Number.isFinite(markMs)) return false;
+
+        const windowMs = 2 * 60 * 1000;
+
+        for (const snap of episodeLogSnapshots) {
+          if (snap.ms == null) continue;
+          const diff = Math.abs(markMs - snap.ms);
+          if (diff > windowMs) continue;
+
+          if (markType === "watched" && snap.hasWatched) return true;
+          if (markType === "liked" && snap.liked) return true;
+          if (markType === "rating" && snap.hasRating) return true;
+        }
+
+        return false;
+      }
+
+      function maybePushMark(
+        mark: any,
+        type: "watched" | "liked" | "watchlist" | "rating"
+      ) {
+        if (!mark?.id || !mark?.created_at) return;
+
+        const createdAt = String(mark.created_at);
+
+        const suppress =
+          type === "rating"
+            ? shouldSuppressMarkBecauseOfNearbyEpisodeLog("rating", createdAt)
+            : type === "watched"
+              ? shouldSuppressMarkBecauseOfNearbyEpisodeLog("watched", createdAt)
+              : shouldSuppressMarkBecauseOfNearbyEpisodeLog(type, createdAt);
+
+        if (suppress) return;
+
         merged.push({
-          id: watchedMark.data.id,
+          id: String(mark.id),
           kind: "mark",
-          type: "watched",
+          type,
           title: animeTitle,
           subLabel,
-          logged_at: watchedMark.data.created_at,
+          logged_at: createdAt,
+          stars: type === "rating" ? (mark.stars ?? null) : undefined,
         });
       }
 
-      if (likedMark.data?.id) {
-        merged.push({
-          id: likedMark.data.id,
-          kind: "mark",
-          type: "liked",
-          title: animeTitle,
-          subLabel,
-          logged_at: likedMark.data.created_at,
-        });
-      }
+      maybePushMark(watchedMarkRes.data, "watched");
+      maybePushMark(likedMarkRes.data, "liked");
+      maybePushMark(watchlistMarkRes.data, "watchlist");
+      maybePushMark(ratingMarkRes.data, "rating");
 
-      if (watchlistMark.data?.id) {
-        merged.push({
-          id: watchlistMark.data.id,
-          kind: "mark",
-          type: "watchlist",
-          title: animeTitle,
-          subLabel,
-          logged_at: watchlistMark.data.created_at,
-        });
-      }
+      // Reviews (standalone only — suppress if attached to a log)
+      (episodeReviewsRes.data ?? []).forEach((row: any) => {
+        if (!row?.id || !row?.created_at) return;
+        if (attachedReviewIds.has(String(row.id))) return; // ✅ THE KEY LINE
 
-      if (ratingMark.data?.id) {
         merged.push({
-          id: ratingMark.data.id,
-          kind: "mark",
-          type: "rating",
-          title: animeTitle,
-          subLabel,
-          logged_at: ratingMark.data.created_at,
-          stars: ratingMark.data.stars ?? null,
-        });
-      }
-
-      episodeReviews.data?.forEach((row: any) => {
-        merged.push({
-          id: row.id,
+          id: String(row.id),
           kind: "review",
           type: "anime_episode_review",
           title: animeTitle,
           subLabel,
-          logged_at: row.created_at,
+          logged_at: String(row.created_at),
           rating: typeof row.rating === "number" ? row.rating : null,
           content: row.content ?? null,
           contains_spoilers: Boolean(row.contains_spoilers),
         });
       });
 
-      episodeLogs.data?.forEach((row: any) => {
+      // Logs (snapshot style)
+      (episodeLogsRes.data ?? []).forEach((row: any) => {
+        if (!row?.id || !row?.logged_at) return;
+
         merged.push({
-          id: row.id,
+          id: String(row.id),
           kind: "log",
           type: "anime_episode",
           title: animeTitle,
           subLabel,
-          rating: row.rating,
-          note: row.note,
-          logged_at: row.logged_at,
-          visibility: row.visibility,
+          rating: typeof row.rating === "number" ? row.rating : null,
+          note: null,
+          logged_at: String(row.logged_at),
+          visibility: (row.visibility as Visibility) ?? "public",
+          liked: typeof row.liked === "boolean" ? row.liked : Boolean(row.liked),
+          review_id: row.review_id ?? null,
         });
       });
 
-      merged.sort((a, b) => new Date(b.logged_at).getTime() - new Date(a.logged_at).getTime());
+      merged.sort(
+        (a, b) => new Date(b.logged_at).getTime() - new Date(a.logged_at).getTime()
+      );
 
       setItems(merged);
       setLoading(false);
@@ -372,140 +532,343 @@ const AnimeEpisodeActivityPage: NextPage = () => {
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-6 text-2xl font-semibold tracking-tight">{pageTitle}</h1>
-
-      {error ? (
-        <div className="text-sm text-red-300">{error}</div>
-      ) : items.length === 0 ? (
-        <div className="text-sm text-neutral-500">No activity yet.</div>
-      ) : (
-        <ul className="space-y-4">
-          {items.map((item) => {
-            if (item.kind === "mark" && item.type === "watched") {
-              return (
-                <li key={`watched-${item.id}`} className="rounded-md border border-neutral-800 p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="text-sm font-medium">
-                      You marked <span className="font-bold text-black">{item.title}</span> as
-                      watched
-                      {item.subLabel ? <span className="ml-2 text-neutral-400">· {item.subLabel}</span> : null}
+    <MediaHeaderLayout
+      backdropUrl={backdropUrl}
+      posterUrl={posterUrl}
+      title={pageTitle}
+      backdropHeightClassName="h-[620px]"
+      overlaySrc="/overlays/my-overlay4.png"
+    >
+      <div className="min-w-0">
+        {error ? (
+          <div className="text-sm text-red-300">{error}</div>
+        ) : items.length === 0 ? (
+          <div className="text-sm text-neutral-500">No activity yet.</div>
+        ) : (
+          <ul className="space-y-1">
+            {items.map((item) => {
+              // MARKS
+              if (item.kind === "mark" && item.type === "watched") {
+                return (
+                  <li key={`watched-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        You marked{" "}
+                        <span className="font-bold text-white">{item.title}</span>{" "}
+                        as watched
+                        {item.subLabel ? (
+                          <span className="ml-2 text-neutral-400">· {item.subLabel}</span>
+                        ) : null}
+                      </div>
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
                     </div>
+                  </li>
+                );
+              }
 
-                    <div className="text-xs text-neutral-500 whitespace-nowrap">
-                      {formatRelativeShort(item.logged_at)}
+              if (item.kind === "mark" && item.type === "liked") {
+                return (
+                  <li key={`liked-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        You liked{" "}
+                        <span className="font-bold text-white">{item.title}</span>
+                        {item.subLabel ? (
+                          <span className="ml-2 text-neutral-400">· {item.subLabel}</span>
+                        ) : null}
+                      </div>
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
                     </div>
-                  </div>
-                </li>
-              );
-            }
+                  </li>
+                );
+              }
 
-            if (item.kind === "mark" && item.type === "liked") {
-              return (
-                <li key={`liked-${item.id}`} className="rounded-md border border-neutral-800 p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="text-sm font-medium">
-                      You liked <span className="font-bold text-black">{item.title}</span>
-                      {item.subLabel ? <span className="ml-2 text-neutral-400">· {item.subLabel}</span> : null}
+              if (item.kind === "mark" && item.type === "watchlist") {
+                return (
+                  <li key={`watchlist-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        You added{" "}
+                        <span className="font-bold text-white">{item.title}</span>{" "}
+                        to your watchlist
+                        {item.subLabel ? (
+                          <span className="ml-2 text-neutral-400">· {item.subLabel}</span>
+                        ) : null}
+                      </div>
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
                     </div>
+                  </li>
+                );
+              }
 
-                    <div className="text-xs text-neutral-500 whitespace-nowrap">
-                      {formatRelativeShort(item.logged_at)}
+              if (item.kind === "mark" && item.type === "rating") {
+                const hs = clampInt(Number(item.stars ?? 0), 0, 10);
+
+                return (
+                  <li key={`rating-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        You rated{" "}
+                        <span className="font-bold text-white">{item.title}</span>
+                        {item.subLabel ? (
+                          <span className="ml-2 text-neutral-400">· {item.subLabel}</span>
+                        ) : null}
+                        {hs > 0 ? <HalfStarsRow halfStars={hs} /> : null}
+                      </div>
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
                     </div>
-                  </div>
-                </li>
-              );
-            }
+                  </li>
+                );
+              }
 
-            if (item.kind === "mark" && item.type === "watchlist") {
-              return (
-                <li
-                  key={`watchlist-${item.id}`}
-                  className="rounded-md border border-neutral-800 p-4"
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="text-sm font-medium">
-                      You added <span className="font-bold text-black">{item.title}</span> to your
-                      watchlist
-                      {item.subLabel ? <span className="ml-2 text-neutral-400">· {item.subLabel}</span> : null}
+              // REVIEW (standalone only — already deduped)
+              if (item.kind === "review") {
+                const postId = reviewIdToPostId[String(item.id)];
+
+                return (
+                  <li key={`review-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        {postId ? (
+                          <Link
+                            href={postHref(postId)}
+                            className="inline hover:underline"
+                            title="View review post"
+                          >
+                            You reviewed{" "}
+                            <span className="font-bold text-white">{item.title}</span>
+                            {item.subLabel ? (
+                              <span className="ml-2 text-neutral-400">
+                                · {item.subLabel}
+                              </span>
+                            ) : null}
+                          </Link>
+                        ) : (
+                          <>
+                            You reviewed{" "}
+                            <span className="font-bold text-white">{item.title}</span>
+                            {item.subLabel ? (
+                              <span className="ml-2 text-neutral-400">
+                                · {item.subLabel}
+                              </span>
+                            ) : null}
+                          </>
+                        )}
+                      </div>
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
                     </div>
+                  </li>
+                );
+              }
 
-                    <div className="text-xs text-neutral-500 whitespace-nowrap">
-                      {formatRelativeShort(item.logged_at)}
+              // LOG (episode snapshot-style)
+              if (item.kind === "log" && item.type === "anime_episode") {
+                const actions: Array<"watched" | "liked" | "rated" | "reviewed"> = [];
+
+                actions.push("watched");
+                if (item.liked) actions.push("liked");
+
+                const hs = rating100ToHalfStars(item.rating);
+                if (hs !== null) actions.push("rated");
+
+                if (item.review_id) actions.push("reviewed");
+
+                const prefix = buildSnapshotPrefix(actions);
+
+                const postId = item.review_id
+                  ? reviewIdToPostId[String(item.review_id)]
+                  : undefined;
+
+                return (
+                  <li key={`episode-log-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        {postId ? (
+                          <Link
+                            href={postHref(postId)}
+                            className="inline hover:underline"
+                            title="View review post"
+                          >
+                            {prefix}{" "}
+                            <span className="font-bold text-white">{item.title}</span>
+                            {item.subLabel ? (
+                              <span className="ml-2 text-neutral-400">
+                                · {item.subLabel}
+                              </span>
+                            ) : null}
+                            {hs !== null ? <HalfStarsRow halfStars={hs} /> : null}
+                            <span className="ml-1">
+                              {" "}
+                              on {formatOnFullDate(item.logged_at)}
+                            </span>
+                          </Link>
+                        ) : (
+                          <>
+                            {prefix}{" "}
+                            <span className="font-bold text-white">{item.title}</span>
+                            {item.subLabel ? (
+                              <span className="ml-2 text-neutral-400">
+                                · {item.subLabel}
+                              </span>
+                            ) : null}
+                            {hs !== null ? <HalfStarsRow halfStars={hs} /> : null}
+                            <span className="ml-1">
+                              {" "}
+                              on {formatOnFullDate(item.logged_at)}
+                            </span>
+                          </>
+                        )}
+                      </div>
+
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
                     </div>
-                  </div>
-                </li>
-              );
-            }
+                  </li>
+                );
+              }
 
-            if (item.kind === "mark" && item.type === "rating") {
-              const hs = clampInt(Number(item.stars ?? 0), 0, 10);
-
-              return (
-                <li key={`rating-${item.id}`} className="rounded-md border border-neutral-800 p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="text-sm font-medium">
-                      You rated <span className="font-bold text-black">{item.title}</span>
-                      {item.subLabel ? <span className="ml-2 text-neutral-400">· {item.subLabel}</span> : null}
-                      {hs > 0 ? <HalfStarsRow halfStars={hs} /> : null}
-                    </div>
-
-                    <div className="text-xs text-neutral-500 whitespace-nowrap">
-                      {formatRelativeShort(item.logged_at)}
-                    </div>
-                  </div>
-                </li>
-              );
-            }
-
-            if (item.kind === "review") {
-              return (
-                <li key={`review-${item.id}`} className="rounded-md border border-neutral-800 p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="text-sm font-medium">
-                      You reviewed <span className="font-bold text-black">{item.title}</span>
-                      {item.subLabel ? <span className="ml-2 text-neutral-400">· {item.subLabel}</span> : null}
-                    </div>
-
-                    <div className="text-xs text-neutral-500 whitespace-nowrap">
-                      {formatRelativeShort(item.logged_at)}
-                    </div>
-                  </div>
-                </li>
-              );
-            }
-
-            if (item.kind !== "log") return null;
-
-            return (
-              <li
-                key={`log-${item.type}-${item.id}`}
-                className="rounded-md border border-neutral-800 p-4"
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <div className="text-sm font-medium">
-                    You watched <span className="font-bold text-black">{item.title}</span>{" "}
-                    {item.subLabel ? <span className="ml-2 text-neutral-400">· {item.subLabel}</span> : null}
-                    {" "}on {formatOnFullDate(item.logged_at)}
-                  </div>
-
-                  <div className="text-xs text-neutral-500 whitespace-nowrap">
-                    {formatRelativeShort(item.logged_at)}
-                  </div>
-                </div>
-
-                {item.rating !== null && <div className="mt-2 text-sm">Rating: {item.rating}</div>}
-
-                {item.note && (
-                  <div className="mt-1 text-sm text-neutral-400 line-clamp-2">{item.note}</div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </main>
+              return null;
+            })}
+          </ul>
+        )}
+      </div>
+    </MediaHeaderLayout>
   );
 };
 
+(AnimeEpisodeActivityPage as any).headerTransparent = true;
+
 export default AnimeEpisodeActivityPage;
+
+/* -------------------- getServerSideProps: episode backdrops -------------------- */
+
+export const getServerSideProps: GetServerSideProps<AnimeEpisodeActivityPageProps> = async (
+  ctx
+) => {
+  const rawSlug = ctx.params?.slug;
+  const slug =
+    typeof rawSlug === "string"
+      ? rawSlug
+      : Array.isArray(rawSlug) && rawSlug[0]
+        ? rawSlug[0]
+        : null;
+
+  const rawEp = (ctx.params as any)?.episodeNumber;
+  const episodeNumber =
+    typeof rawEp === "string"
+      ? rawEp
+      : Array.isArray(rawEp) && rawEp[0]
+        ? rawEp[0]
+        : null;
+
+  const epNum = episodeNumber ? Number(episodeNumber) : NaN;
+
+  if (!slug || !Number.isFinite(epNum)) {
+    return { props: { initialBackdropUrl: null } };
+  }
+
+  // 1) Find anime id
+  const { data: animeRow, error: animeErr } = await supabaseAdmin
+    .from("anime")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+
+  if (animeErr || !animeRow?.id) {
+    return { props: { initialBackdropUrl: null } };
+  }
+
+  // 2) Find episode id
+  const { data: epRow, error: epErr } = await supabaseAdmin
+    .from("anime_episodes")
+    .select("id")
+    .eq("anime_id", animeRow.id)
+    .eq("episode_number", epNum)
+    .maybeSingle();
+
+  const episodeId = !epErr && epRow?.id ? epRow.id : null;
+
+  // 3) Prefer episode artwork first (STILLS, not backdrops)
+  if (episodeId) {
+    const { data: epArts, error: epArtErr } = await supabaseAdmin
+      .from("anime_episode_artwork")
+      .select("url, is_primary, vote, width")
+      .eq("anime_episode_id", episodeId)
+      // ✅ episode images are "still"
+      .in("kind", ["still", "1"])
+      .limit(50);
+
+    if (!epArtErr && epArts && epArts.length > 0) {
+      const sorted = [...epArts].sort((a: any, b: any) => {
+        const ap = a.is_primary ? 1 : 0;
+        const bp = b.is_primary ? 1 : 0;
+        if (bp !== ap) return bp - ap;
+
+        const av = typeof a.vote === "number" ? a.vote : -1;
+        const bv = typeof b.vote === "number" ? b.vote : -1;
+        if (bv !== av) return bv - av;
+
+        const aw = typeof a.width === "number" ? a.width : -1;
+        const bw = typeof b.width === "number" ? b.width : -1;
+        return bw - aw;
+      });
+
+      const topN = sorted.slice(0, Math.min(12, sorted.length));
+      const pick = topN[Math.floor(Math.random() * topN.length)];
+      const rawUrl = pick?.url ?? null;
+
+      return {
+        props: {
+          initialBackdropUrl: rawUrl ? normalizeBackdropUrl(rawUrl) : null,
+        },
+      };
+    }
+  }
+
+  // 4) Fallback to series artwork if episode artwork missing
+  const { data: arts, error: artErr } = await supabaseAdmin
+    .from("anime_artwork")
+    .select("url, is_primary, vote, width")
+    .eq("anime_id", animeRow.id)
+    .in("kind", ["backdrop", "3"])
+    .limit(50);
+
+  if (artErr || !arts || arts.length === 0) {
+    return { props: { initialBackdropUrl: null } };
+  }
+
+  const sorted = [...arts].sort((a: any, b: any) => {
+    const ap = a.is_primary ? 1 : 0;
+    const bp = b.is_primary ? 1 : 0;
+    if (bp !== ap) return bp - ap;
+
+    const av = typeof a.vote === "number" ? a.vote : -1;
+    const bv = typeof b.vote === "number" ? b.vote : -1;
+    if (bv !== av) return bv - av;
+
+    const aw = typeof a.width === "number" ? a.width : -1;
+    const bw = typeof b.width === "number" ? b.width : -1;
+    return bw - aw;
+  });
+
+  const topN = sorted.slice(0, Math.min(12, sorted.length));
+  const pick = topN[Math.floor(Math.random() * topN.length)];
+  const rawUrl = pick?.url ?? null;
+
+  return {
+    props: {
+      initialBackdropUrl: rawUrl ? normalizeBackdropUrl(rawUrl) : null,
+    },
+  };
+};
