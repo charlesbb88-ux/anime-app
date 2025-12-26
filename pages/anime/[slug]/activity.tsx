@@ -7,6 +7,10 @@ import { useRouter } from "next/router";
 
 import { supabase } from "@/lib/supabaseClient";
 
+const CARD_CLASS = "bg-black p-4 text-neutral-100";
+
+type Visibility = "public" | "friends" | "private";
+
 type ActivityItem =
   | {
       id: string;
@@ -14,17 +18,21 @@ type ActivityItem =
       type: "anime_series" | "anime_episode";
       title: string;
       subLabel?: string;
-      rating: number | null;
+      rating: number | null; // 0..100 (from logs)
       note: string | null;
       logged_at: string;
-      visibility: "public" | "friends" | "private";
+      visibility: Visibility;
+
+      // series snapshot flags (only for anime_series logs)
+      liked?: boolean | null;
+      review_id?: string | null;
     }
   | {
       id: string;
       kind: "review";
       type: "anime_series_review";
       title: string;
-      logged_at: string; // created_at from reviews
+      logged_at: string; // reviews.created_at
       rating: number | null; // 0..100
       content: string | null;
       contains_spoilers: boolean;
@@ -34,26 +42,8 @@ type ActivityItem =
       kind: "mark";
       type: "watched" | "liked" | "watchlist" | "rating";
       title: string;
-      logged_at: string;
-      stars?: number | null; // half-stars 1..10
-    }
-  | {
-      id: string;
-      kind: "group";
-      type: "anime_series_group";
-      title: string;
-      logged_at: string;
-      actions: Array<"reviewed" | "liked" | "watched" | "watchlist" | "rated">;
-
-      stars?: number | null;
-
-      review_rating?: number | null;
-      review_content?: string | null;
-      contains_spoilers?: boolean;
-
-      log_rating?: number | null;
-      log_note?: string | null;
-      visibility?: "public" | "friends" | "private";
+      logged_at: string; // user_marks.created_at
+      stars?: number | null; // half-stars 1..10 (only for rating mark)
     };
 
 function getAnimeDisplayTitle(anime: any): string {
@@ -140,7 +130,15 @@ function HalfStarsRow({ halfStars }: { halfStars: number }) {
   );
 }
 
-/* -------------------- Grouping helpers -------------------- */
+/* -------------------- Snapshot helpers -------------------- */
+
+// Convert a 0..100 rating to half-stars 1..10
+function rating100ToHalfStars(rating: number | null): number | null {
+  if (typeof rating !== "number" || !Number.isFinite(rating)) return null;
+  const clamped = clampInt(rating, 0, 100);
+  if (clamped <= 0) return null;
+  return clampInt(Math.round(clamped / 10), 1, 10);
+}
 
 function joinWithCommasAnd(parts: string[]) {
   if (parts.length <= 1) return parts[0] ?? "";
@@ -148,32 +146,15 @@ function joinWithCommasAnd(parts: string[]) {
   return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
 }
 
-function actionWord(a: "reviewed" | "liked" | "watched" | "watchlist" | "rated") {
-  if (a === "watchlist") return "added to your watchlist";
+function actionWord(a: "reviewed" | "liked" | "watched" | "rated") {
   if (a === "rated") return "rated";
   if (a === "reviewed") return "reviewed";
   if (a === "liked") return "liked";
   return "watched";
 }
 
-function buildGroupedPrefix(
-  actions: Array<"reviewed" | "liked" | "watched" | "watchlist" | "rated">
-) {
-  const hasWatchlist = actions.includes("watchlist");
-  const main = actions.filter((a) => a !== "watchlist");
-  const mainWords = main.map(actionWord);
-  const mainPhrase = joinWithCommasAnd(mainWords);
-
-  if (hasWatchlist && main.length > 0) return `You ${mainPhrase}, and added`;
-  if (hasWatchlist && main.length === 0) return `You added`;
-  return `You ${mainPhrase}`;
-}
-
-// Bucket timestamps to the same second
-function bucketToSecond(iso: string) {
-  const ms = new Date(iso).getTime();
-  if (!Number.isFinite(ms)) return iso;
-  return String(Math.floor(ms / 1000));
+function buildSnapshotPrefix(actions: Array<"reviewed" | "liked" | "watched" | "rated">) {
+  return `You ${joinWithCommasAnd(actions.map(actionWord))}`;
 }
 
 const AnimeActivityPage: NextPage = () => {
@@ -216,7 +197,6 @@ const AnimeActivityPage: NextPage = () => {
       if (!mounted) return;
 
       const anime = animeRes.data ?? null;
-
       if (animeRes.error || !anime?.id) {
         setError("Anime not found.");
         setLoading(false);
@@ -227,17 +207,18 @@ const AnimeActivityPage: NextPage = () => {
       setPageTitle(`Your activity · ${animeTitle}`);
 
       const [
-        seriesLogs,
-        episodeLogs,
-        seriesReviews,
-        watchedMark,
-        likedMark,
-        watchlistMark,
-        ratingMark,
+        seriesLogsRes,
+        episodeLogsRes,
+        seriesReviewsRes,
+        watchedMarkRes,
+        likedMarkRes,
+        watchlistMarkRes,
+        ratingMarkRes,
       ] = await Promise.all([
+        // ✅ SERIES LOG SNAPSHOT ANCHOR
         supabase
           .from("anime_series_logs")
-          .select("id, logged_at, rating, note, visibility")
+          .select("id, logged_at, rating, note, visibility, liked, review_id")
           .eq("user_id", user.id)
           .eq("anime_id", anime.id)
           .order("logged_at", { ascending: false }),
@@ -253,6 +234,7 @@ const AnimeActivityPage: NextPage = () => {
           .eq("anime_id", anime.id)
           .order("logged_at", { ascending: false }),
 
+        // series reviews (we will filter out those attached to series logs)
         supabase
           .from("reviews")
           .select("id, created_at, rating, content, contains_spoilers")
@@ -261,6 +243,7 @@ const AnimeActivityPage: NextPage = () => {
           .is("anime_episode_id", null)
           .order("created_at", { ascending: false }),
 
+        // marks (latest for this anime series)
         supabase
           .from("user_marks")
           .select("id, created_at")
@@ -310,221 +293,140 @@ const AnimeActivityPage: NextPage = () => {
 
       const merged: ActivityItem[] = [];
 
-      // marks
-      if (watchedMark.data?.id) {
-        merged.push({
-          id: watchedMark.data.id,
-          kind: "mark",
-          type: "watched",
-          title: animeTitle,
-          logged_at: watchedMark.data.created_at,
-        });
+      // Build sets for de-duping
+      const attachedReviewIds = new Set<string>();
+
+      const seriesLogSnapshots = (seriesLogsRes.data ?? []).map((row: any) => {
+        const loggedAtIso = String(row?.logged_at ?? "");
+        const ms = new Date(loggedAtIso).getTime();
+
+        const liked = typeof row?.liked === "boolean" ? row.liked : Boolean(row?.liked);
+        const hasRating = typeof row?.rating === "number" && Number.isFinite(row.rating) && row.rating > 0;
+
+        const reviewId = row?.review_id ? String(row.review_id) : null;
+        if (reviewId) attachedReviewIds.add(reviewId);
+
+        return {
+          ms: Number.isFinite(ms) ? ms : null,
+          liked,
+          hasRating,
+          hasWatched: true, // log implies watched
+        };
+      });
+
+      // ✅ Key change: suppress mark ONLY if there's a nearby series log that already includes that action
+      function shouldSuppressMarkBecauseOfNearbySeriesLog(
+        markType: "watched" | "liked" | "rating" | "watchlist",
+        markCreatedAtIso: string
+      ) {
+        if (markType === "watchlist") return false; // do not touch watchlist behavior
+
+        const markMs = new Date(markCreatedAtIso).getTime();
+        if (!Number.isFinite(markMs)) return false;
+
+        // window for "this mark was part of the log submit"
+        const windowMs = 2 * 60 * 1000; // 2 minutes
+
+        for (const snap of seriesLogSnapshots) {
+          if (snap.ms == null) continue;
+          const diff = Math.abs(markMs - snap.ms);
+          if (diff > windowMs) continue;
+
+          if (markType === "watched" && snap.hasWatched) return true;
+          if (markType === "liked" && snap.liked) return true;
+          if (markType === "rating" && snap.hasRating) return true;
+        }
+
+        return false;
       }
-      if (likedMark.data?.id) {
+
+      // ✅ Marks (keep non-log marks, suppress only those that came from a log submit)
+      function maybePushMark(mark: any, type: "watched" | "liked" | "watchlist" | "rating") {
+        if (!mark?.id || !mark?.created_at) return;
+
+        const createdAt = String(mark.created_at);
+
+        const suppress =
+          type === "rating"
+            ? shouldSuppressMarkBecauseOfNearbySeriesLog("rating", createdAt)
+            : type === "liked"
+              ? shouldSuppressMarkBecauseOfNearbySeriesLog("liked", createdAt)
+              : type === "watched"
+                ? shouldSuppressMarkBecauseOfNearbySeriesLog("watched", createdAt)
+                : shouldSuppressMarkBecauseOfNearbySeriesLog("watchlist", createdAt);
+
+        if (suppress) return;
+
         merged.push({
-          id: likedMark.data.id,
+          id: String(mark.id),
           kind: "mark",
-          type: "liked",
+          type,
           title: animeTitle,
-          logged_at: likedMark.data.created_at,
-        });
-      }
-      if (watchlistMark.data?.id) {
-        merged.push({
-          id: watchlistMark.data.id,
-          kind: "mark",
-          type: "watchlist",
-          title: animeTitle,
-          logged_at: watchlistMark.data.created_at,
-        });
-      }
-      if (ratingMark.data?.id) {
-        merged.push({
-          id: ratingMark.data.id,
-          kind: "mark",
-          type: "rating",
-          title: animeTitle,
-          logged_at: ratingMark.data.created_at,
-          stars: ratingMark.data.stars ?? null,
+          logged_at: createdAt,
+          stars: type === "rating" ? (mark.stars ?? null) : undefined,
         });
       }
 
-      // series reviews
-      seriesReviews.data?.forEach((row: any) => {
+      maybePushMark(watchedMarkRes.data, "watched");
+      maybePushMark(likedMarkRes.data, "liked");
+      maybePushMark(watchlistMarkRes.data, "watchlist");
+      maybePushMark(ratingMarkRes.data, "rating");
+
+      // ✅ Standalone series reviews (ONLY if not attached to a snapshot series log)
+      (seriesReviewsRes.data ?? []).forEach((row: any) => {
+        if (!row?.id || !row?.created_at) return;
+        if (attachedReviewIds.has(String(row.id))) return;
+
         merged.push({
-          id: row.id,
+          id: String(row.id),
           kind: "review",
           type: "anime_series_review",
           title: animeTitle,
-          logged_at: row.created_at,
+          logged_at: String(row.created_at),
           rating: typeof row.rating === "number" ? row.rating : null,
           content: row.content ?? null,
           contains_spoilers: Boolean(row.contains_spoilers),
         });
       });
 
-      // series logs
-      seriesLogs.data?.forEach((row: any) => {
+      // ✅ Series logs rendered as stable snapshots
+      (seriesLogsRes.data ?? []).forEach((row: any) => {
         merged.push({
-          id: row.id,
+          id: String(row.id),
           kind: "log",
           type: "anime_series",
           title: animeTitle,
-          rating: row.rating,
-          note: row.note,
-          logged_at: row.logged_at,
-          visibility: row.visibility,
+          rating: typeof row.rating === "number" ? row.rating : null,
+          note: row.note ?? null,
+          logged_at: String(row.logged_at),
+          visibility: (row.visibility as Visibility) ?? "public",
+          liked: typeof row.liked === "boolean" ? row.liked : Boolean(row.liked),
+          review_id: row.review_id ?? null,
         });
       });
 
-      // episode logs (never grouped)
-      episodeLogs.data?.forEach((row: any) => {
+      // ✅ Episode logs (never grouped)
+      (episodeLogsRes.data ?? []).forEach((row: any) => {
         const rowTitle = getAnimeDisplayTitle(row?.anime) || animeTitle;
 
         merged.push({
-          id: row.id,
+          id: String(row.id),
           kind: "log",
           type: "anime_episode",
           title: rowTitle,
           subLabel:
-            row.episode?.episode_number != null
+            row?.episode?.episode_number != null
               ? `Episode ${row.episode.episode_number}`
               : "Episode",
-          rating: row.rating,
-          note: row.note,
-          logged_at: row.logged_at,
-          visibility: row.visibility,
+          rating: typeof row.rating === "number" ? row.rating : null,
+          note: row.note ?? null,
+          logged_at: String(row.logged_at),
+          visibility: (row.visibility as Visibility) ?? "public",
         });
       });
 
-      // Group ONLY when there is a REAL series log in the bucket.
-      const seriesBucketMap = new Map<string, ActivityItem[]>();
-      const passthrough: ActivityItem[] = [];
-
-      for (const it of merged) {
-        const isSeriesLevel =
-          (it.kind === "mark" &&
-            (it.type === "watched" ||
-              it.type === "liked" ||
-              it.type === "watchlist" ||
-              it.type === "rating")) ||
-          (it.kind === "review" && it.type === "anime_series_review") ||
-          (it.kind === "log" && it.type === "anime_series");
-
-        if (!isSeriesLevel) {
-          passthrough.push(it);
-          continue;
-        }
-
-        const key = `${bucketToSecond(it.logged_at)}::${it.title}`;
-        const arr = seriesBucketMap.get(key) ?? [];
-        arr.push(it);
-        seriesBucketMap.set(key, arr);
-      }
-
-      const regrouped: ActivityItem[] = [];
-
-      for (const [, bucket] of seriesBucketMap.entries()) {
-        const hasSeriesLog = bucket.some(
-          (x) => x.kind === "log" && x.type === "anime_series"
-        );
-
-        // If there's no actual log row, DO NOT GROUP anything in this bucket.
-        if (!hasSeriesLog) {
-          regrouped.push(...bucket);
-          continue;
-        }
-
-        // If it has a series log but nothing else, keep it as-is.
-        if (bucket.length <= 1) {
-          regrouped.push(bucket[0]);
-          continue;
-        }
-
-        // ✅ Build actions from flags (stable + never misses "reviewed")
-        let didWatched = false;
-        let didLiked = false;
-        let didWatchlist = false;
-        let didRated = false;
-        let didReviewed = false;
-
-        let stars: number | null = null;
-
-        let review_rating: number | null = null;
-        let review_content: string | null = null;
-        let contains_spoilers: boolean | undefined = undefined;
-
-        let log_rating: number | null = null;
-        let log_note: string | null = null;
-        let visibility: "public" | "friends" | "private" | undefined = undefined;
-
-        const sorted = [...bucket].sort(
-          (a, b) =>
-            new Date(a.logged_at).getTime() - new Date(b.logged_at).getTime()
-        );
-
-        const logged_at = sorted[0].logged_at;
-        const title = sorted[0].title;
-
-        for (const it of bucket) {
-          if (it.kind === "log" && it.type === "anime_series") {
-            didWatched = true;
-            log_rating = it.rating ?? null;
-            log_note = it.note ?? null;
-            visibility = it.visibility;
-          } else if (it.kind === "mark") {
-            if (it.type === "watched") didWatched = true;
-            if (it.type === "liked") didLiked = true;
-            if (it.type === "watchlist") didWatchlist = true;
-            if (it.type === "rating") {
-              didRated = true;
-              stars = typeof it.stars === "number" ? it.stars : stars;
-            }
-          } else if (it.kind === "review") {
-            didReviewed = true;
-            review_rating = typeof it.rating === "number" ? it.rating : null;
-            review_content = it.content ?? null;
-            contains_spoilers = Boolean(it.contains_spoilers);
-          }
-        }
-
-        const actions: Array<
-          "reviewed" | "liked" | "watched" | "watchlist" | "rated"
-        > = [];
-
-        // ✅ desired order:
-        if (didWatched) actions.push("watched");
-        if (didLiked) actions.push("liked");
-        if (didRated) actions.push("rated");
-        if (didReviewed) actions.push("reviewed");
-        if (didWatchlist) actions.push("watchlist");
-
-        // If somehow it collapses to only one action, don't group.
-        if (actions.length < 2) {
-          regrouped.push(...bucket);
-          continue;
-        }
-
-        regrouped.push({
-          id: `group-${bucketToSecond(logged_at)}-${title}`,
-          kind: "group",
-          type: "anime_series_group",
-          title,
-          logged_at,
-          actions,
-          stars,
-          review_rating,
-          review_content,
-          contains_spoilers,
-          log_rating,
-          log_note,
-          visibility,
-        });
-      }
-
-      const finalItems = [...regrouped, ...passthrough].sort(
-        (a, b) =>
-          new Date(b.logged_at).getTime() - new Date(a.logged_at).getTime()
+      const finalItems = merged.sort(
+        (a, b) => new Date(b.logged_at).getTime() - new Date(a.logged_at).getTime()
       );
 
       setItems(finalItems);
@@ -555,55 +457,48 @@ const AnimeActivityPage: NextPage = () => {
       ) : items.length === 0 ? (
         <div className="text-sm text-neutral-500">No activity yet.</div>
       ) : (
-        <ul className="space-y-4">
+        <ul className="space-y-1">
           {items.map((item) => {
-            if (item.kind === "group") {
-              const hs = clampInt(Number(item.stars ?? 0), 0, 10);
-              const prefix = buildGroupedPrefix(item.actions);
-              const hasWatchlist = item.actions.includes("watchlist");
+            // ✅ SERIES SNAPSHOT CARD (from anime_series_logs only)
+            if (item.kind === "log" && item.type === "anime_series") {
+              const actions: Array<"watched" | "liked" | "rated" | "reviewed"> = [];
+
+              actions.push("watched"); // log = watched anchor
+              if (item.liked) actions.push("liked");
+
+              const hs = rating100ToHalfStars(item.rating);
+              if (hs !== null) actions.push("rated");
+
+              if (item.review_id) actions.push("reviewed");
+
+              const prefix = buildSnapshotPrefix(actions);
 
               return (
-                <li
-                  key={`group-${item.id}`}
-                  className="rounded-md border border-neutral-800 p-4"
-                >
+                <li key={`series-snap-${item.id}`} className={CARD_CLASS}>
                   <div className="flex items-center justify-between gap-4">
                     <div className="text-sm font-medium">
-                      {prefix}{" "}
-                      <span className="font-bold text-black">{item.title}</span>
-                      {hs > 0 ? <HalfStarsRow halfStars={hs} /> : null}
-                      {hasWatchlist ? (
-                        <span className="ml-1"> to your watchlist</span>
-                      ) : null}
-                      <span className="ml-1">
-                        {" "}
-                        on {formatOnFullDate(item.logged_at)}
-                      </span>
+                      {prefix} <span className="font-bold text-white">{item.title}</span>
+                      {hs !== null ? <HalfStarsRow halfStars={hs} /> : null}
+                      <span className="ml-1"> on {formatOnFullDate(item.logged_at)}</span>
                     </div>
 
-                    <div className="whitespace-nowrap text-xs text-neutral-500">
+                    <div className="whitespace-nowrap text-xs text-neutral-100">
                       {formatRelativeShort(item.logged_at)}
                     </div>
                   </div>
-
-                  {/* ✅ grouped rows: NO "Rating:" line, and NO text boxes */}
                 </li>
               );
             }
 
+            // ✅ MARKS (non-log stuff)
             if (item.kind === "mark" && item.type === "watched") {
               return (
-                <li
-                  key={`watched-${item.id}`}
-                  className="rounded-md border border-neutral-800 p-4"
-                >
+                <li key={`watched-${item.id}`} className={CARD_CLASS}>
                   <div className="flex items-center justify-between gap-4">
                     <div className="text-sm font-medium">
-                      You marked{" "}
-                      <span className="font-bold text-black">{item.title}</span>{" "}
-                      as watched
+                      You marked <span className="font-bold text-white">{item.title}</span> as watched
                     </div>
-                    <div className="whitespace-nowrap text-xs text-neutral-500">
+                    <div className="whitespace-nowrap text-xs text-neutral-100">
                       {formatRelativeShort(item.logged_at)}
                     </div>
                   </div>
@@ -613,16 +508,12 @@ const AnimeActivityPage: NextPage = () => {
 
             if (item.kind === "mark" && item.type === "liked") {
               return (
-                <li
-                  key={`liked-${item.id}`}
-                  className="rounded-md border border-neutral-800 p-4"
-                >
+                <li key={`liked-${item.id}`} className={CARD_CLASS}>
                   <div className="flex items-center justify-between gap-4">
                     <div className="text-sm font-medium">
-                      You liked{" "}
-                      <span className="font-bold text-black">{item.title}</span>
+                      You liked <span className="font-bold text-white">{item.title}</span>
                     </div>
-                    <div className="whitespace-nowrap text-xs text-neutral-500">
+                    <div className="whitespace-nowrap text-xs text-neutral-100">
                       {formatRelativeShort(item.logged_at)}
                     </div>
                   </div>
@@ -632,17 +523,12 @@ const AnimeActivityPage: NextPage = () => {
 
             if (item.kind === "mark" && item.type === "watchlist") {
               return (
-                <li
-                  key={`watchlist-${item.id}`}
-                  className="rounded-md border border-neutral-800 p-4"
-                >
+                <li key={`watchlist-${item.id}`} className={CARD_CLASS}>
                   <div className="flex items-center justify-between gap-4">
                     <div className="text-sm font-medium">
-                      You added{" "}
-                      <span className="font-bold text-black">{item.title}</span>{" "}
-                      to your watchlist
+                      You added <span className="font-bold text-white">{item.title}</span> to your watchlist
                     </div>
-                    <div className="whitespace-nowrap text-xs text-neutral-500">
+                    <div className="whitespace-nowrap text-xs text-neutral-100">
                       {formatRelativeShort(item.logged_at)}
                     </div>
                   </div>
@@ -654,17 +540,13 @@ const AnimeActivityPage: NextPage = () => {
               const hs = clampInt(Number(item.stars ?? 0), 0, 10);
 
               return (
-                <li
-                  key={`rating-${item.id}`}
-                  className="rounded-md border border-neutral-800 p-4"
-                >
+                <li key={`rating-${item.id}`} className={CARD_CLASS}>
                   <div className="flex items-center justify-between gap-4">
                     <div className="text-sm font-medium">
-                      You rated{" "}
-                      <span className="font-bold text-black">{item.title}</span>
+                      You rated <span className="font-bold text-white">{item.title}</span>
                       {hs > 0 ? <HalfStarsRow halfStars={hs} /> : null}
                     </div>
-                    <div className="whitespace-nowrap text-xs text-neutral-500">
+                    <div className="whitespace-nowrap text-xs text-neutral-100">
                       {formatRelativeShort(item.logged_at)}
                     </div>
                   </div>
@@ -672,18 +554,15 @@ const AnimeActivityPage: NextPage = () => {
               );
             }
 
+            // ✅ Standalone series review (only if not attached to a snapshot)
             if (item.kind === "review") {
               return (
-                <li
-                  key={`review-${item.id}`}
-                  className="rounded-md border border-neutral-800 p-4"
-                >
+                <li key={`review-${item.id}`} className={CARD_CLASS}>
                   <div className="flex items-center justify-between gap-4">
                     <div className="text-sm font-medium">
-                      You reviewed{" "}
-                      <span className="font-bold text-black">{item.title}</span>
+                      You reviewed <span className="font-bold text-white">{item.title}</span>
                     </div>
-                    <div className="whitespace-nowrap text-xs text-neutral-500">
+                    <div className="whitespace-nowrap text-xs text-neutral-100">
                       {formatRelativeShort(item.logged_at)}
                     </div>
                   </div>
@@ -691,74 +570,35 @@ const AnimeActivityPage: NextPage = () => {
               );
             }
 
-            if (item.kind !== "log") return null;
-
-            if (item.type === "anime_series") {
+            // ✅ Episode logs
+            if (item.kind === "log" && item.type === "anime_episode") {
               return (
-                <li
-                  key={`log-${item.type}-${item.id}`}
-                  className="rounded-md border border-neutral-800 p-4"
-                >
+                <li key={`episode-log-${item.id}`} className={CARD_CLASS}>
                   <div className="flex items-center justify-between gap-4">
                     <div className="text-sm font-medium">
-                      You watched{" "}
-                      <span className="font-bold text-black">{item.title}</span>{" "}
-                      on {formatOnFullDate(item.logged_at)}
+                      {item.title}
+                      {item.subLabel ? (
+                        <span className="ml-2 text-neutral-400">· {item.subLabel}</span>
+                      ) : null}
                     </div>
-                    <div className="whitespace-nowrap text-xs text-neutral-500">
+
+                    <div className="whitespace-nowrap text-xs text-neutral-100">
                       {formatRelativeShort(item.logged_at)}
                     </div>
                   </div>
 
-                  {item.rating !== null && (
-                    <div className="mt-2 text-sm">Rating: {item.rating}</div>
-                  )}
+                  <div className="mt-1 text-xs text-neutral-100">anime episode</div>
 
-                  {item.note && (
-                    <div className="mt-1 line-clamp-2 text-sm text-neutral-400">
-                      {item.note}
-                    </div>
-                  )}
+                  {item.rating !== null ? <div className="mt-2 text-sm">Rating: {item.rating}</div> : null}
+
+                  {item.note ? (
+                    <div className="mt-1 line-clamp-2 text-sm text-neutral-400">{item.note}</div>
+                  ) : null}
                 </li>
               );
             }
 
-            // episode logs
-            return (
-              <li
-                key={`log-${item.type}-${item.id}`}
-                className="rounded-md border border-neutral-800 p-4"
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <div className="text-sm font-medium">
-                    {item.title}
-                    {item.subLabel && (
-                      <span className="ml-2 text-neutral-400">
-                        · {item.subLabel}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="whitespace-nowrap text-xs text-neutral-500">
-                    {formatRelativeShort(item.logged_at)}
-                  </div>
-                </div>
-
-                <div className="mt-1 text-xs text-neutral-500">
-                  {item.type.replace("_", " ")}
-                </div>
-
-                {item.rating !== null && (
-                  <div className="mt-2 text-sm">Rating: {item.rating}</div>
-                )}
-
-                {item.note && (
-                  <div className="mt-1 line-clamp-2 text-sm text-neutral-400">
-                    {item.note}
-                  </div>
-                )}
-              </li>
-            );
+            return null;
           })}
         </ul>
       )}

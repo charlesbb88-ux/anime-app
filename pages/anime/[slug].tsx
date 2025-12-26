@@ -50,6 +50,26 @@ function normalizeBackdropUrl(url: string) {
   return url; // TVDB stays as-is
 }
 
+function cleanSynopsis(raw: string) {
+  return raw
+    // normalize line endings
+    .replace(/\r\n/g, "\n")
+    // convert <br> to newlines
+    .replace(/<br\s*\/?>/gi, "\n")
+    // remove "(Source: ...)" anywhere
+    .replace(/\(Source:.*?\)/gi, "")
+    // remove italic tags but KEEP their text (better than deleting the whole block)
+    .replace(/<\/?i>/gi, "")
+    // strip any other html tags that might be in there
+    .replace(/<[^>]+>/g, "")
+    // collapse 3+ newlines into just 2 newlines (prevents giant gaps)
+    .replace(/\n{3,}/g, "\n\n")
+    // also collapse “blank lines with spaces”
+    .replace(/\n[ \t]+\n/g, "\n\n")
+    // trim overall
+    .trim();
+}
+
 const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
   const router = useRouter();
 
@@ -494,14 +514,10 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                 {/* LEFT SIDE: reserve space so text never goes under ActionBox */}
                 <div className="min-w-0 pr-[260px]">
                   {/* ✅ SYNOPSIS goes here (between poster and actionbox) */}
-                  {a.description && (
+                  {typeof a.description === "string" && a.description.trim() && (
                     <div className="mt-6 mb-3">
                       <p className="whitespace-pre-line text-base text-black">
-                        {a.description
-                          .replace(/<br\s*\/?>/gi, "\n")
-                          .replace(/\(Source:.*?\)/gi, "")
-                          .replace(/<i>.*?<\/i>/gi, "")
-                          .trim()}
+                        {cleanSynopsis(a.description)}
                       </p>
                     </div>
                   )}
@@ -517,8 +533,8 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                     </div>
                   )}
 
-                  <div className="mx-auto mt-6 max-w-6xl px-4 pb-12">
-                    {/* ✅ key forces PostFeed remount so the new review appears immediately */}
+                  {/* ✅ Feed */}
+                  <div className="mt-6">
                     <PostFeed key={feedNonce} animeId={anime.id} />
                   </div>
 
