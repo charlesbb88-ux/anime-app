@@ -103,6 +103,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!id) return res.status(400).json({ error: "Missing id" });
 
       const m = await getMangaDexMangaById(id);
+      const publicationYear = m.attributes?.year ?? null;
 
       const titles = normalizeMangaDexTitle(m);
       const description = normalizeMangaDexDescription(m);
@@ -141,6 +142,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         p_total_volumes: null,
         p_cover_image_url: coverUrl, // temporary external; we overwrite with cached below
         p_external_id: id,
+        p_publication_year: publicationYear,
         p_snapshot: {
           mangadex_id: id,
           attributes: m.attributes,

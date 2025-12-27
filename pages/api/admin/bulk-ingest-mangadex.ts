@@ -26,6 +26,8 @@ function requireAdmin(req: NextApiRequest) {
 async function ingestOneMangaDexId(mangadexId: string) {
   const m = await getMangaDexMangaById(mangadexId);
 
+  const publicationYear = m.attributes?.year ?? null;
+
   const titles = normalizeMangaDexTitle(m);
   const description = normalizeMangaDexDescription(m);
   const status = normalizeStatus(m);
@@ -64,6 +66,7 @@ async function ingestOneMangaDexId(mangadexId: string) {
       p_total_volumes: null,
       p_cover_image_url: coverUrl,
       p_external_id: mangadexId,
+      p_publication_year: publicationYear,
       p_snapshot: {
         mangadex_id: mangadexId,
         attributes: m.attributes,
