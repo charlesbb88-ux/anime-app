@@ -112,20 +112,27 @@ export function normalizeStatus(m: MangaDexManga): string | null {
   return s;
 }
 
-export async function searchMangaDexByTitle(query: string, limit = 10): Promise<MangaDexManga[]> {
-  const url = new URL(`${BASE}/manga`);
+export async function searchMangaDexByTitle(
+  query: string,
+  limit = 10,
+  offset = 0
+): Promise<MangaDexManga[]> {
+  const url = new URL("https://api.mangadex.org/manga");
+
   url.searchParams.set("title", query);
   url.searchParams.set("limit", String(limit));
-  // include relationships so we can find cover_art id and author/artist ids
-  url.searchParams.append("includes[]", "author");
-  url.searchParams.append("includes[]", "artist");
-  url.searchParams.append("includes[]", "cover_art");
-  // we are NOT requesting chapters anywhere.
+  url.searchParams.set("offset", String(offset));
 
-  const res = await fetch(url.toString(), { headers: { "User-Agent": "your-app-metadata-ingestor" } });
+  const res = await fetch(url.toString(), {
+    headers: { "User-Agent": "your-app-mangadex-search" },
+  });
+
   if (!res.ok) throw new Error(`MangaDex search failed: ${res.status}`);
-  const json = (await res.json()) as MangaDexSearchResponse;
-  return json.data || [];
+
+  const json = await res.json();
+
+  // force TS to treat the returned array as MangaDexManga[]
+  return (json.data || []) as MangaDexManga[];
 }
 
 export async function getMangaDexMangaById(id: string): Promise<MangaDexManga> {
@@ -153,13 +160,31 @@ export function getMangaDexCoverCandidates(m: MangaDexManga): string[] {
   if (!base) return [];
   const { mangaId, fileName } = base;
 
-  // best → worst
-  return [
-    `https://uploads.mangadex.org/covers/${mangaId}/${fileName}.original.jpg`,
-    `https://uploads.mangadex.org/covers/${mangaId}/${fileName}.1024.jpg`,
-    `https://uploads.mangadex.org/covers/${mangaId}/${fileName}.512.jpg`,
-    `https://uploads.mangadex.org/covers/${mangaId}/${fileName}.256.jpg`,
-  ];
+  const isPng = fileName.toLowerCase().endsWith(".png");
+  const isJpg = fileName.toLowerCase().endsWith(".jpg") || fileName.toLowerCase().endsWith(".jpeg");
+
+  // MangaDex CDN behavior:
+  // - PNG covers: usually only the raw .png URL works (no .original.jpg / .1024.jpg variants)
+  // - JPG covers: the .original.jpg / .1024.jpg / .512.jpg / .256.jpg variants work
+  if (isPng) {
+    return [
+      `https://uploads.mangadex.org/covers/${mangaId}/${fileName}`,          // ✅ best/only reliable for png
+      `https://uploads.mangadex.org/covers/${mangaId}/${fileName}.512.jpg`,  // sometimes exists
+      `https://uploads.mangadex.org/covers/${mangaId}/${fileName}.256.jpg`,  // sometimes exists
+    ];
+  }
+
+  if (isJpg) {
+    return [
+      `https://uploads.mangadex.org/covers/${mangaId}/${fileName}.original.jpg`,
+      `https://uploads.mangadex.org/covers/${mangaId}/${fileName}.1024.jpg`,
+      `https://uploads.mangadex.org/covers/${mangaId}/${fileName}.512.jpg`,
+      `https://uploads.mangadex.org/covers/${mangaId}/${fileName}.256.jpg`,
+    ];
+  }
+
+  // fallback for weird extensions
+  return [`https://uploads.mangadex.org/covers/${mangaId}/${fileName}`];
 }
 
 export function getCreators(m: MangaDexManga): { authors: any[]; artists: any[] } {

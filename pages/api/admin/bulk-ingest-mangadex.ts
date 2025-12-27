@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
-import { searchMangaDexByTitle } from "@/lib/mangadex"; // you already have this
+import { searchMangaDexByTitle } from "@/lib/mangadex";
 import { slugify } from "@/lib/slugify";
 import {
   getCreators,
@@ -41,54 +41,58 @@ async function ingestOneMangaDexId(mangadexId: string) {
   );
 
   const base =
-    titles.title_preferred || titles.title_english || titles.title || `mangadex-${mangadexId}`;
+    titles.title_preferred ||
+    titles.title_english ||
+    titles.title ||
+    `mangadex-${mangadexId}`;
   const slug = slugify(base);
 
-  const { data: mangaId, error } = await supabaseAdmin.rpc("upsert_manga_from_mangadex", {
-    p_slug: slug,
-    p_title: titles.title,
-    p_title_english: titles.title_english,
-    p_title_native: titles.title_native,
-    p_title_preferred: titles.title_preferred,
-    p_description: description,
-    p_status: status,
-    p_format: null,
-    p_source: "mangadex",
-    p_genres: mergedGenres,
-    p_total_chapters: null,
-    p_total_volumes: null,
-    p_cover_image_url: coverUrl,
-    p_external_id: mangadexId,
-    p_snapshot: {
-      mangadex_id: mangadexId,
-      attributes: m.attributes,
-      relationships: m.relationships,
-      normalized: {
-        ...titles,
-        status,
-        genres,
-        themes,
-        coverUrl,
-        coverCandidates,
-        authors,
-        artists,
+  const { data: mangaId, error } = await supabaseAdmin.rpc(
+    "upsert_manga_from_mangadex",
+    {
+      p_slug: slug,
+      p_title: titles.title,
+      p_title_english: titles.title_english,
+      p_title_native: titles.title_native,
+      p_title_preferred: titles.title_preferred,
+      p_description: description,
+      p_status: status,
+      p_format: null,
+      p_source: "mangadex",
+      p_genres: mergedGenres,
+      p_total_chapters: null,
+      p_total_volumes: null,
+      p_cover_image_url: coverUrl,
+      p_external_id: mangadexId,
+      p_snapshot: {
+        mangadex_id: mangadexId,
+        attributes: m.attributes,
+        relationships: m.relationships,
+        normalized: {
+          ...titles,
+          status,
+          genres,
+          themes,
+          coverUrl,
+          coverCandidates,
+          authors,
+          artists,
+        },
       },
-    },
-  });
+    }
+  );
 
   if (error) throw error;
 
   // ✅ enqueue art job (idempotent)
-  const { error: jobErr } = await supabaseAdmin
-    .from("manga_art_jobs")
-    .upsert(
-      {
-        manga_id: mangaId,
-        status: "pending",
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "manga_id" }
-    );
+  const { error: jobErr } = await supabaseAdmin.from("manga_art_jobs").upsert(
+    {
+      manga_id: mangaId,
+      status: "pending",
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "manga_id" }
+  );
 
   if (jobErr) throw jobErr;
 
@@ -100,17 +104,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     requireAdmin(req);
 
     /**
-     * Mode A: bulk ingest by MangaDex search query (easy starting point)
-     * Example: ?query=one%20piece&limit=10
+     * Example:
+     * /api/admin/bulk-ingest-mangadex?query=romance&limit=10&offset=0
      */
     const query = String(req.query.query || "").trim();
     if (!query) return res.status(400).json({ error: "Missing query" });
 
     const limit = Math.max(1, Math.min(25, Number(req.query.limit || 10)));
+    const offset = Math.max(0, Number(req.query.offset || 0));
 
-    // This uses your existing search helper (title search).
-    // For true “full catalog” later, we’ll add MangaDex list/pagination.
-    const results = await searchMangaDexByTitle(query, limit);
+    // ✅ IMPORTANT: pass offset into the search helper
+    const results = await searchMangaDexByTitle(query, limit, offset);
 
     const ingested: any[] = [];
     const errors: any[] = [];
@@ -124,11 +128,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
+    // ✅ if we got a full page, assume there might be more
+    const nextOffset = results.length < limit ? null : offset + limit;
+
     return res.status(200).json({
       ok: true,
       query,
       requested: limit,
+      offset,
       found: results.length,
+      nextOffset,
       ingestedCount: ingested.length,
       errorCount: errors.length,
       ingested,
