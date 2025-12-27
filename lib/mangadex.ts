@@ -242,3 +242,34 @@ export function getCreators(m: MangaDexManga): { authors: any[]; artists: any[] 
 
     return { authors: uniqByName(authors), artists: uniqByName(artists) };
 }
+
+export async function listMangaDexMangaPage(limit = 100, offset = 0) {
+  const url = new URL("https://api.mangadex.org/manga");
+
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("offset", String(offset));
+
+  url.searchParams.append("contentRating[]", "safe");
+  url.searchParams.append("contentRating[]", "suggestive");
+  url.searchParams.append("contentRating[]", "erotica");
+  // url.searchParams.append("contentRating[]", "pornographic");
+
+  url.searchParams.append("includes[]", "author");
+  url.searchParams.append("includes[]", "artist");
+  url.searchParams.append("includes[]", "cover_art");
+
+  const res = await fetch(url.toString(), {
+    headers: { "User-Agent": "your-app-mangadex-crawler" },
+  });
+
+  if (!res.ok) throw new Error(`MangaDex list failed: ${res.status}`);
+
+  const json = await res.json();
+
+  return {
+    data: json.data || [],
+    total: Number(json.total || 0),
+    limit: Number(json.limit || limit),
+    offset: Number(json.offset || offset),
+  };
+}
