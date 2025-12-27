@@ -41,6 +41,13 @@ export type MangaDexAuthor = {
     };
 };
 
+export type MangaDexListPage = {
+  data: MangaDexManga[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
 const BASE = "https://api.mangadex.org";
 
 function pickLang(
@@ -243,31 +250,36 @@ export function getCreators(m: MangaDexManga): { authors: any[]; artists: any[] 
     return { authors: uniqByName(authors), artists: uniqByName(artists) };
 }
 
-export async function listMangaDexMangaPage(limit = 100, offset = 0) {
-  const url = new URL("https://api.mangadex.org/manga");
+export async function listMangaDexMangaPage(opts: {
+  limit: number;
+  offset: number;
+  contentRatings?: Array<"safe" | "suggestive" | "erotica" | "pornographic">;
+}): Promise<MangaDexListPage> {
+  const { limit, offset, contentRatings = ["safe", "suggestive"] } = opts;
 
+  const url = new URL(`${BASE}/manga`);
   url.searchParams.set("limit", String(limit));
   url.searchParams.set("offset", String(offset));
 
-  url.searchParams.append("contentRating[]", "safe");
-  url.searchParams.append("contentRating[]", "suggestive");
-  url.searchParams.append("contentRating[]", "erotica");
-  // url.searchParams.append("contentRating[]", "pornographic");
+  // ✅ filter rating (no porn)
+  for (const r of contentRatings) url.searchParams.append("contentRating[]", r);
 
-  url.searchParams.append("includes[]", "author");
-  url.searchParams.append("includes[]", "artist");
-  url.searchParams.append("includes[]", "cover_art");
+  // ❌ REMOVE ordering (this is the likely 400 cause)
+  // url.searchParams.set("order[createdAt]", "asc");
 
   const res = await fetch(url.toString(), {
     headers: { "User-Agent": "your-app-mangadex-crawler" },
   });
 
-  if (!res.ok) throw new Error(`MangaDex list failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`MangaDex list failed: ${res.status} ${body.slice(0, 300)}`);
+  }
 
   const json = await res.json();
 
   return {
-    data: json.data || [],
+    data: (json.data || []) as MangaDexManga[],
     total: Number(json.total || 0),
     limit: Number(json.limit || limit),
     offset: Number(json.offset || offset),
