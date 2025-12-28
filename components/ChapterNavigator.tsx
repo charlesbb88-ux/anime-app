@@ -12,26 +12,6 @@ type Props = {
   className?: string;
 };
 
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
-}
-function pad2(n: number) {
-  return String(n).padStart(2, "0");
-}
-
-function normalizeThumbUrl(url: string) {
-  if (!url) return url;
-
-  if (url.includes("https://image.tmdb.org/t/p/")) {
-    return url.replace(
-      /\/t\/p\/(original|w1280|w780|w500|w342|w300|w185)\//,
-      "/t/p/w500/"
-    );
-  }
-
-  return url;
-}
-
 type ChapterRow = {
   id: string;
   chapter_number: number;
@@ -47,10 +27,57 @@ type ArtworkRow = {
   width: number | null;
 };
 
+type NavGroup =
+  | {
+    kind: "volume";
+    key: string;
+    chapters: number[];
+    labelTop: string;
+    labelBottom: string | null;
+  }
+  | {
+    kind: "range";
+    key: string;
+    chapters: number[];
+    labelTop: string;
+    labelBottom: string;
+  };
+
 type ChapterMeta = {
   title: string | null;
   imageUrl: string | null;
 };
+
+type VolumeMapRow = {
+  mapping: Record<string, string[]> | null;
+};
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+function easeOutCubic(t: number) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function isNumericLike(s: string) {
+  return /^(\d+)(\.\d+)?$/.test(String(s).trim());
+}
+
+function normalizeThumbUrl(url: string) {
+  if (!url) return url;
+
+  if (url.includes("https://image.tmdb.org/t/p/")) {
+    return url.replace(
+      /\/t\/p\/(original|w1280|w780|w500|w342|w300|w185)\//,
+      "/t/p/w500/"
+    );
+  }
+
+  return url;
+}
 
 function pickBestArtwork(rows: ArtworkRow[]): string | null {
   const usable = rows.filter((r) => r.url);
@@ -73,8 +100,48 @@ function pickBestArtwork(rows: ArtworkRow[]): string | null {
   return usable[0].url ?? null;
 }
 
-function easeOutCubic(t: number) {
-  return 1 - Math.pow(1 - t, 3);
+function sortVolumeKeys(keys: string[]) {
+  const numeric: string[] = [];
+  const other: string[] = [];
+
+  for (const k of keys) {
+    const s = String(k ?? "").trim();
+    if (!s) continue;
+    if (s.toLowerCase() === "none") continue;
+    (isNumericLike(s) ? numeric : other).push(s);
+  }
+
+  numeric.sort((a, b) => {
+    const na = Number(a);
+    const nb = Number(b);
+    if (na !== nb) return na - nb;
+    return a.localeCompare(b);
+  });
+
+  other.sort((a, b) => a.localeCompare(b));
+
+  return [...numeric, ...other];
+}
+
+function toNumericChapterList(chs: string[]): number[] {
+  const nums = (chs || [])
+    .map((s) => String(s ?? "").trim())
+    .filter((s) => /^(\d+)(\.\d+)?$/.test(s))
+    .map((s) => Number(s))
+    .filter((n) => Number.isFinite(n) && n > 0);
+
+  nums.sort((a, b) => a - b);
+  return nums;
+}
+
+function formatChapterRange(nums: number[]): string | null {
+  if (!nums.length) return null;
+
+  const min = Math.floor(nums[0]);
+  const max = Math.floor(nums[nums.length - 1]);
+
+  if (min === max) return String(min);
+  return `${min}–${max}`;
 }
 
 export default function ChapterNavigator({
@@ -104,20 +171,21 @@ export default function ChapterNavigator({
   const chapterBase = `${mangaHref}/chapter`;
 
   // ---------------------------------------
-  // "TV Time" virtualization layout constants
+  // virtualization layout constants
   // ---------------------------------------
   const CARD_W = 240;
   const CARD_H = 120;
-  const GAP = 12; // gap-3
+  const GAP = 12;
   const STEP = CARD_W + GAP;
-  const THUMB_W = 120;
 
   // ---------------------------------------
   // scroller tracking
   // ---------------------------------------
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const rafScrollRef = useRef<number | null>(null);
+
   const snappingRef = useRef(false);
+  const animRef = useRef<number | null>(null);
 
   const [viewportW, setViewportW] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
@@ -129,7 +197,6 @@ export default function ChapterNavigator({
       setViewportW(node.clientWidth || 0);
     }
 
-    // run once immediately
     update();
 
     const node = scrollerRef.current;
@@ -141,40 +208,56 @@ export default function ChapterNavigator({
     return () => ro.disconnect();
   }, []);
 
-  function onScroll() {
-  const el = scrollerRef.current;
-  if (!el) return;
-
-  // ✅ during snap animation, ignore scroll events completely
-  if (snappingRef.current) return;
-
-  if (rafScrollRef.current) cancelAnimationFrame(rafScrollRef.current);
-  rafScrollRef.current = requestAnimationFrame(() => {
-    rafScrollRef.current = null;
-    const sc = scrollerRef.current;
-    if (!sc) return;
-    setScrollLeft(sc.scrollLeft);
-  });
-
-  if ((onScroll as any)._t) window.clearTimeout((onScroll as any)._t);
-  (onScroll as any)._t = window.setTimeout(() => {
-    if (dragRef.current.isDown) return;
-    if (snappingRef.current) return;
-
-    const idx = getNearestIndex();
-    scrollToIndex(idx, 220);
-  }, 130);
-}
-
-  // ---------------------------------------
-  // compute nearest index and scroll targets
-  // ---------------------------------------
-  function getMaxIndex() {
-    const t = cappedTotal ?? 0;
-    return Math.max(0, t - 1);
+  function stopAnim() {
+    if (animRef.current) cancelAnimationFrame(animRef.current);
+    animRef.current = null;
+    snappingRef.current = false;
   }
 
-  function getNearestIndex(): number {
+  function scrollToIndex(idx: number, ms = 260) {
+    stopAnim();
+
+    const el0 = scrollerRef.current;
+    if (!el0) return;
+
+    snappingRef.current = true;
+
+    const start0 = el0.scrollLeft;
+    const vw0 = el0.clientWidth || viewportW || 0;
+    const target0 = idx * STEP + CARD_W / 2 - vw0 / 2;
+
+    const t0 = performance.now();
+
+    const tick = (t: number) => {
+      const el = scrollerRef.current;
+      if (!el) {
+        snappingRef.current = false;
+        animRef.current = null;
+        return;
+      }
+
+      const p = Math.min(1, (t - t0) / ms);
+      const eased = easeOutCubic(p);
+
+      el.scrollLeft = start0 + (target0 - start0) * eased;
+
+      if (p < 1) {
+        animRef.current = requestAnimationFrame(tick);
+      } else {
+        animRef.current = null;
+        snappingRef.current = false;
+        setScrollLeft(el.scrollLeft);
+      }
+    };
+
+    animRef.current = requestAnimationFrame(tick);
+  }
+
+  function getMaxIndexFromCount(count: number) {
+    return Math.max(0, count - 1);
+  }
+
+  function getNearestIndex(count: number): number {
     const el = scrollerRef.current;
     if (!el) return 0;
 
@@ -182,111 +265,39 @@ export default function ChapterNavigator({
     const center = el.scrollLeft + vw / 2;
 
     const raw = Math.round((center - CARD_W / 2) / STEP);
-    return clamp(raw, 0, getMaxIndex());
+    return clamp(raw, 0, getMaxIndexFromCount(count));
   }
 
-  const animRef = useRef<number | null>(null);
-  function stopAnim() {
-  if (animRef.current) cancelAnimationFrame(animRef.current);
-  animRef.current = null;
-  snappingRef.current = false;
-}
+  // ---------------------------------------
+  // IMPORTANT: fast-wheel guard
+  // ---------------------------------------
+  const fastWheelRef = useRef(false);
+  const fastWheelClearRef = useRef<number | null>(null);
 
-  // ✅ TS-safe: always re-read scrollerRef.current inside RAF
-  function scrollToIndex(idx: number, ms = 260) {
-  stopAnim();
+  function markFastWheel(absDelta: number, count: number) {
+    const FAST_DELTA = 60;
+    if (absDelta < FAST_DELTA) return;
 
-  const el0 = scrollerRef.current;
-  if (!el0) return;
+    fastWheelRef.current = true;
 
-  snappingRef.current = true;
-
-  const start0 = el0.scrollLeft;
-  const vw0 = el0.clientWidth || viewportW || 0;
-  const target0 = idx * STEP + CARD_W / 2 - vw0 / 2;
-
-  const t0 = performance.now();
-
-  const tick = (t: number) => {
-    const el = scrollerRef.current;
-    if (!el) {
-      snappingRef.current = false;
-      animRef.current = null;
-      return;
+    if (fastWheelClearRef.current) {
+      window.clearTimeout(fastWheelClearRef.current);
     }
 
-    const p = Math.min(1, (t - t0) / ms);
-    const eased = easeOutCubic(p);
+    fastWheelClearRef.current = window.setTimeout(() => {
+      fastWheelRef.current = false;
+      fastWheelClearRef.current = null;
 
-    el.scrollLeft = start0 + (target0 - start0) * eased;
+      if (dragRef.current.isDown) return;
+      if (snappingRef.current) return;
 
-    if (p < 1) {
-      animRef.current = requestAnimationFrame(tick);
-    } else {
-      animRef.current = null;
-
-      // ✅ one final state sync (prevents re-render every frame)
-      snappingRef.current = false;
-      setScrollLeft(el.scrollLeft);
-    }
-  };
-
-  animRef.current = requestAnimationFrame(tick);
-}
-
-  // initial centering (no animation)
-  useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    if (!hasTotal) return;
-    if (!viewportW) return;
-
-    const idx = currentSafe ? clamp(currentSafe - 1, 0, getMaxIndex()) : 0;
-
-    const target = idx * STEP + CARD_W / 2 - viewportW / 2;
-    el.scrollLeft = Math.max(0, target);
-    setScrollLeft(el.scrollLeft);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasTotal, viewportW, slug]);
+      const idx = getNearestIndex(count);
+      scrollToIndex(idx, 220);
+    }, 170);
+  }
 
   // ---------------------------------------
-  // virtualization window
-  // ---------------------------------------
-  const VBUF = 14;
-
-  const { leftPx, rightPx, visibleChapterNumbers } = useMemo(() => {
-    if (!hasTotal || !cappedTotal) {
-      return {
-        leftPx: 0,
-        rightPx: 0,
-        visibleChapterNumbers: [] as number[],
-      };
-    }
-
-    const t = cappedTotal;
-    const maxIdx = t - 1;
-
-    const vw = viewportW || 0;
-    const left = scrollLeft || 0;
-
-    const approxStart = Math.floor(left / STEP) - VBUF;
-    const approxEnd = Math.ceil((left + vw) / STEP) + VBUF;
-
-    const s = clamp(approxStart, 0, maxIdx);
-    const e = clamp(approxEnd, 0, maxIdx);
-
-    const nums: number[] = [];
-    for (let i = s; i <= e; i++) nums.push(i + 1);
-
-    return {
-      leftPx: s * STEP,
-      rightPx: (maxIdx - e) * STEP,
-      visibleChapterNumbers: nums,
-    };
-  }, [hasTotal, cappedTotal, viewportW, scrollLeft]);
-
-  // ---------------------------------------
-  // manga id (cached) + meta fetch for visible window
+  // manga id (cached)
   // ---------------------------------------
   const [mangaId, setMangaId] = useState<string | null>(null);
 
@@ -315,6 +326,211 @@ export default function ChapterNavigator({
     };
   }, [slug]);
 
+  // ---------------------------------------
+  // volume map + selection
+  // ---------------------------------------
+  const [volumeMap, setVolumeMap] = useState<Record<string, string[]> | null>(
+    null
+  );
+  const [selectedVolume, setSelectedVolume] = useState<string | null>(null); // null = All
+
+  const [volumeDragging, setVolumeDragging] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function run() {
+      setVolumeMap(null);
+      setSelectedVolume(null);
+
+      if (!mangaId) return;
+
+      const { data, error } = await supabase
+        .from("manga_volume_chapter_map")
+        .select("mapping")
+        .eq("manga_id", mangaId)
+        .eq("source", "mangadex")
+        .maybeSingle();
+
+      if (cancelled) return;
+      if (error || !data) return;
+
+      const row = data as unknown as VolumeMapRow;
+      if (!row?.mapping || typeof row.mapping !== "object") return;
+
+      setVolumeMap(row.mapping);
+    }
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [mangaId]);
+
+  const navGroups = useMemo<NavGroup[]>(() => {
+    const groups: NavGroup[] = [];
+
+    // ----------------------------
+    // 1) VOLUMES
+    // ----------------------------
+    let lastVolumeMax = 0;
+
+    if (volumeMap) {
+      const keys = sortVolumeKeys(Object.keys(volumeMap));
+
+      for (const v of keys) {
+        const nums = toNumericChapterList(volumeMap[v] || []);
+        if (!nums.length) continue;
+
+        const min = Math.floor(nums[0]);
+        const max = Math.floor(nums[nums.length - 1]);
+
+        lastVolumeMax = Math.max(lastVolumeMax, max);
+
+        groups.push({
+          kind: "volume",
+          key: `vol-${v}`,
+          chapters: nums,
+          labelTop: `Vol ${v}`,
+          labelBottom: min === max ? String(min) : `${min}–${max}`,
+        });
+      }
+    }
+
+    // ----------------------------
+    // 2) FALLBACK RANGES (25s)
+    // ----------------------------
+    if (hasTotal && cappedTotal && cappedTotal > lastVolumeMax) {
+      const STEP = 25;
+      let start = lastVolumeMax + 1;
+
+      while (start <= cappedTotal) {
+        const end = Math.min(start + STEP - 1, cappedTotal);
+        const chapters: number[] = [];
+
+        for (let i = start; i <= end; i++) chapters.push(i);
+
+        groups.push({
+          kind: "range",
+          key: `ch-${start}-${end}`,
+          chapters,
+          labelTop: "Ch",
+          labelBottom: `${start}–${end}`,
+        });
+
+        start = end + 1;
+      }
+    }
+
+    return groups;
+  }, [volumeMap, hasTotal, cappedTotal]);
+
+  const showVolumeButtons = navGroups.length > 0;
+
+  const displayChapters: number[] = useMemo(() => {
+    if (selectedVolume) {
+      const g = navGroups.find((n) => n.key === selectedVolume);
+      if (g) return g.chapters;
+    }
+
+    // All mode
+    if (!hasTotal || !cappedTotal) return [];
+    const nums: number[] = [];
+    for (let i = 1; i <= cappedTotal; i++) nums.push(i);
+    return nums;
+  }, [selectedVolume, navGroups, hasTotal, cappedTotal]);
+
+  const chapterCount = displayChapters.length;
+
+  // ---------------------------------------
+  // scroll handler (throttled + snap when settled)
+  // ---------------------------------------
+  function onScroll() {
+    const el = scrollerRef.current;
+    if (!el) return;
+
+    if (snappingRef.current) return;
+
+    if (rafScrollRef.current) cancelAnimationFrame(rafScrollRef.current);
+    rafScrollRef.current = requestAnimationFrame(() => {
+      rafScrollRef.current = null;
+      const sc = scrollerRef.current;
+      if (!sc) return;
+      setScrollLeft(sc.scrollLeft);
+    });
+
+    if (fastWheelRef.current) return;
+
+    if ((onScroll as any)._t) window.clearTimeout((onScroll as any)._t);
+    (onScroll as any)._t = window.setTimeout(() => {
+      if (dragRef.current.isDown) return;
+      if (snappingRef.current) return;
+      if (fastWheelRef.current) return;
+
+      if (chapterCount <= 0) return;
+
+      const idx = getNearestIndex(chapterCount);
+      scrollToIndex(idx, 220);
+    }, 130);
+  }
+
+  // initial centering (and when switching All/Volume)
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    if (!viewportW) return;
+    if (chapterCount <= 0) return;
+
+    let idx = 0;
+    if (currentSafe) {
+      const found = displayChapters.indexOf(currentSafe);
+      if (found >= 0) idx = found;
+    }
+
+    idx = clamp(idx, 0, getMaxIndexFromCount(chapterCount));
+    const target = idx * STEP + CARD_W / 2 - viewportW / 2;
+
+    stopAnim();
+    el.scrollLeft = Math.max(0, target);
+    setScrollLeft(el.scrollLeft);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, viewportW, selectedVolume, chapterCount]);
+
+  // ---------------------------------------
+  // virtualization window (based on displayChapters)
+  // ---------------------------------------
+  const VBUF = 14;
+
+  const { leftPx, rightPx, visibleChapterNumbers } = useMemo(() => {
+    if (chapterCount <= 0) {
+      return { leftPx: 0, rightPx: 0, visibleChapterNumbers: [] as number[] };
+    }
+
+    const t = chapterCount;
+    const maxIdx = t - 1;
+
+    const vw = viewportW || 0;
+    const left = scrollLeft || 0;
+
+    const approxStart = Math.floor(left / STEP) - VBUF;
+    const approxEnd = Math.ceil((left + vw) / STEP) + VBUF;
+
+    const s = clamp(approxStart, 0, maxIdx);
+    const e = clamp(approxEnd, 0, maxIdx);
+
+    const nums: number[] = [];
+    for (let i = s; i <= e; i++) nums.push(displayChapters[i]);
+
+    return {
+      leftPx: s * STEP,
+      rightPx: (maxIdx - e) * STEP,
+      visibleChapterNumbers: nums,
+    };
+  }, [chapterCount, displayChapters, viewportW, scrollLeft]);
+
+  // ---------------------------------------
+  // meta fetch for visible window
+  // ---------------------------------------
   const [metaByNumber, setMetaByNumber] = useState<Record<number, ChapterMeta>>(
     {}
   );
@@ -324,11 +540,9 @@ export default function ChapterNavigator({
 
     async function run() {
       if (!slug) return;
-      if (!hasTotal) return;
       if (!mangaId) return;
       if (!visibleChapterNumbers.length) return;
 
-      // Only fetch missing ones (and don't refetch constantly)
       const missing = visibleChapterNumbers.filter((n) => !metaByNumber[n]);
       if (missing.length === 0) return;
 
@@ -343,7 +557,6 @@ export default function ChapterNavigator({
       if (cancelled) return;
 
       if (chErr || !chs) {
-        // populate placeholders to avoid hammering
         setMetaByNumber((prev) => {
           const next = { ...prev };
           for (const n of wantedNums) {
@@ -366,7 +579,6 @@ export default function ChapterNavigator({
 
       const chapterIds = Object.values(idByNumber);
 
-      // Soft-fail artwork (table may not exist yet)
       let byChapterId: Record<string, ArtworkRow[]> = {};
       if (chapterIds.length > 0) {
         const { data: arts, error: artsErr } = await supabase
@@ -378,7 +590,8 @@ export default function ChapterNavigator({
           byChapterId = {};
           for (const r of (arts as ArtworkRow[]) ?? []) {
             if (!r?.manga_chapter_id) continue;
-            if (!byChapterId[r.manga_chapter_id]) byChapterId[r.manga_chapter_id] = [];
+            if (!byChapterId[r.manga_chapter_id])
+              byChapterId[r.manga_chapter_id] = [];
             byChapterId[r.manga_chapter_id].push(r);
           }
         }
@@ -407,7 +620,7 @@ export default function ChapterNavigator({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug, hasTotal, mangaId, visibleChapterNumbers.join("|")]);
+  }, [slug, mangaId, visibleChapterNumbers.join("|")]);
 
   // ---------------------------------------
   // drag physics
@@ -490,6 +703,11 @@ export default function ChapterNavigator({
       return;
     }
 
+    if (chapterCount <= 0) {
+      setDragging(false);
+      return;
+    }
+
     const v = computeVelocity();
     const duration = gestureDurationMs();
 
@@ -526,10 +744,10 @@ export default function ChapterNavigator({
       }
     } else {
       if (draggedScroll < distThreshold) target = startIndex;
-      else target = getNearestIndex();
+      else target = getNearestIndex(chapterCount);
     }
 
-    target = clamp(target, 0, getMaxIndex());
+    target = clamp(target, 0, getMaxIndexFromCount(chapterCount));
 
     scrollToIndex(target, 260);
     window.setTimeout(() => setDragging(false), 0);
@@ -541,8 +759,11 @@ export default function ChapterNavigator({
     if (e.pointerType === "mouse" && e.button !== 0) return;
 
     stopAnim();
-
-    snappingRef.current = false;
+    if (fastWheelClearRef.current) {
+      window.clearTimeout(fastWheelClearRef.current);
+      fastWheelClearRef.current = null;
+    }
+    fastWheelRef.current = false;
 
     dragRef.current.isDown = true;
     dragRef.current.didDrag = false;
@@ -557,7 +778,7 @@ export default function ChapterNavigator({
     dragRef.current.samples = [];
     recordSample(e.clientX);
 
-    dragRef.current.startIndex = getNearestIndex();
+    dragRef.current.startIndex = getNearestIndex(Math.max(1, chapterCount));
     setDragging(false);
 
     const onWinMove = (ev: PointerEvent) => {
@@ -605,18 +826,36 @@ export default function ChapterNavigator({
     const el = scrollerRef.current;
     if (!el) return;
 
+    if (snappingRef.current) {
+      e.preventDefault();
+      return;
+    }
+
     stopAnim();
 
     const mostlyVertical = Math.abs(e.deltaY) > Math.abs(e.deltaX);
     if (mostlyVertical && !e.shiftKey) {
       e.preventDefault();
       el.scrollLeft += e.deltaY;
+      markFastWheel(Math.abs(e.deltaY), Math.max(1, chapterCount));
+      return;
     }
+
+    markFastWheel(
+      Math.max(Math.abs(e.deltaX), Math.abs(e.deltaY)),
+      Math.max(1, chapterCount)
+    );
+
+    if (fastWheelRef.current) return;
 
     if ((onWheel as any)._t) window.clearTimeout((onWheel as any)._t);
     (onWheel as any)._t = window.setTimeout(() => {
       if (dragRef.current.isDown) return;
-      const idx = getNearestIndex();
+      if (snappingRef.current) return;
+      if (fastWheelRef.current) return;
+      if (chapterCount <= 0) return;
+
+      const idx = getNearestIndex(chapterCount);
       scrollToIndex(idx, 220);
     }, 110);
   }
@@ -628,10 +867,103 @@ export default function ChapterNavigator({
     "group relative shrink-0 rounded-xs bg-[var(--card-bg)] ring-1 ring-[var(--ring)] shadow-sm transition";
   const cardHover =
     "hover:bg-[var(--card-bg-hover)] hover:shadow-md hover:ring-black/10";
-  const cardSize = `h-[${CARD_H}px] w-[${CARD_W}px]`;
-  const thumbSize = `h-full w-[${THUMB_W}px] shrink-0`;
+  const cardSize = "h-[120px] w-[240px]";
+  const thumbSize = "h-full w-[120px] shrink-0";
 
-  if (!hasTotal || !cappedTotal) return null;
+  const pillBase =
+    "select-none rounded-sm border px-0 py-1 text-xs font-semibold transition";
+  const pillOn = "bg-white text-black border-black";
+  const pillOff = "bg-black text-white border-white/20 hover:border-white/40";
+
+  // ---------------------------------------
+  // drag-to-scroll for the volume button row
+  // ---------------------------------------
+  const volumeRowRef = useRef<HTMLDivElement | null>(null);
+
+  const volumeDragRef = useRef<{
+    isDown: boolean;
+    didDrag: boolean;
+    startX: number;
+    startScrollLeft: number;
+    maxMovePx: number;
+  }>({
+    isDown: false,
+    didDrag: false,
+    startX: 0,
+    startScrollLeft: 0,
+    maxMovePx: 0,
+  });
+
+  const VOLUME_DRAG_THRESHOLD_PX = 6;
+  const VOLUME_CLICK_BLOCK_PX = 10;
+
+  function onVolumePointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    const el = volumeRowRef.current;
+    if (!el) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+
+    volumeDragRef.current.isDown = true;
+    volumeDragRef.current.didDrag = false;
+    volumeDragRef.current.startX = e.clientX;
+    volumeDragRef.current.startScrollLeft = el.scrollLeft;
+    volumeDragRef.current.maxMovePx = 0;
+
+    const onMove = (ev: PointerEvent) => {
+      const row = volumeRowRef.current;
+      if (!row) return;
+      if (!volumeDragRef.current.isDown) return;
+
+      const dx = ev.clientX - volumeDragRef.current.startX;
+      volumeDragRef.current.maxMovePx = Math.max(
+        volumeDragRef.current.maxMovePx,
+        Math.abs(dx)
+      );
+
+      if (
+        !volumeDragRef.current.didDrag &&
+        Math.abs(dx) >= VOLUME_DRAG_THRESHOLD_PX
+      ) {
+        volumeDragRef.current.didDrag = true;
+        setVolumeDragging(true);
+      }
+
+      if (volumeDragRef.current.didDrag) {
+        row.scrollLeft = volumeDragRef.current.startScrollLeft - dx;
+      }
+    };
+
+    const onUp = () => {
+      volumeDragRef.current.isDown = false;
+      setVolumeDragging(false);
+
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+
+    window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("pointerup", onUp, { passive: true });
+    window.addEventListener("pointercancel", onUp, { passive: true });
+  }
+
+  function maybeBlockVolumeButtonClick(
+    e: React.MouseEvent,
+    onClick: () => void
+  ) {
+    // If the user dragged the row, don't treat it as a button click
+    if (
+      volumeDragRef.current.didDrag &&
+      volumeDragRef.current.maxMovePx > VOLUME_CLICK_BLOCK_PX
+    ) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    onClick();
+  }
+
+  // ✅ IMPORTANT: only return AFTER all hooks are declared
+  if (chapterCount <= 0) return null;
 
   return (
     <div
@@ -644,11 +976,61 @@ export default function ChapterNavigator({
         } as React.CSSProperties
       }
     >
+      {/* Volume buttons (ONLY if volumes exist) */}
+      {showVolumeButtons ? (
+        <div
+          ref={volumeRowRef}
+          onPointerDown={onVolumePointerDown}
+          className={[
+            "mb-2 flex items-center gap-2 overflow-x-auto scrollbar-none select-none touch-pan-y",
+            volumeDragging ? "cursor-grabbing" : "cursor-grab",
+          ].join(" ")}
+        >
+          <button
+            type="button"
+            className={[
+              pillBase,
+              selectedVolume === null ? pillOn : pillOff,
+              "min-w-[25px] cursor-pointer",
+            ].join(" ")}
+            onClick={(e) => maybeBlockVolumeButtonClick(e, () => setSelectedVolume(null))}
+          >
+            <div className="flex flex-col items-center leading-tight">
+              <div>All</div>
+              <div className="mt-0.5 text-[10px] font-semibold opacity-0">0–0</div>
+            </div>
+          </button>
+
+          {navGroups.map((g) => (
+            <button
+              key={g.key}
+              type="button"
+              className={[
+                pillBase,
+                selectedVolume === g.key ? pillOn : pillOff,
+                "min-w-[45px] cursor-pointer",
+              ].join(" ")}
+              onClick={(e) =>
+                maybeBlockVolumeButtonClick(e, () => setSelectedVolume(g.key))
+              }
+            >
+              <div className="flex flex-col items-center leading-tight">
+                <div>{g.labelTop}</div>
+                <div className="mt-0.5 text-[10px] font-semibold opacity-80">
+                  {g.labelBottom}
+                </div>
+              </div>
+            </button>
+          ))}
+
+        </div>
+      ) : null}
+
       <div className="w-full overflow-hidden rounded-sm border border-black bg-black">
         <div
           ref={scrollerRef}
           className={[
-            "scrollbar-none relative flex overflow-x-auto",
+            "scrollbar-none relative flex overflow-x-auto overflow-y-hidden",
             "select-none touch-pan-y",
             "px-0 py-2",
             dragging ? "cursor-grabbing" : "cursor-grab",
@@ -686,6 +1068,10 @@ export default function ChapterNavigator({
                     cardSize,
                     isActive ? "ring-black/15 bg-white" : "",
                   ].join(" ")}
+                  style={{
+                    contentVisibility: "auto",
+                    containIntrinsicSize: "120px 240px",
+                  }}
                 >
                   <div className="flex h-full overflow-hidden rounded-xs">
                     <div className={[thumbSize, "bg-black/5"].join(" ")}>
