@@ -19,19 +19,15 @@ type ChapterRow = {
   chapter_number: number;
   title: string | null;
 };
-
-type ArtworkRow = {
-  manga_chapter_id: string;
-  url: string | null;
-  source: string | null;
-  vote: number | null;
-  is_primary: boolean | null;
-  width: number | null;
+type CoverRow = {
+  volume: string | null;
+  locale: string | null;
+  cached_url: string | null;
+  is_main: boolean | null;
 };
 
 type ChapterMeta = {
   title: string | null;
-  imageUrl: string | null;
 };
 
 type VolumeMapRow = {
@@ -52,38 +48,45 @@ function isNumericLike(s: string) {
   return /^(\d+)(\.\d+)?$/.test(String(s).trim());
 }
 
-function normalizeThumbUrl(url: string) {
-  if (!url) return url;
+function normVol(v: any): string | null {
+  const s0 = String(v ?? "").trim();
+  if (!s0) return null;
+  if (s0.toLowerCase() === "none") return null;
 
-  if (url.includes("https://image.tmdb.org/t/p/")) {
-    return url.replace(
-      /\/t\/p\/(original|w1280|w780|w500|w342|w300|w185)\//,
-      "/t/p/w500/"
-    );
+  // normalize numeric volumes ("05" -> "5")
+  if (/^\d+(\.\d+)?$/.test(s0)) {
+    const n = Number(s0);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return String(Math.trunc(n));
   }
 
-  return url;
+  const m = s0.match(/(\d+)/);
+  if (m?.[1]) {
+    const n = Number(m[1]);
+    if (Number.isFinite(n) && n > 0) return String(Math.trunc(n));
+  }
+
+  return s0;
 }
 
-function pickBestArtwork(rows: ArtworkRow[]): string | null {
-  const usable = rows.filter((r) => r.url);
-  if (usable.length === 0) return null;
+function pickBestCoverUrl(rows: CoverRow[]): string | null {
+  const usable = (rows || []).filter((r) => r?.cached_url);
+  if (!usable.length) return null;
 
-  usable.sort((a, b) => {
-    const ap = a.is_primary ? 1 : 0;
-    const bp = b.is_primary ? 1 : 0;
-    if (bp !== ap) return bp - ap;
+  // prefer is_main
+  const mains = usable.filter((r) => r.is_main);
+  const pool = mains.length ? mains : usable;
 
-    const av = a.vote ?? -9999;
-    const bv = b.vote ?? -9999;
-    if (bv !== av) return bv - av;
+  // prefer locale order
+  const pref = ["en", "ja"];
+  for (const p of pref) {
+    const hit = pool.find(
+      (r) => (r.locale || "").toLowerCase() === p && r.cached_url
+    );
+    if (hit?.cached_url) return hit.cached_url;
+  }
 
-    const aw = a.width ?? -9999;
-    const bw = b.width ?? -9999;
-    return bw - aw;
-  });
-
-  return usable[0].url ?? null;
+  return pool[0].cached_url ?? null;
 }
 
 function sortVolumeKeys(keys: string[]) {
@@ -320,7 +323,6 @@ export default function ChapterNavigator({
   );
   const [volumeMapLoaded, setVolumeMapLoaded] = useState(false);
   const [selectedVolume, setSelectedVolume] = useState<string | null>(null); // null = All
-
   const [volumeDragging, setVolumeDragging] = useState(false);
 
   useEffect(() => {
@@ -349,7 +351,7 @@ export default function ChapterNavigator({
         }
       }
 
-      // ✅ IMPORTANT: mark loaded even if no map / error
+      // ✅ mark loaded even if no map / error
       setVolumeMapLoaded(true);
     }
 
@@ -359,6 +361,57 @@ export default function ChapterNavigator({
     };
   }, [mangaId]);
 
+  // ---------------------------------------
+  // covers
+  // ---------------------------------------
+  const [coverRows, setCoverRows] = useState<CoverRow[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function run() {
+      if (!mangaId) return;
+
+      const { data, error } = await supabase
+        .from("manga_covers")
+        .select("volume, locale, cached_url, is_main")
+        .eq("manga_id", mangaId)
+        .not("cached_url", "is", null);
+
+      if (cancelled) return;
+
+      if (error) {
+        console.warn("[ChapterNavigator] manga_covers select failed:", error);
+        setCoverRows([]);
+        return;
+      }
+
+      if (!Array.isArray(data)) {
+        console.warn("[ChapterNavigator] manga_covers returned non-array:", data);
+        setCoverRows([]);
+        return;
+      }
+
+      console.log("[ChapterNavigator] manga_covers rows:", data.length);
+      setCoverRows(
+        (data as any[]).map((r) => ({
+          volume: r?.volume ?? null,
+          locale: r?.locale ?? null,
+          cached_url: r?.cached_url ?? null,
+          is_main: r?.is_main ?? null,
+        }))
+      );
+    }
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [mangaId]);
+
+  // ---------------------------------------
+  // nav groups (from lib/chapterNavigation)
+  // ---------------------------------------
   const navGroups = useMemo<NavGroup[]>(() => {
     if (!mangaId) return [];
     if (!volumeMapLoaded) return [];
@@ -368,11 +421,60 @@ export default function ChapterNavigator({
       totalChapters: cappedTotal ?? null,
       chunkSize: 25,
     });
-  }, [mangaId, volumeMapLoaded, volumeMap, hasTotal, cappedTotal]);
+  }, [mangaId, volumeMapLoaded, volumeMap, cappedTotal]);
 
   const showVolumeButtons = navGroups.length > 0;
-  const showNavSkeleton = !!slug && !navGroups.length; // loading state (no wrong labels)
 
+  // ---------------------------------------
+  // build volume->cover + chapter->cover maps
+  // ---------------------------------------
+  const coverUrlByVolume = useMemo(() => {
+    const byVol: Record<string, CoverRow[]> = {};
+    for (const r of coverRows) {
+      const v = normVol(r.volume);
+      if (!v) continue;
+      if (!byVol[v]) byVol[v] = [];
+      byVol[v].push(r);
+    }
+
+    const out: Record<string, string | null> = {};
+    for (const v of Object.keys(byVol)) {
+      out[v] = pickBestCoverUrl(byVol[v]);
+    }
+    return out;
+  }, [coverRows]);
+
+  const chapterCoverByNumber = useMemo(() => {
+    const out: Record<number, string | null> = {};
+
+    // "nearest previous volume cover" fallback for range groups
+    let lastVolumeCover: string | null = null;
+
+    for (const g of navGroups) {
+      if (g.kind === "volume") {
+        const volIdRaw = String(g.key || "");
+        const volId = volIdRaw.startsWith("vol-") ? volIdRaw.slice(4) : volIdRaw;
+        const v = normVol(volId);
+
+        const cover = v ? coverUrlByVolume[v] ?? null : null;
+        if (cover) lastVolumeCover = cover;
+
+        for (const ch of g.chapters) out[ch] = cover;
+      } else {
+        // range group uses the last known volume cover (if any)
+        for (const ch of g.chapters) out[ch] = lastVolumeCover;
+      }
+    }
+
+    return out;
+  }, [navGroups, coverUrlByVolume]);
+
+  // skeleton while nav isn't ready (so it doesn't flash wrong pills)
+  const showNavSkeleton = !!slug && (!mangaId || !volumeMapLoaded);
+
+  // ---------------------------------------
+  // displayed chapters (All vs selected group)
+  // ---------------------------------------
   const displayChapters: number[] = useMemo(() => {
     if (selectedVolume) {
       const g = navGroups.find((n) => n.key === selectedVolume);
@@ -475,7 +577,7 @@ export default function ChapterNavigator({
   }, [chapterCount, displayChapters, viewportW, scrollLeft]);
 
   // ---------------------------------------
-  // meta fetch for visible window
+  // meta fetch for visible window (chapter title + chapter artwork)
   // ---------------------------------------
   const [metaByNumber, setMetaByNumber] = useState<Record<number, ChapterMeta>>(
     {}
@@ -506,7 +608,7 @@ export default function ChapterNavigator({
         setMetaByNumber((prev) => {
           const next = { ...prev };
           for (const n of wantedNums) {
-            if (!next[n]) next[n] = { title: null, imageUrl: null };
+            if (!next[n]) next[n] = { title: null };
           }
           return next;
         });
@@ -523,39 +625,12 @@ export default function ChapterNavigator({
         titleByNumber[c.chapter_number] = c.title ?? null;
       }
 
-      const chapterIds = Object.values(idByNumber);
-
-      let byChapterId: Record<string, ArtworkRow[]> = {};
-      if (chapterIds.length > 0) {
-        const { data: arts, error: artsErr } = await supabase
-          .from("manga_chapter_artwork")
-          .select("manga_chapter_id, url, source, vote, is_primary, width")
-          .in("manga_chapter_id", chapterIds);
-
-        if (!cancelled && !artsErr && Array.isArray(arts)) {
-          byChapterId = {};
-          for (const r of (arts as ArtworkRow[]) ?? []) {
-            if (!r?.manga_chapter_id) continue;
-            if (!byChapterId[r.manga_chapter_id])
-              byChapterId[r.manga_chapter_id] = [];
-            byChapterId[r.manga_chapter_id].push(r);
-          }
-        }
-      }
-
       if (cancelled) return;
 
       setMetaByNumber((prev) => {
         const next = { ...prev };
         for (const n of wantedNums) {
           const chId = idByNumber[n];
-          const best =
-            chId && byChapterId[chId] ? pickBestArtwork(byChapterId[chId]) : null;
-
-          next[n] = {
-            title: titleByNumber[n] ?? null,
-            imageUrl: best ? normalizeThumbUrl(best) : null,
-          };
         }
         return next;
       });
@@ -598,6 +673,59 @@ export default function ChapterNavigator({
     maxMovePx: 0,
     samples: [],
   });
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+
+    const handler = (ev: WheelEvent) => {
+      // We replicate your onWheel logic, but using the native event.
+      if (snappingRef.current) {
+        ev.preventDefault();
+        return;
+      }
+
+      stopAnim();
+
+      const deltaX = ev.deltaX;
+      const deltaY = ev.deltaY;
+
+      const mostlyVertical = Math.abs(deltaY) > Math.abs(deltaX);
+      if (mostlyVertical && !ev.shiftKey) {
+        ev.preventDefault();
+        el.scrollLeft += deltaY;
+        markFastWheel(Math.abs(deltaY), Math.max(1, chapterCount));
+        return;
+      }
+
+      markFastWheel(
+        Math.max(Math.abs(deltaX), Math.abs(deltaY)),
+        Math.max(1, chapterCount)
+      );
+
+      if (fastWheelRef.current) return;
+
+      // snap after settling
+      if ((handler as any)._t) window.clearTimeout((handler as any)._t);
+      (handler as any)._t = window.setTimeout(() => {
+        if (dragRef.current.isDown) return;
+        if (snappingRef.current) return;
+        if (fastWheelRef.current) return;
+        if (chapterCount <= 0) return;
+
+        const idx = getNearestIndex(chapterCount);
+        scrollToIndex(idx, 220);
+      }, 110);
+    };
+
+    // ✅ key part: passive: false so preventDefault works
+    el.addEventListener("wheel", handler, { passive: false });
+
+    return () => {
+      el.removeEventListener("wheel", handler as any);
+    };
+    // IMPORTANT: include the things used inside handler that can change
+  }, [chapterCount, viewportW, scrollLeft]);
 
   const DRAG_THRESHOLD_PX = 6;
   const CLICK_BLOCK_PX = 12;
@@ -673,7 +801,9 @@ export default function ChapterNavigator({
     const isFlick = Math.abs(v) >= VELOCITY_FLICK;
 
     const isTinyFlick =
-      isFlick && duration <= TINY_FLICK_MAX_MS && Math.abs(dx) <= TINY_FLICK_MAX_PX;
+      isFlick &&
+      duration <= TINY_FLICK_MAX_MS &&
+      Math.abs(dx) <= TINY_FLICK_MAX_PX;
 
     const draggedScroll = Math.abs(el.scrollLeft - dragRef.current.startScrollLeft);
     const farDrag = draggedScroll > step * 1.1;
@@ -865,10 +995,7 @@ export default function ChapterNavigator({
         Math.abs(dx)
       );
 
-      if (
-        !volumeDragRef.current.didDrag &&
-        Math.abs(dx) >= VOLUME_DRAG_THRESHOLD_PX
-      ) {
+      if (!volumeDragRef.current.didDrag && Math.abs(dx) >= VOLUME_DRAG_THRESHOLD_PX) {
         volumeDragRef.current.didDrag = true;
         setVolumeDragging(true);
       }
@@ -892,11 +1019,7 @@ export default function ChapterNavigator({
     window.addEventListener("pointercancel", onUp, { passive: true });
   }
 
-  function maybeBlockVolumeButtonClick(
-    e: React.MouseEvent,
-    onClick: () => void
-  ) {
-    // If the user dragged the row, don't treat it as a button click
+  function maybeBlockVolumeButtonClick(e: React.MouseEvent, onClick: () => void) {
     if (
       volumeDragRef.current.didDrag &&
       volumeDragRef.current.maxMovePx > VOLUME_CLICK_BLOCK_PX
@@ -945,7 +1068,9 @@ export default function ChapterNavigator({
           >
             <div className="flex flex-col items-center leading-tight">
               <div>All</div>
-              <div className="mt-0.5 text-[10px] font-semibold opacity-0">0–0</div>
+              <div className="mt-0.5 text-[10px] font-semibold opacity-0">
+                0–0
+              </div>
             </div>
           </button>
 
@@ -972,7 +1097,7 @@ export default function ChapterNavigator({
           ))}
         </div>
       ) : showNavSkeleton ? (
-        <div className="mb-2 h-[39px] w-full rounded-sm" />
+        <div className="mb-2 h-[39px] w-full rounded-sm bg-black/10" />
       ) : null}
 
       <div className="w-full overflow-hidden rounded-sm border border-black bg-black">
@@ -985,7 +1110,6 @@ export default function ChapterNavigator({
             dragging ? "cursor-grabbing" : "cursor-grab",
           ].join(" ")}
           onPointerDown={onPointerDown}
-          onWheel={onWheel}
           onScroll={onScroll}
         >
           <div style={{ width: leftPx }} className="shrink-0" />
@@ -994,7 +1118,9 @@ export default function ChapterNavigator({
             {visibleChapterNumbers.map((n) => {
               const meta = metaByNumber[n];
               const title = meta?.title ?? `Chapter ${n}`;
-              const imageUrl = meta?.imageUrl ?? null;
+
+              // ✅ Prefer volume/range cover first, fallback to chapter artwork
+              const imageUrl = chapterCoverByNumber[n] ?? null;
 
               const metaLine = `CH${pad2(n)}`;
               const isActive = currentSafe === n;
@@ -1033,7 +1159,9 @@ export default function ChapterNavigator({
                           loading="lazy"
                           decoding="async"
                         />
-                      ) : null}
+                      ) : (
+                        <div className="h-full w-full bg-black" />
+                      )}
                     </div>
 
                     <div className="flex min-w-0 flex-1 flex-col justify-start px-3 py-3">
