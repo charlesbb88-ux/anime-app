@@ -4,6 +4,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import { buildChapterNavGroups } from "@/lib/chapterNavigation";
+import type { NavGroup } from "@/lib/chapterNavigation";
 
 type Props = {
   slug: string;
@@ -26,22 +28,6 @@ type ArtworkRow = {
   is_primary: boolean | null;
   width: number | null;
 };
-
-type NavGroup =
-  | {
-    kind: "volume";
-    key: string;
-    chapters: number[];
-    labelTop: string;
-    labelBottom: string | null;
-  }
-  | {
-    kind: "range";
-    key: string;
-    chapters: number[];
-    labelTop: string;
-    labelBottom: string;
-  };
 
 type ChapterMeta = {
   title: string | null;
@@ -332,6 +318,7 @@ export default function ChapterNavigator({
   const [volumeMap, setVolumeMap] = useState<Record<string, string[]> | null>(
     null
   );
+  const [volumeMapLoaded, setVolumeMapLoaded] = useState(false);
   const [selectedVolume, setSelectedVolume] = useState<string | null>(null); // null = All
 
   const [volumeDragging, setVolumeDragging] = useState(false);
@@ -342,6 +329,7 @@ export default function ChapterNavigator({
     async function run() {
       setVolumeMap(null);
       setSelectedVolume(null);
+      setVolumeMapLoaded(false);
 
       if (!mangaId) return;
 
@@ -353,12 +341,16 @@ export default function ChapterNavigator({
         .maybeSingle();
 
       if (cancelled) return;
-      if (error || !data) return;
 
-      const row = data as unknown as VolumeMapRow;
-      if (!row?.mapping || typeof row.mapping !== "object") return;
+      if (!error && data) {
+        const row = data as unknown as VolumeMapRow;
+        if (row?.mapping && typeof row.mapping === "object") {
+          setVolumeMap(row.mapping);
+        }
+      }
 
-      setVolumeMap(row.mapping);
+      // ✅ IMPORTANT: mark loaded even if no map / error
+      setVolumeMapLoaded(true);
     }
 
     run();
@@ -368,64 +360,18 @@ export default function ChapterNavigator({
   }, [mangaId]);
 
   const navGroups = useMemo<NavGroup[]>(() => {
-    const groups: NavGroup[] = [];
+    if (!mangaId) return [];
+    if (!volumeMapLoaded) return [];
 
-    // ----------------------------
-    // 1) VOLUMES
-    // ----------------------------
-    let lastVolumeMax = 0;
-
-    if (volumeMap) {
-      const keys = sortVolumeKeys(Object.keys(volumeMap));
-
-      for (const v of keys) {
-        const nums = toNumericChapterList(volumeMap[v] || []);
-        if (!nums.length) continue;
-
-        const min = Math.floor(nums[0]);
-        const max = Math.floor(nums[nums.length - 1]);
-
-        lastVolumeMax = Math.max(lastVolumeMax, max);
-
-        groups.push({
-          kind: "volume",
-          key: `vol-${v}`,
-          chapters: nums,
-          labelTop: `Vol ${v}`,
-          labelBottom: min === max ? String(min) : `${min}–${max}`,
-        });
-      }
-    }
-
-    // ----------------------------
-    // 2) FALLBACK RANGES (25s)
-    // ----------------------------
-    if (hasTotal && cappedTotal && cappedTotal > lastVolumeMax) {
-      const STEP = 25;
-      let start = lastVolumeMax + 1;
-
-      while (start <= cappedTotal) {
-        const end = Math.min(start + STEP - 1, cappedTotal);
-        const chapters: number[] = [];
-
-        for (let i = start; i <= end; i++) chapters.push(i);
-
-        groups.push({
-          kind: "range",
-          key: `ch-${start}-${end}`,
-          chapters,
-          labelTop: "Ch",
-          labelBottom: `${start}–${end}`,
-        });
-
-        start = end + 1;
-      }
-    }
-
-    return groups;
-  }, [volumeMap, hasTotal, cappedTotal]);
+    return buildChapterNavGroups({
+      volumeMap,
+      totalChapters: cappedTotal ?? null,
+      chunkSize: 25,
+    });
+  }, [mangaId, volumeMapLoaded, volumeMap, hasTotal, cappedTotal]);
 
   const showVolumeButtons = navGroups.length > 0;
+  const showNavSkeleton = !!slug && !navGroups.length; // loading state (no wrong labels)
 
   const displayChapters: number[] = useMemo(() => {
     if (selectedVolume) {
@@ -993,7 +939,9 @@ export default function ChapterNavigator({
               selectedVolume === null ? pillOn : pillOff,
               "min-w-[25px] cursor-pointer",
             ].join(" ")}
-            onClick={(e) => maybeBlockVolumeButtonClick(e, () => setSelectedVolume(null))}
+            onClick={(e) =>
+              maybeBlockVolumeButtonClick(e, () => setSelectedVolume(null))
+            }
           >
             <div className="flex flex-col items-center leading-tight">
               <div>All</div>
@@ -1022,8 +970,9 @@ export default function ChapterNavigator({
               </div>
             </button>
           ))}
-
         </div>
+      ) : showNavSkeleton ? (
+        <div className="mb-2 h-[39px] w-full rounded-sm" />
       ) : null}
 
       <div className="w-full overflow-hidden rounded-sm border border-black bg-black">

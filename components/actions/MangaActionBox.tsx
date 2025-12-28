@@ -164,7 +164,7 @@ export default function MangaActionBox({
   }
 
   return (
-    <div className="w-full max-w-[240px] overflow-hidden rounded-md border border-gray-800 bg-[#2b323a] text-gray-200 shadow-sm">
+    <div className="w-full max-w-[240px] overflow-hidden rounded-md border border-gray-800 bg-black text-gray-200 shadow-sm">
       {/* TOP ACTIONS */}
       <div className="grid grid-cols-3">
         <TopAction
