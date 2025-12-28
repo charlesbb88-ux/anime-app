@@ -6,10 +6,6 @@ import { MessageCircle, Heart, Bookmark } from "lucide-react";
 
 const AVATAR_SIZE = 46; // match CommentRow non-main avatar size
 
-const POSTER_W = 72;
-const POSTER_H = 108;
-const POSTER_GAP = 12;
-
 type ReviewLayout = "posterRightMirror";
 
 type ReviewMock = {
@@ -125,9 +121,7 @@ export default function TestCommentPage() {
     {
       id: "c-years",
       userId: "user-years",
-      createdAt: new Date(
-        now - 2 * 365 * 24 * 60 * 60 * 1000
-      ).toISOString(),
+      createdAt: new Date(now - 2 * 365 * 24 * 60 * 60 * 1000).toISOString(),
       label: "Years ago",
       content:
         "This is simulating an ancient comment. Here you should see a date with a year like Oct 5, 2022.",
@@ -293,8 +287,9 @@ export default function TestCommentPage() {
 }
 
 // ===========================
-// ReviewRow (clone of CommentRow + wrap around poster)
-// - does NOT render layoutLabel anywhere ✅
+// ReviewRow
+// ✅ Poster fills entire right side (top-to-bottom of whole box, including action bar)
+// ✅ Keeps 2:3 aspect ratio
 // ===========================
 
 type ReviewRowProps = {
@@ -308,7 +303,7 @@ function ReviewRow({ data, displayName, initial }: ReviewRowProps) {
 
   const isMain = !!data.isMain;
   const iconSize = isMain ? 22 : 20;
-  const avatarSize = isMain ? 56 : 46;
+  const avatarSize = isMain ? 56 : AVATAR_SIZE;
   const nameFontSize = isMain ? "1.05rem" : "0.95rem";
   const contentFontSize = isMain ? "1.1rem" : "1rem";
   const contentFontWeight = 400;
@@ -353,246 +348,291 @@ function ReviewRow({ data, displayName, initial }: ReviewRowProps) {
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* BODY */}
+      {/* Whole row: left content + right poster that spans full height */}
       <div
         style={{
           display: "flex",
-          alignItems: "flex-start",
-          gap: "0.7rem",
-          padding: "0.8rem 0.8rem 0.4rem 0.8rem",
+          alignItems: "stretch", // ✅ poster column stretches full height of the entire review box
+          gap: "0.8rem",
+          padding: "0.8rem",
         }}
       >
-        {/* Avatar */}
-        <div
-          style={{
-            width: avatarSize,
-            height: avatarSize,
-            borderRadius: "999px",
-            background: "#e5e5e5",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: isMain ? "1.05rem" : "0.95rem",
-            fontWeight: 600,
-            color: "#333",
-            flexShrink: 0,
-            overflow: "hidden",
-          }}
-        >
-          <span>{initial}</span>
-        </div>
-
-        {/* Content column */}
+        {/* LEFT COLUMN (everything except poster) */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          {/* Poster floats right so header + text wrap */}
-          <div
-            style={{
-              float: "right",
-              marginLeft: POSTER_GAP,
-              marginTop: 2,
-            }}
-          >
-            <PosterBox url={data.posterUrl} title={data.animeTitle} />
+          {/* BODY */}
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "0.7rem" }}>
+            {/* Avatar */}
+            <div
+              style={{
+                width: avatarSize,
+                height: avatarSize,
+                borderRadius: "999px",
+                background: "#e5e5e5",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: isMain ? "1.05rem" : "0.95rem",
+                fontWeight: 600,
+                color: "#333",
+                flexShrink: 0,
+                overflow: "hidden",
+              }}
+            >
+              <span>{initial}</span>
+            </div>
+
+            {/* Content */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {/* Header line */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  justifyContent: "space-between",
+                  gap: "0.35rem",
+                  minWidth: 0,
+                  marginBottom: "0.15rem",
+                }}
+              >
+                {/* Left */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.35rem",
+                    minWidth: 0,
+                  }}
+                >
+                  <span style={{ fontSize: nameFontSize, fontWeight: 500, color: "#333" }}>
+                    {displayName}
+                  </span>
+
+                  <span style={{ color: "#aaa", fontSize: "0.8rem" }}>·</span>
+
+                  <small style={{ color: "#777", fontSize: "0.8rem" }}>
+                    {data.relativeTime}
+                  </small>
+                </div>
+
+                {/* Right meta */}
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "flex-end",
+                    minWidth: 0,
+                    maxWidth: "55%",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontWeight: 500,
+                      color: "#333",
+                      fontSize: "0.86rem",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      width: "100%",
+                      textAlign: "right",
+                    }}
+                  >
+                    {data.animeTitle}
+                  </span>
+
+                  <span style={{ fontSize: "0.76rem", color: "#777", lineHeight: 1.1 }}>
+                    {stars}
+                  </span>
+                </div>
+              </div>
+
+              {/* Text */}
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: contentFontSize,
+                  fontWeight: contentFontWeight,
+                  lineHeight: 1.5,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                }}
+              >
+                {data.content}
+              </p>
+            </div>
           </div>
 
-          {/* Header line: username/time left + anime meta right */}
+          {/* Action bar (kept identical indentation vibe, but now within left column) */}
           <div
             style={{
               display: "flex",
-              alignItems: "baseline",
               justifyContent: "space-between",
-              gap: "0.35rem",
-              minWidth: 0,
-              marginBottom: "0.15rem",
+              alignItems: "center",
+              maxWidth: "90%",
+              padding: "0.55rem 0 0 3.4rem",
+              marginLeft: ".3rem",
+              marginRight: "auto",
             }}
           >
-            {/* Left */}
-            <div
+            {/* Reply */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                alert(`Reply clicked on review ${data.id}`);
+              }}
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.35rem",
-                minWidth: 0,
+                ...iconButtonBase,
+                ...actionSlotStyle,
+                padding: "6px 10px",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-1px)";
+                e.currentTarget.style.color = "#1d9bf0";
+                e.currentTarget.style.background = "#1d9bf01a";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.color = "#555";
+                e.currentTarget.style.background = "transparent";
               }}
             >
-              <span
-                style={{
-                  fontSize: nameFontSize,
-                  fontWeight: 500,
-                  color: "#333",
-                }}
-              >
-                {displayName}
-              </span>
+              <MessageCircle width={iconSize} height={iconSize} strokeWidth={1.7} />
+              <span style={countStyle}>{data.replyCount}</span>
+            </button>
 
-              <span style={{ color: "#aaa", fontSize: "0.8rem" }}>·</span>
-
-              <small style={{ color: "#777", fontSize: "0.8rem" }}>
-                {data.relativeTime}
-              </small>
-            </div>
-
-            {/* Right: anime title smaller + stars under it */}
-            <div
+            {/* Like */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                alert(`Like toggled on review ${data.id}`);
+              }}
               style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "flex-end",
-                minWidth: 0,
-                maxWidth: "55%",
+                ...iconButtonBase,
+                ...actionSlotStyle,
+                padding: "6px 10px",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-1px)";
+                e.currentTarget.style.color = "#f91880";
+                e.currentTarget.style.background = "#f918801a";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.color = "#555";
+                e.currentTarget.style.background = "transparent";
               }}
             >
-              <span
-                style={{
-                  fontWeight: 500,
-                  color: "#333",
-                  fontSize: "0.86rem",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  width: "100%",
-                  textAlign: "right",
-                }}
-              >
-                {data.animeTitle}
-              </span>
+              <Heart
+                width={iconSize}
+                height={iconSize}
+                strokeWidth={1.7}
+                fill={data.likedByMe ? "currentColor" : "none"}
+              />
+              <span style={countStyle}>{data.likeCount}</span>
+            </button>
 
-              <span style={{ fontSize: "0.76rem", color: "#777", lineHeight: 1.1 }}>
-                {stars}
-              </span>
-            </div>
+            {/* Bookmark */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                alert(`Bookmark clicked on review ${data.id}`);
+              }}
+              style={iconButtonBase}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-1px)";
+                e.currentTarget.style.color = "#00ba7c";
+                e.currentTarget.style.background = "#00ba7c1a";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.color = "#555";
+                e.currentTarget.style.background = "transparent";
+              }}
+            >
+              <Bookmark width={iconSize} height={iconSize} strokeWidth={1.7} />
+            </button>
+
+            {/* Share */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                alert(`Share clicked on review ${data.id}`);
+              }}
+              style={iconButtonBase}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-1px)";
+                e.currentTarget.style.color = "#1d9bf0";
+                e.currentTarget.style.background = "#1d9bf01a";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.color = "#555";
+                e.currentTarget.style.background = "transparent";
+              }}
+            >
+              <ShareArrowIcon size={iconSize} />
+            </button>
           </div>
-
-          {/* Text */}
-          <p
-            style={{
-              margin: 0,
-              fontSize: contentFontSize,
-              fontWeight: contentFontWeight,
-              lineHeight: 1.5,
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-            }}
-          >
-            {data.content}
-          </p>
-
-          {/* Clear float so action bar sits below */}
-          <div style={{ clear: "both" }} />
         </div>
+
+        {/* RIGHT POSTER COLUMN (spans full height of the entire review box) */}
+        <PosterSide url={data.posterUrl} title={data.animeTitle} />
       </div>
+    </div>
+  );
+}
 
-      {/* Action bar (identical indentation to CommentRow) */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          maxWidth: "90%",
-          padding: "0.4rem 0 0.8rem 3.4rem",
-          marginLeft: ".3rem",
-          marginRight: "auto",
-        }}
-      >
-        {/* Reply */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            alert(`Reply clicked on review ${data.id}`);
-          }}
+function PosterSide({ url, title }: { url?: string | null; title: string }) {
+  const [hasError, setHasError] = useState(false);
+
+  const initial =
+    title && title.trim().length > 0
+      ? title.trim().charAt(0).toUpperCase()
+      : "?";
+
+  const showImage = !!url && !hasError;
+
+  return (
+    <div
+      style={{
+        height: "100%", // ✅ fill full height of the review box (because parent is stretch)
+        aspectRatio: "2 / 3", // ✅ keeps poster ratio, width auto from height
+        borderRadius: 6,
+        overflow: "hidden",
+        backgroundColor: "#e5e7eb",
+        flexShrink: 0,
+        alignSelf: "stretch",
+      }}
+    >
+      {showImage ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={url as string}
+          alt={title}
           style={{
-            ...iconButtonBase,
-            ...actionSlotStyle,
-            padding: "6px 10px",
+            width: "100%",
+            height: "100%",
+            objectFit: "cover", // ✅ fills the right column top-to-bottom (may crop)
+            objectPosition: "center",
+            display: "block",
           }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-1px)";
-            e.currentTarget.style.color = "#1d9bf0";
-            e.currentTarget.style.background = "#1d9bf01a";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "translateY(0)";
-            e.currentTarget.style.color = "#555";
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          <MessageCircle width={iconSize} height={iconSize} strokeWidth={1.7} />
-          <span style={countStyle}>{data.replyCount}</span>
-        </button>
-
-        {/* Like */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            alert(`Like toggled on review ${data.id}`);
-          }}
+          onError={() => setHasError(true)}
+        />
+      ) : (
+        <div
           style={{
-            ...iconButtonBase,
-            ...actionSlotStyle,
-            padding: "6px 10px",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-1px)";
-            e.currentTarget.style.color = "#f91880";
-            e.currentTarget.style.background = "#f918801a";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "translateY(0)";
-            e.currentTarget.style.color = "#555";
-            e.currentTarget.style.background = "transparent";
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 20,
+            fontWeight: 600,
+            color: "#9ca3af",
           }}
         >
-          <Heart
-            width={iconSize}
-            height={iconSize}
-            strokeWidth={1.7}
-            fill={data.likedByMe ? "currentColor" : "none"}
-          />
-          <span style={countStyle}>{data.likeCount}</span>
-        </button>
-
-        {/* Bookmark */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            alert(`Bookmark clicked on review ${data.id}`);
-          }}
-          style={iconButtonBase}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-1px)";
-            e.currentTarget.style.color = "#00ba7c";
-            e.currentTarget.style.background = "#00ba7c1a";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "translateY(0)";
-            e.currentTarget.style.color = "#555";
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          <Bookmark width={iconSize} height={iconSize} strokeWidth={1.7} />
-        </button>
-
-        {/* Share */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            alert(`Share clicked on review ${data.id}`);
-          }}
-          style={iconButtonBase}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-1px)";
-            e.currentTarget.style.color = "#1d9bf0";
-            e.currentTarget.style.background = "#1d9bf01a";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "translateY(0)";
-            e.currentTarget.style.color = "#555";
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          <ShareArrowIcon size={iconSize} />
-        </button>
-      </div>
+          {initial}
+        </div>
+      )}
     </div>
   );
 }
@@ -614,59 +654,6 @@ function ShareArrowIcon({ size = 20 }: { size?: number }) {
       <path d="m16 6-4-4-4 4" />
       <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
     </svg>
-  );
-}
-
-function PosterBox({ url, title }: { url?: string | null; title: string }) {
-  const [hasError, setHasError] = useState(false);
-
-  const initial =
-    title && title.trim().length > 0
-      ? title.trim().charAt(0).toUpperCase()
-      : "?";
-
-  const showImage = !!url && !hasError;
-
-  return (
-    <div
-      style={{
-        width: POSTER_W,
-        borderRadius: 6,
-        overflow: "hidden",
-        backgroundColor: "#e5e7eb",
-        flexShrink: 0,
-      }}
-    >
-      {showImage ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={url as string}
-          alt={title}
-          style={{
-            width: "100%",
-            height: POSTER_H,
-            objectFit: "cover",
-            display: "block",
-          }}
-          onError={() => setHasError(true)}
-        />
-      ) : (
-        <div
-          style={{
-            width: "100%",
-            height: POSTER_H,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 20,
-            fontWeight: 600,
-            color: "#9ca3af",
-          }}
-        >
-          {initial}
-        </div>
-      )}
-    </div>
   );
 }
 

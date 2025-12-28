@@ -16,10 +16,16 @@ import { createAnimeSeriesReview } from "@/lib/reviews";
 
 import EpisodeNavigator from "@/components/EpisodeNavigator";
 
+import CharacterNavigator from "@/components/CharacterNavigator";
+
 import PostFeed from "../../components/PostFeed";
 
 // ✅ Global Log modal
 import GlobalLogModal from "@/components/reviews/GlobalLogModal";
+
+import AnimeMetaBox from "@/components/anime/AnimeMetaBox";
+
+import QuickLogBox from "@/components/anime/QuickLogBox";
 
 // ✅ Letterboxd-style action box (reusable)
 import ActionBox from "@/components/actions/ActionBox";
@@ -317,12 +323,6 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
         <p className="mb-4 text-gray-400">
           We couldn&apos;t find an anime with that URL.
         </p>
-        <Link
-          href="/"
-          className="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-        >
-          Go back home
-        </Link>
       </div>
     );
   }
@@ -491,6 +491,20 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                   </>
                 )}
               </div>
+              <div className="mt-4">
+                <AnimeMetaBox
+                  titleEnglish={a.title_english}
+                  titleNative={a.title_native}
+                  totalEpisodes={anime.total_episodes}
+                  format={a.format}
+                  status={a.status}
+                  startDate={a.start_date}
+                  endDate={a.end_date}
+                  season={a.season}
+                  seasonYear={a.season_year}
+                  averageScore={typeof a.average_score === "number" ? a.average_score : null}
+                />
+              </div>
             </div>
 
             <div className="min-w-100 flex-1">
@@ -502,12 +516,17 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
               {/* ROW 2 — LEFT CONTENT + ActionBox pinned top-right */}
               <div className="relative w-full">
                 {/* RIGHT SIDE: ActionBox (pinned, won't move) */}
-                <div className="absolute right-0 top-1">
+                <div className="absolute right-0 top-1 flex flex-col items-end">
                   <ActionBox
                     key={actionBoxNonce}
                     animeId={anime.id}
                     onOpenLog={() => setLogOpen(true)}
                     onShowActivity={() => router.push(`/anime/${anime.slug}/activity`)}
+                  />
+
+                  <QuickLogBox
+                    animeId={anime.id}
+                    onOpenLog={() => setLogOpen(true)}
                   />
                 </div>
 
@@ -533,6 +552,8 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                     </div>
                   )}
 
+                  <CharacterNavigator slug={slug as string} className="mt-4" />
+
                   {/* ✅ Feed */}
                   <div className="mt-6">
                     <PostFeed key={feedNonce} animeId={anime.id} />
@@ -544,73 +565,6 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
             </div>
           </div>
         </div>
-
-        {/* Meta info stays below synopsis */}
-        {(a.title_english || a.title_native) && (
-          <div className="mb-2 text-sm text-gray-400">
-            {a.title_english && (
-              <div>
-                <span className="font-semibold text-gray-300">English:</span>{" "}
-                {a.title_english}
-              </div>
-            )}
-            {a.title_native && (
-              <div>
-                <span className="font-semibold text-gray-300">Native:</span>{" "}
-                {a.title_native}
-              </div>
-            )}
-          </div>
-        )}
-
-        <p className="mb-1 text-sm text-gray-400">
-          Episodes:{" "}
-          <span className="font-semibold text-gray-100">
-            {anime.total_episodes ?? "Unknown"}
-          </span>
-        </p>
-
-        <p className="mb-1 text-sm text-gray-400">
-          Format:{" "}
-          <span className="font-semibold text-gray-100">{a.format ?? "—"}</span>
-        </p>
-
-        <p className="mb-1 text-sm text-gray-400">
-          Status:{" "}
-          <span className="font-semibold text-gray-100">{a.status ?? "—"}</span>
-        </p>
-
-        {(a.start_date || a.end_date) && (
-          <p className="mb-1 text-sm text-gray-400">
-            Aired:{" "}
-            <span className="font-semibold text-gray-100">
-              {a.start_date ?? "?"} – {a.end_date ?? "?"}
-            </span>
-          </p>
-        )}
-
-        {(a.season || a.season_year) && (
-          <p className="mb-1 text-sm text-gray-400">
-            Season:{" "}
-            <span className="font-semibold text-gray-100">
-              {a.season ?? "?"} {a.season_year ?? ""}
-            </span>
-          </p>
-        )}
-
-        {typeof a.average_score === "number" && (
-          <p className="mb-1 text-sm text-gray-400">
-            Score:{" "}
-            <span className="font-semibold text-gray-100">
-              {a.average_score}/100
-            </span>
-          </p>
-        )}
-
-        {/* Back link */}
-        <Link href="/" className="text-xs text-blue-400 hover:text-blue-300">
-          ← Back home
-        </Link>
       </div>
 
       <GlobalLogModal
