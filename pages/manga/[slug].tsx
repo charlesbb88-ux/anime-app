@@ -77,17 +77,15 @@ function normalizeBackdropUrl(url: string) {
 }
 
 function cleanSynopsis(raw: string) {
-  return (
-    raw
-      .replace(/\r\n/g, "\n")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/\(Source:.*?\)/gi, "")
-      .replace(/<\/?i>/gi, "")
-      .replace(/<[^>]+>/g, "")
-      .replace(/\n{3,}/g, "\n\n")
-      .replace(/\n[ \t]+\n/g, "\n\n")
-      .trim()
-  );
+  return raw
+    .replace(/\r\n/g, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/\(Source:.*?\)/gi, "")
+    .replace(/<\/?i>/gi, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/\n[ \t]+\n/g, "\n\n")
+    .trim();
 }
 
 const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
@@ -120,7 +118,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
     null
   );
 
-  // Backdrop from SSR (public.manga_artwork)
+  // Backdrop from SSR (public.manga_covers)
   const [backdropUrl] = useState<string | null>(initialBackdropUrl);
 
   // Normalize slug
@@ -311,7 +309,9 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
       <div className="mx-auto max-w-3xl px-4 py-16 text-center">
         <h1 className="mb-4 text-2xl font-bold">Manga not found</h1>
         {errorMessage && <p className="mb-2 text-gray-300">{errorMessage}</p>}
-        <p className="mb-4 text-gray-400">We couldn&apos;t find a manga with that URL.</p>
+        <p className="mb-4 text-gray-400">
+          We couldn&apos;t find a manga with that URL.
+        </p>
         <Link
           href="/"
           className="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
@@ -323,6 +323,22 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
   }
 
   const m: any = manga;
+
+  const englishTitle =
+    typeof m.title_english === "string" && m.title_english.trim()
+      ? m.title_english.trim()
+      : null;
+
+  const displayPrimaryTitle = englishTitle ?? manga.title;
+
+  const normalTitle =
+    typeof manga.title === "string" && manga.title.trim()
+      ? manga.title.trim()
+      : null;
+
+  const showSecondaryTitle =
+    englishTitle !== null && normalTitle !== null && englishTitle !== normalTitle;
+
   const hasGenres = Array.isArray(m.genres) && m.genres.length > 0;
   const genres: string[] = m.genres || [];
 
@@ -337,7 +353,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
   return (
     <>
       <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
-        {/* Backdrop (from SSR public.manga_artwork) */}
+        {/* Backdrop (from SSR public.manga_covers) */}
         {backdropUrl && (
           <div className="relative h-[620px] w-full overflow-hidden">
             <Image
@@ -380,7 +396,9 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
               {/* Genres (moved here) */}
               {hasGenres && (
                 <div className="mt-4">
-                  <h2 className="mb-1 text-sm font-semibold text-black-300">Genres</h2>
+                  <h2 className="mb-1 text-sm font-semibold text-black-300">
+                    Genres
+                  </h2>
                   <div className="flex flex-wrap gap-2">
                     {genres.map((g) => (
                       <span
@@ -406,7 +424,9 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                 </div>
 
                 {!tagsLoading && tags.length === 0 ? (
-                  <p className="text-sm text-gray-500">No tags imported yet for this manga.</p>
+                  <p className="text-sm text-gray-500">
+                    No tags imported yet for this manga.
+                  </p>
                 ) : (
                   <>
                     <div className="flex flex-col gap-1">
@@ -495,8 +515,19 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
 
             {/* RIGHT COLUMN */}
             <div className="min-w-100 flex-1">
-              {/* ROW 1 — TITLE */}
-              <h1 className="mb-2 text-4xl font-bold leading-tight">{manga.title}</h1>
+              {/* ROW 1 — TITLE (English primary) */}
+              <div className="mb-2">
+                <h1 className="text-4xl font-bold leading-tight">
+                  {displayPrimaryTitle}
+                </h1>
+
+                {/* Secondary title: show the “normal title” under English */}
+                {showSecondaryTitle && (
+                  <h2 className="mt-1 text-xl font-semibold leading-snug text-gray-500">
+                    {normalTitle}
+                  </h2>
+                )}
+              </div>
 
               {/* ROW 2 — LEFT CONTENT + ActionBox pinned top-right */}
               <div className="relative w-full">
@@ -569,14 +600,9 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
         </div>
 
         {/* Meta info stays below the top section (like anime page) */}
-        {(m.title_english || m.title_native) && (
+        {(m.title_native || englishTitle || normalTitle) && (
           <div className="mb-2 text-sm text-gray-400">
-            {m.title_english && (
-              <div>
-                <span className="font-semibold text-gray-300">English:</span>{" "}
-                {m.title_english}
-              </div>
-            )}
+            {/* If English is the header, don’t repeat it here. Just show native. */}
             {m.title_native && (
               <div>
                 <span className="font-semibold text-gray-300">Native:</span>{" "}
@@ -619,7 +645,10 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
 
         {typeof m.average_score === "number" && (
           <p className="mb-1 text-sm text-gray-400">
-            Score: <span className="font-semibold text-gray-100">{m.average_score}/100</span>
+            Score:{" "}
+            <span className="font-semibold text-gray-100">
+              {m.average_score}/100
+            </span>
           </p>
         )}
 
@@ -644,7 +673,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
       <GlobalLogModal
         open={logOpen}
         onClose={() => setLogOpen(false)}
-        title={manga.title}
+        title={displayPrimaryTitle}
         posterUrl={manga.image_url}
         mangaId={manga.id}
         onSuccess={async () => {
@@ -729,4 +758,3 @@ export const getServerSideProps: GetServerSideProps<MangaPageProps> = async (ctx
     },
   };
 };
-
