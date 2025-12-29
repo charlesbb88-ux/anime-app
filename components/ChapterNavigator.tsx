@@ -162,8 +162,8 @@ export default function ChapterNavigator({
   // ---------------------------------------
   // virtualization layout constants
   // ---------------------------------------
-  const CARD_W = 240;
-  const CARD_H = 120;
+  const CARD_W = 120;
+  const CARD_H = 180;
   const GAP = 12;
   const STEP = CARD_W + GAP;
 
@@ -943,7 +943,7 @@ export default function ChapterNavigator({
     "group relative shrink-0 rounded-xs bg-[var(--card-bg)] ring-1 ring-[var(--ring)] shadow-sm transition";
   const cardHover =
     "hover:bg-[var(--card-bg-hover)] hover:shadow-md hover:ring-black/10";
-  const cardSize = "h-[120px] w-[240px]";
+  const cardSize = "h-[180px] w-[120px]";
   const thumbSize = "h-full w-[120px] shrink-0";
 
   const pillBase =
@@ -1148,37 +1148,36 @@ export default function ChapterNavigator({
                     containIntrinsicSize: "120px 240px",
                   }}
                 >
-                  <div className="flex h-full overflow-hidden rounded-xs">
-                    <div className={[thumbSize, "bg-black/5"].join(" ")}>
-                      {imageUrl ? (
-                        <img
-                          src={imageUrl}
-                          alt=""
-                          className="h-full w-full object-cover"
-                          draggable={false}
-                          loading="lazy"
-                          decoding="async"
-                        />
-                      ) : (
-                        <div className="h-full w-full bg-black" />
-                      )}
-                    </div>
+                  <div className="relative h-full w-full overflow-hidden rounded-xs bg-black">
+                    {imageUrl ? (
+                      <img
+                        src={imageUrl}
+                        alt=""
+                        className="absolute inset-0 h-full w-full object-contain"
+                        draggable={false}
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 bg-black" />
+                    )}
 
-                    <div className="flex min-w-0 flex-1 flex-col justify-start px-3 py-3">
-                      <div className="text-xs font-medium text-black/50">
-                        {metaLine}
-                      </div>
+                    {/* overlay text (no side column anymore) */}
+                    <div className="absolute inset-x-0 bottom-0">
+                      <div className="bg-black/70 backdrop-blur-[2px] px-3 py-2">
+                        <div className="text-[11px] font-semibold text-white/80">{metaLine}</div>
 
-                      <div
-                        className="mt-1 text-sm font-semibold text-black/90 break-words leading-snug flex-1 min-h-0"
-                        style={{
-                          display: "-webkit-box",
-                          WebkitLineClamp: 4,
-                          WebkitBoxOrient: "vertical",
-                          overflow: "hidden",
-                        }}
-                      >
-                        {title}
+                        <div
+                          className="mt-0.5 text-sm font-semibold text-white leading-snug"
+                          style={{
+                            display: "-webkit-box",
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden",
+                          }}
+                        >
+                          {title}
+                        </div>
                       </div>
                     </div>
                   </div>

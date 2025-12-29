@@ -6,6 +6,8 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import Image from "next/image";
 
+import MangaQuickLogBox from "@/components/manga/MangaQuickLogBox";
+
 import { supabase } from "@/lib/supabaseClient";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
@@ -77,12 +79,22 @@ function normalizeBackdropUrl(url: string) {
 }
 
 function cleanSynopsis(raw: string) {
-  return raw
+  let s = raw
     .replace(/\r\n/g, "\n")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/\(Source:.*?\)/gi, "")
     .replace(/<\/?i>/gi, "")
-    .replace(/<[^>]+>/g, "")
+    .replace(/<[^>]+>/g, "");
+
+  // ✅ remove everything after “extra sections”
+  s = s
+    .replace(/\n---[\s\S]*$/m, "") // cut after divider
+    .replace(/\n\*\*Awards:\*\*[\s\S]*$/m, "")
+    .replace(/\n\*\*Additional Links:\*\*[\s\S]*$/m, "");
+
+  // remove standalone markdown dividers like ---
+  s = s.replace(/^\s*[-*_]{3,}\s*$/gm, "");
+  return s
     .replace(/\n{3,}/g, "\n\n")
     .replace(/\n[ \t]+\n/g, "\n\n")
     .trim();
@@ -362,6 +374,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
               width={1920}
               height={1080}
               priority
+              unoptimized
               sizes="100vw"
               className="h-full w-full object-cover object-[50%_25%]"
             />
@@ -461,9 +474,8 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                                 )}
 
                                 <span
-                                  className={`relative ${
-                                    isSpoiler ? "text-red-400" : "text-gray-100"
-                                  }`}
+                                  className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"
+                                    }`}
                                 >
                                   {tag.name}
                                 </span>
@@ -500,12 +512,10 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                         className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
                       >
                         {showSpoilers
-                          ? `Hide ${spoilerCount} spoiler tag${
-                              spoilerCount === 1 ? "" : "s"
-                            }`
-                          : `Show ${spoilerCount} spoiler tag${
-                              spoilerCount === 1 ? "" : "s"
-                            }`}
+                          ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
+                          }`
+                          : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
+                          }`}
                       </button>
                     )}
                   </>
@@ -538,6 +548,25 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                     mangaId={manga.id}
                     onOpenLog={() => setLogOpen(true)}
                     onShowActivity={() => router.push(`/manga/${manga.slug}/activity`)}
+                  />
+                </div>
+
+                <div className="absolute right-0 top-1 flex flex-col items-end gap-2">
+                  <MangaActionBox
+                    key={actionBoxNonce}
+                    mangaId={manga.id}
+                    onOpenLog={() => setLogOpen(true)}
+                    onShowActivity={() => router.push(`/manga/${manga.slug}/activity`)}
+                  />
+
+                  <MangaQuickLogBox
+                    mangaId={manga.id}
+                    onOpenLog={(chapterId) => {
+                      // if your GlobalLogModal supports chapter preselect, store it in state
+                      // otherwise just open it
+                      setLogOpen(true);
+                      // setSelectedChapterId(chapterId ?? null);
+                    }}
                   />
                 </div>
 
