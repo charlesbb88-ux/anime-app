@@ -1,5 +1,4 @@
 // pages/_app.tsx
-"use client";
 
 import "@/styles/globals.css";
 import type { AppProps } from "next/app";
@@ -10,9 +9,6 @@ import Header from "../components/Header";
 import AuthModalManager from "../components/AuthModalManager";
 import UsernameGate from "../components/UsernameGate";
 
-// ✅ Extend NextPage so pages can set flags like:
-// Page.hideHeader = true
-// Page.headerTransparent = true
 export type NextPageWithHeader = NextPage & {
   hideHeader?: boolean;
   headerTransparent?: boolean;
