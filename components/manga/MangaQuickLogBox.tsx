@@ -22,11 +22,10 @@ type VolumeMapRow = {
 
 type Props = {
   mangaId: string;
+  totalChapters?: number | null; // ✅ add
   onOpenLog: (chapterId?: string) => void;
-  widthClassName?: string; // default w-[240px]
+  widthClassName?: string;
 };
-
-type VolumeGroup = Extract<NavGroup, { kind: "volume" }>;
 
 type DragScrollOptions = {
   ignoreFromSelector?: string; // don't start drag if pointerdown was inside this selector
@@ -146,6 +145,7 @@ function useDragScroll(options?: DragScrollOptions) {
 
 export default function MangaQuickLogBox({
   mangaId,
+  totalChapters,
   onOpenLog,
   widthClassName,
 }: Props) {
@@ -262,31 +262,56 @@ export default function MangaQuickLogBox({
     };
   }, [mangaId]);
 
+  const total =
+    typeof totalChapters === "number" ? totalChapters : null;
+
+  const hasTotal =
+    typeof total === "number" && Number.isFinite(total) && total > 0;
+
+  const cappedTotal = hasTotal ? Math.min(total as number, 5000) : null;
+
   const navGroups = useMemo<NavGroup[]>(() => {
     if (!volumeMapLoaded) return [];
+
     return buildChapterNavGroups({
       volumeMap,
-      totalChapters: null,
+      totalChapters: cappedTotal,
       chunkSize: 25,
     });
-  }, [volumeMapLoaded, volumeMap]);
+  }, [volumeMapLoaded, volumeMap, cappedTotal]);
 
-  const volumeGroups = useMemo<VolumeGroup[]>(() => {
-    return navGroups.filter((g) => g.kind === "volume") as VolumeGroup[];
-  }, [navGroups]);
-
-  const hasVolumeUI = volumeMapLoaded && volumeGroups.length > 0;
+  const hasNavGroups = volumeMapLoaded && navGroups.length > 0;
 
   const sections = useMemo(() => {
-    if (hasVolumeUI) {
-      return volumeGroups.map((g) => ({
-        key: g.key,
-        labelTop: g.labelTop,
-        labelBottom: g.labelBottom,
-        chapterNums: g.chapters.slice().sort((a, b) => a - b),
-      }));
+    if (hasNavGroups) {
+      return navGroups.map((g) => {
+        const nums = g.chapters.slice().sort((a, b) => a - b);
+
+        // volume groups stay unchanged
+        if (g.kind === "volume") {
+          return {
+            key: g.key,
+            labelTop: g.labelTop,
+            labelBottom: g.labelBottom ?? null,
+            chapterNums: nums,
+          };
+        }
+
+        // ✅ range groups (Option A)
+        const start = nums[0];
+        const end = nums[nums.length - 1];
+        const count = nums.length;
+
+        return {
+          key: g.key,
+          labelTop: `Ch ${start}–${end}`,
+          labelBottom: null, // ✅ remove right-side text
+          chapterNums: nums,
+        };
+      });
     }
 
+    // fallback: no navGroups => just "All"
     const nums = chapters
       .map((c) => c.chapter_number)
       .filter((n) => Number.isFinite(n) && n > 0)
@@ -303,7 +328,7 @@ export default function MangaQuickLogBox({
         chapterNums: nums,
       },
     ];
-  }, [hasVolumeUI, volumeGroups, chapters]);
+  }, [hasNavGroups, navGroups, chapters]);
 
   const chapterByNumber = useMemo(() => {
     const map: Record<number, ChapterRow> = {};
@@ -516,9 +541,11 @@ export default function MangaQuickLogBox({
                         </div>
 
                         <div className="flex items-center gap-2">
-                          <span className="text-[11px] font-semibold text-gray-400">
-                            {s.labelBottom ?? "—"}
-                          </span>
+                          {s.labelBottom ? (
+                            <span className="text-[11px] font-semibold text-gray-400">
+                              {s.labelBottom}
+                            </span>
+                          ) : null}
 
                           <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-gray-700 text-gray-400">
                             <Check className="h-3.5 w-3.5 opacity-40" />

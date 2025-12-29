@@ -538,21 +538,21 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                 )}
               </div>
               <div className="mt-4">
-          <MangaMetaBox
-            titleEnglish={manga.title_english}
-            titlePreferred={manga.title_preferred}
-            titleNative={manga.title_native}
-            totalVolumes={manga.total_volumes}
-            totalChapters={manga.total_chapters}
-            format={m.format}
-            status={m.status}
-            startDate={m.start_date}
-            endDate={m.end_date}
-            season={m.season}
-            seasonYear={m.season_year}
-            averageScore={m.average_score}
-          />
-        </div>
+                <MangaMetaBox
+                  titleEnglish={manga.title_english}
+                  titlePreferred={manga.title_preferred}
+                  titleNative={manga.title_native}
+                  totalVolumes={manga.total_volumes}
+                  totalChapters={manga.total_chapters}
+                  format={m.format}
+                  status={m.status}
+                  startDate={m.start_date}
+                  endDate={m.end_date}
+                  season={m.season}
+                  seasonYear={m.season_year}
+                  averageScore={m.average_score}
+                />
+              </div>
             </div>
 
             {/* RIGHT COLUMN */}
@@ -592,11 +592,9 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
 
                   <MangaQuickLogBox
                     mangaId={manga.id}
+                    totalChapters={manga.total_chapters}
                     onOpenLog={(chapterId) => {
-                      // if your GlobalLogModal supports chapter preselect, store it in state
-                      // otherwise just open it
                       setLogOpen(true);
-                      // setSelectedChapterId(chapterId ?? null);
                     }}
                   />
                 </div>
