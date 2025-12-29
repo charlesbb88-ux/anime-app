@@ -194,7 +194,7 @@ export default function Header({ transparent = false }: { transparent?: boolean 
       <header
         style={{
           width: "100%",
-          padding: "0.75rem 1.5rem",
+          padding: "0.5rem 1.5rem",
           borderBottom: transparent ? "none" : "1px solid #ddd",
           background: transparent ? "transparent" : "#ffffff",
           display: "flex",
@@ -235,13 +235,13 @@ export default function Header({ transparent = false }: { transparent?: boolean 
               href="/"
               style={{
                 fontWeight: 700,
-                fontSize: "1.1rem",
+                fontSize: "1.7rem",
                 textDecoration: "none",
                 color: "#000",
                 cursor: "pointer",
               }}
             >
-              AnimeApp
+              INKBASED
             </Link>
 
             <nav

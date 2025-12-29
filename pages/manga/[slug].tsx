@@ -5,6 +5,7 @@ import type { NextPage, GetServerSideProps } from "next";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import Image from "next/image";
+import MangaMetaBox from "@/components/manga/MangaMetaBox";
 
 import MangaQuickLogBox from "@/components/manga/MangaQuickLogBox";
 
@@ -25,6 +26,9 @@ import GlobalLogModal from "@/components/reviews/GlobalLogModal";
 
 // ✅ Letterboxd-style action box (manga)
 import MangaActionBox from "@/components/actions/MangaActionBox";
+
+import EnglishTitle from "@/components/EnglishTitle";
+import { pickEnglishTitle } from "@/lib/pickEnglishTitle";
 
 type Manga = {
   id: string;
@@ -336,20 +340,32 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
 
   const m: any = manga;
 
-  const englishTitle =
-    typeof m.title_english === "string" && m.title_english.trim()
-      ? m.title_english.trim()
+  const picked = pickEnglishTitle(
+    {
+      title_english: manga.title_english,
+      title_preferred: manga.title_preferred,
+      title: manga.title,
+      title_native: manga.title_native,
+    },
+    {
+      // priority order for “English-looking” pick:
+      preferredKeys: ["title_english", "title_preferred", "title"],
+      // if none look english, fall back in this order:
+      fallbackKeys: ["title_preferred", "title", "title_native", "title_english"],
+      minScore: 0.55,
+    }
+  );
+
+  const displayPrimaryTitle = picked?.value ?? manga.title ?? "Untitled";
+
+  const secondaryTitle =
+    typeof manga.title_preferred === "string" &&
+      manga.title_preferred.trim() &&
+      manga.title_preferred.trim() !== displayPrimaryTitle
+      ? manga.title_preferred.trim()
       : null;
 
-  const displayPrimaryTitle = englishTitle ?? manga.title;
-
-  const normalTitle =
-    typeof manga.title === "string" && manga.title.trim()
-      ? manga.title.trim()
-      : null;
-
-  const showSecondaryTitle =
-    englishTitle !== null && normalTitle !== null && englishTitle !== normalTitle;
+  const showSecondaryTitle = Boolean(secondaryTitle);
 
   const hasGenres = Array.isArray(m.genres) && m.genres.length > 0;
   const genres: string[] = m.genres || [];
@@ -521,20 +537,44 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                   </>
                 )}
               </div>
+              <div className="mt-4">
+          <MangaMetaBox
+            titleEnglish={manga.title_english}
+            titlePreferred={manga.title_preferred}
+            titleNative={manga.title_native}
+            totalVolumes={manga.total_volumes}
+            totalChapters={manga.total_chapters}
+            format={m.format}
+            status={m.status}
+            startDate={m.start_date}
+            endDate={m.end_date}
+            season={m.season}
+            seasonYear={m.season_year}
+            averageScore={m.average_score}
+          />
+        </div>
             </div>
 
             {/* RIGHT COLUMN */}
             <div className="min-w-100 flex-1">
               {/* ROW 1 — TITLE (English primary) */}
               <div className="mb-2">
-                <h1 className="text-4xl font-bold leading-tight">
-                  {displayPrimaryTitle}
-                </h1>
+                <EnglishTitle
+                  as="h1"
+                  className="text-4xl font-bold leading-tight"
+                  titles={{
+                    title_english: manga.title_english,
+                    title_preferred: manga.title_preferred,
+                    title: manga.title,
+                    title_native: manga.title_native,
+                  }}
+                  fallback={manga.title ?? manga.title_native ?? "Untitled"}
+                />
 
                 {/* Secondary title: show the “normal title” under English */}
-                {showSecondaryTitle && (
+                {showSecondaryTitle && secondaryTitle && (
                   <h2 className="mt-1 text-xl font-semibold leading-snug text-gray-500">
-                    {normalTitle}
+                    {secondaryTitle}
                   </h2>
                 )}
               </div>
@@ -542,15 +582,6 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
               {/* ROW 2 — LEFT CONTENT + ActionBox pinned top-right */}
               <div className="relative w-full">
                 {/* RIGHT SIDE: ActionBox (pinned) */}
-                <div className="absolute right-0 top-1">
-                  <MangaActionBox
-                    key={actionBoxNonce}
-                    mangaId={manga.id}
-                    onOpenLog={() => setLogOpen(true)}
-                    onShowActivity={() => router.push(`/manga/${manga.slug}/activity`)}
-                  />
-                </div>
-
                 <div className="absolute right-0 top-1 flex flex-col items-end gap-2">
                   <MangaActionBox
                     key={actionBoxNonce}
@@ -627,65 +658,6 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
             </div>
           </div>
         </div>
-
-        {/* Meta info stays below the top section (like anime page) */}
-        {(m.title_native || englishTitle || normalTitle) && (
-          <div className="mb-2 text-sm text-gray-400">
-            {/* If English is the header, don’t repeat it here. Just show native. */}
-            {m.title_native && (
-              <div>
-                <span className="font-semibold text-gray-300">Native:</span>{" "}
-                {m.title_native}
-              </div>
-            )}
-          </div>
-        )}
-
-        <p className="mb-1 text-sm text-gray-400">
-          Volumes:{" "}
-          <span className="font-semibold text-gray-100">
-            {manga.total_volumes ?? "Unknown"}
-          </span>
-        </p>
-
-        <p className="mb-1 text-sm text-gray-400">
-          Chapters:{" "}
-          <span className="font-semibold text-gray-100">
-            {manga.total_chapters ?? "Unknown"}
-          </span>
-        </p>
-
-        <p className="mb-1 text-sm text-gray-400">
-          Format: <span className="font-semibold text-gray-100">{m.format ?? "—"}</span>
-        </p>
-
-        <p className="mb-1 text-sm text-gray-400">
-          Status: <span className="font-semibold text-gray-100">{m.status ?? "—"}</span>
-        </p>
-
-        {(m.start_date || m.end_date) && (
-          <p className="mb-1 text-sm text-gray-400">
-            Published:{" "}
-            <span className="font-semibold text-gray-100">
-              {m.start_date ?? "?"} – {m.end_date ?? "?"}
-            </span>
-          </p>
-        )}
-
-        {typeof m.average_score === "number" && (
-          <p className="mb-1 text-sm text-gray-400">
-            Score:{" "}
-            <span className="font-semibold text-gray-100">
-              {m.average_score}/100
-            </span>
-          </p>
-        )}
-
-        {m.source && (
-          <p className="mb-2 text-sm text-gray-400">
-            Source: <span className="font-semibold text-gray-100">{m.source}</span>
-          </p>
-        )}
 
         <div className="mt-3 flex items-center gap-4">
           <Link href={`/manga/${slug}/art`} className="text-sm text-blue-500 hover:underline">
