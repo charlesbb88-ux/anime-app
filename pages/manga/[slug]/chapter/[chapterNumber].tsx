@@ -64,8 +64,11 @@ const MangaChapterPage: NextPage = () => {
     ? chapterNumber[0]
     : chapterNumber ?? "";
 
-  const chapterNum = Number(chapterNumberString);
-  const isValidChapterNumber = Number.isInteger(chapterNum) && chapterNum > 0;
+  const trimmed = String(chapterNumberString).trim();
+  const isNumericLike = /^(\d+)(\.\d+)?$/.test(trimmed);
+
+  const chapterNum = isNumericLike ? Number(trimmed) : NaN;
+  const isValidChapterNumber = Number.isFinite(chapterNum) && chapterNum > 0;
 
   // Load manga by slug
   useEffect(() => {

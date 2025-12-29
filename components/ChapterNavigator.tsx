@@ -476,17 +476,47 @@ export default function ChapterNavigator({
   // displayed chapters (All vs selected group)
   // ---------------------------------------
   const displayChapters: number[] = useMemo(() => {
+    // if a specific volume/range is selected, show its chapters
     if (selectedVolume) {
       const g = navGroups.find((n) => n.key === selectedVolume);
       if (g) return g.chapters;
     }
 
-    // All mode
+    // All mode:
+    // Prefer actual chapter identifiers from volumeMap so decimals (e.g. 14.5) appear.
+    if (volumeMap && typeof volumeMap === "object") {
+      const all: number[] = [];
+
+      for (const k of Object.keys(volumeMap)) {
+        const arr = volumeMap[k] || [];
+        for (const raw of arr) {
+          const s = String(raw ?? "").trim();
+          if (!s) continue;
+          if (!/^(\d+)(\.\d+)?$/.test(s)) continue;
+
+          const n = Number(s);
+          if (Number.isFinite(n) && n > 0) all.push(n);
+        }
+      }
+
+      // dedupe + sort
+      const uniq = Array.from(new Set(all));
+      uniq.sort((a, b) => a - b);
+
+      // If total is known, optionally cap to it (but keep decimals <= total)
+      if (hasTotal && cappedTotal) {
+        return uniq.filter((n) => n <= cappedTotal + 0.999999);
+      }
+
+      return uniq;
+    }
+
+    // fallback: no map available, use integer 1..total
     if (!hasTotal || !cappedTotal) return [];
     const nums: number[] = [];
     for (let i = 1; i <= cappedTotal; i++) nums.push(i);
     return nums;
-  }, [selectedVolume, navGroups, hasTotal, cappedTotal]);
+  }, [selectedVolume, navGroups, volumeMap, hasTotal, cappedTotal]);
 
   const chapterCount = displayChapters.length;
 
