@@ -6,6 +6,9 @@ import { supabase } from "@/lib/supabaseClient";
 import { buildChapterNavGroups } from "@/lib/chapterNavigation";
 import type { NavGroup } from "@/lib/chapterNavigation";
 
+// ✅ NEW
+import MangaQuickLogRow from "@/components/manga/MangaQuickLogRow";
+
 type ChapterRow = {
   id: string;
   manga_id: string;
@@ -45,7 +48,7 @@ function useDragScroll(options?: DragScrollOptions) {
     moved: boolean;
     pointerId: number | null;
     captured: boolean;
-  }>({
+  }>(/* ... unchanged ... */ {
     isDown: false,
     startY: 0,
     startScrollTop: 0,
@@ -104,7 +107,7 @@ function useDragScroll(options?: DragScrollOptions) {
         try {
           (e.currentTarget as any).setPointerCapture?.(e.pointerId);
           drag.current.captured = true;
-        } catch {}
+        } catch { }
       }
 
       e.preventDefault();
@@ -160,21 +163,18 @@ export default function MangaQuickLogBox({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
-  // null = nothing expanded
   const [expandedVolumeKey, setExpandedVolumeKey] = useState<string | null>(
     null
   );
 
   const fetchedForMangaId = useRef<string | null>(null);
 
-  // OUTER list drag: works on collapsed volume cards, but NOT inside expanded chapter list.
   const panelDrag = useDragScroll({
     allowInteractiveTargets: true,
     ignoreFromSelector: "[data-inner-drag='true']",
     thresholdPx: 3,
   });
 
-  // INNER chapters drag: ONE hook, but we will only attach it to the OPEN volume’s chapter list.
   const innerDrag = useDragScroll({
     allowInteractiveTargets: false,
     thresholdPx: 3,
@@ -182,7 +182,6 @@ export default function MangaQuickLogBox({
 
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // Fetch chapters once per mangaId
   useEffect(() => {
     if (!mangaId) return;
     if (fetchedForMangaId.current === mangaId) return;
@@ -222,7 +221,6 @@ export default function MangaQuickLogBox({
     };
   }, [mangaId]);
 
-  // Fetch volume map once per mangaId
   useEffect(() => {
     if (!mangaId) return;
 
@@ -401,6 +399,15 @@ export default function MangaQuickLogBox({
         }
       `}</style>
 
+      {/* ✅ Always-visible quick row (NOT part of dropdown) */}
+      <MangaQuickLogRow
+        mangaId={mangaId}
+        chapters={chapters}
+        canInteract={canInteract}
+        onOpenLog={onOpenLog}
+        onMessage={setMsg}
+      />
+
       {/* Header */}
       <button
         type="button"
@@ -417,12 +424,12 @@ export default function MangaQuickLogBox({
           })
         }
         className={[
-          "w-full px-4 py-2 text-left text-[12px] font-medium",
+          "w-full px-3 py-2 text-left text-[12px] font-semibold text-gray-100",
           "hover:bg-white/5 active:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/10",
           "flex items-center justify-between",
         ].join(" ")}
       >
-        <span>Quick Log</span>
+        <span>Chapters</span>
         <ChevronDown
           className={[
             "h-4 w-4 transition-transform duration-200",
@@ -532,9 +539,6 @@ export default function MangaQuickLogBox({
                       >
                         <div className="min-h-0 overflow-hidden">
                           <div className="px-0 pb-0">
-                            {/* ✅ IMPORTANT FIX:
-                               Only the OPEN volume gets the innerDrag ref/bind.
-                               This prevents the “only last one drags” bug. */}
                             <div
                               data-inner-drag="true"
                               ref={isOpen ? innerDrag.ref : undefined}
@@ -562,7 +566,7 @@ export default function MangaQuickLogBox({
                                     const title =
                                       typeof ch.title === "string" && ch.title.trim()
                                         ? ch.title.trim()
-                                        : "—";
+                                        : null;
                                     const rowBusy = busyId === ch.id;
 
                                     return (
@@ -574,9 +578,11 @@ export default function MangaQuickLogBox({
                                           <div className="text-[12px] font-semibold text-gray-100">
                                             Ch {ch.chapter_number}
                                           </div>
-                                          <div className="mt-0.5 truncate text-[11px] text-gray-500">
-                                            {title}
-                                          </div>
+                                          {title ? (
+                                            <div className="mt-0.5 truncate text-[11px] text-gray-500">
+                                              {title}
+                                            </div>
+                                          ) : null}
                                         </div>
 
                                         <div className="flex items-center gap-2 shrink-0">
