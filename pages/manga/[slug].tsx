@@ -129,6 +129,8 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
   // ✅ open/close the log modal
   const [logOpen, setLogOpen] = useState(false);
 
+  const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
+
   // ✅ my manga series log count
   const [myMangaSeriesLogCount, setMyMangaSeriesLogCount] = useState<number | null>(
     null
@@ -594,6 +596,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                     mangaId={manga.id}
                     totalChapters={manga.total_chapters}
                     onOpenLog={(chapterId) => {
+                      setSelectedChapterId(chapterId ?? null);
                       setLogOpen(true);
                     }}
                   />
@@ -671,10 +674,14 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
       {/* ✅ Global log modal (manga series) + refresh confirmation on success */}
       <GlobalLogModal
         open={logOpen}
-        onClose={() => setLogOpen(false)}
+        onClose={() => {
+          setLogOpen(false);
+          setSelectedChapterId(null);
+        }}
         title={displayPrimaryTitle}
         posterUrl={manga.image_url}
         mangaId={manga.id}
+        mangaChapterId={selectedChapterId}
         onSuccess={async () => {
           const {
             data: { user },
