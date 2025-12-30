@@ -421,6 +421,25 @@ export default function MangaQuickLogBox({
     return out;
   }, [expandedSection, chapterByNumber]);
 
+  function getSectionProgress(sectionKey: string) {
+    const s = sections.find((x) => x.key === sectionKey);
+    if (!s) return { logged: 0, total: 0, pct: 0 };
+
+    let total = 0;
+    let logged = 0;
+
+    for (const n of s.chapterNums) {
+      const row = chapterByNumber[n];
+      if (!row?.id) continue;
+
+      total += 1;
+      if ((logCounts[row.id] ?? 0) > 0) logged += 1;
+    }
+
+    const pct = total > 0 ? Math.round((logged / total) * 1000) / 10 : 0; // 0.0 .. 100.0
+    return { logged, total, pct };
+  }
+
   const canInteract = !loading && !errMsg && chapters.length > 0;
 
   async function quickLogChapter(ch: ChapterRow) {
@@ -608,185 +627,208 @@ export default function MangaQuickLogBox({
                 {sections.map((s) => {
                   const isOpen = expandedVolumeKey === s.key;
 
+                  const prog = getSectionProgress(s.key);
+                  const hasProg = prog.total > 0;
+
                   return (
                     <div
                       key={s.key}
                       ref={(el) => {
                         sectionRefs.current[s.key] = el;
                       }}
-                      className="overflow-hidden rounded-md border border-gray-800 bg-black"
+                      className="rounded-md p-[2px]"
+                      style={{
+                        backgroundImage: hasProg
+                          ? `conic-gradient(#0ea5e9 0 ${prog.pct}%, rgba(55,65,81,0.7) ${prog.pct}% 100%)`
+                          : undefined,
+                        backgroundColor: hasProg ? undefined : "rgba(55,65,81,0.7)",
+                      }}
                     >
-                      {/* Volume header */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (panelDrag.drag.current.moved) return;
-
-                          setMsg(null);
-                          setExpandedVolumeKey((cur) => {
-                            const next = cur === s.key ? null : s.key;
-                            if (next) {
-                              requestAnimationFrame(() => {
-                                scrollSectionIntoPanelView(s.key);
-                              });
-                            }
-                            return next;
-                          });
-                        }}
-                        className={[
-                          "w-full px-3 py-2 text-left",
-                          "flex items-center justify-between",
-                          "hover:bg-white/5 active:bg-white/10",
-                          "focus:outline-none focus:ring-2 focus:ring-white/10",
-                        ].join(" ")}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-[12px] font-semibold text-gray-100">
-                            {s.labelTop}
-                          </span>
-                          <ChevronDown
-                            className={[
-                              "h-4 w-4 text-gray-400 transition-transform duration-200",
-                              isOpen ? "rotate-180" : "",
-                            ].join(" ")}
-                          />
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          {s.labelBottom ? (
-                            <span className="text-[11px] font-semibold text-gray-400">
-                              {s.labelBottom}
-                            </span>
-                          ) : null}
-
-                          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-gray-700 text-gray-400">
-                            <Check className="h-3.5 w-3.5 opacity-40" />
-                          </span>
-                        </div>
-                      </button>
-
-                      {/* Expanded area */}
                       <div
                         className={[
-                          "grid overflow-hidden",
-                          "transition-[grid-template-rows,opacity] duration-200 ease-out",
+                          "overflow-hidden rounded-md border border-gray-800 bg-black",
+                          "transition-all duration-200",
+                          "hover:border-sky-500/70 hover:shadow-[0_0_0_1px_rgba(14,165,233,0.35)]",
+                          "hover:bg-[#0b1220]",
                         ].join(" ")}
-                        style={{
-                          gridTemplateRows: isOpen ? "1fr" : "0fr",
-                          opacity: isOpen ? 1 : 0,
-                        }}
                       >
-                        <div className="min-h-0 overflow-hidden">
-                          <div className="px-0 pb-0">
-                            <div
-                              data-inner-drag="true"
-                              ref={isOpen ? innerDrag.ref : undefined}
-                              {...(isOpen ? innerDrag.bind : {})}
-                              onClickCapture={(e) => {
-                                if (!isOpen) return;
-                                if (innerDrag.drag.current.moved) {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                }
-                              }}
+
+
+                        {/* Volume header */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (panelDrag.drag.current.moved) return;
+
+                            setMsg(null);
+                            setExpandedVolumeKey((cur) => {
+                              const next = cur === s.key ? null : s.key;
+                              if (next) {
+                                requestAnimationFrame(() => {
+                                  scrollSectionIntoPanelView(s.key);
+                                });
+                              }
+                              return next;
+                            });
+                          }}
+                          className={[
+                            "w-full px-3 py-2 text-left",
+                            "flex items-center justify-between",
+                            "transition-colors duration-150",
+                            "hover:bg-sky-500/10",
+                            "active:bg-sky-500/20",
+                            "focus:outline-none focus:ring-2 focus:ring-sky-500/30",
+                          ].join(" ")}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-[12px] font-semibold text-gray-100">
+                              {s.labelTop}
+                            </span>
+                            <ChevronDown
                               className={[
-                                "mqb-scroll max-h-[320px] overflow-y-auto",
-                                "rounded-md border border-gray-800 bg-black",
-                                "cursor-grab active:cursor-grabbing select-none",
+                                "h-4 w-4 text-gray-400 transition-transform duration-200",
+                                isOpen ? "rotate-180" : "",
                               ].join(" ")}
-                            >
-                              {!isOpen ? null : expandedChapters.length === 0 ? (
-                                <div className="px-3 py-3 text-xs text-gray-500">
-                                  No chapters found for this volume.
-                                </div>
-                              ) : (
-                                <div className="divide-y divide-gray-800">
-                                  {expandedChapters.map((ch) => {
-                                    const title =
-                                      typeof ch.title === "string" && ch.title.trim()
-                                        ? ch.title.trim()
-                                        : null;
-                                    const rowBusy = busyId === ch.id;
+                            />
+                          </div>
 
-                                    const count = logCounts[ch.id] ?? 0;
-                                    const isLogged = count > 0;
-                                    const showCountBadge = count > 1;
+                          <div className="flex items-center gap-2">
+                            {s.labelBottom ? (
+                              <span className="text-[11px] font-semibold text-gray-400">
+                                {s.labelBottom}
+                              </span>
+                            ) : null}
+                          </div>
+                        </button>
 
-                                    return (
-                                      <div
-                                        key={ch.id}
-                                        className="flex items-center justify-between gap-2 px-3 py-2"
-                                      >
-                                        <div className="min-w-0">
-                                          <div className="text-[12px] font-semibold text-gray-100">
-                                            Ch {ch.chapter_number}
-                                          </div>
-                                          {title ? (
-                                            <div className="mt-0.5 truncate text-[11px] text-gray-500">
-                                              {title}
+                        {/* Expanded area */}
+                        <div
+                          className={[
+                            "grid overflow-hidden",
+                            "transition-[grid-template-rows,opacity] duration-200 ease-out",
+                          ].join(" ")}
+                          style={{
+                            gridTemplateRows: isOpen ? "1fr" : "0fr",
+                            opacity: isOpen ? 1 : 0,
+                          }}
+                        >
+                          <div className="min-h-0 overflow-hidden">
+                            <div className="px-0 pb-0">
+                              <div
+                                data-inner-drag="true"
+                                ref={isOpen ? innerDrag.ref : undefined}
+                                {...(isOpen ? innerDrag.bind : {})}
+                                onClickCapture={(e) => {
+                                  if (!isOpen) return;
+                                  if (innerDrag.drag.current.moved) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                  }
+                                }}
+                                className={[
+                                  "mqb-scroll max-h-[320px] overflow-y-auto",
+                                  "rounded-md border border-gray-800 bg-black",
+                                  "cursor-grab active:cursor-grabbing select-none",
+                                ].join(" ")}
+                              >
+                                {!isOpen ? null : expandedChapters.length === 0 ? (
+                                  <div className="px-3 py-3 text-xs text-gray-500">
+                                    No chapters found for this volume.
+                                  </div>
+                                ) : (
+                                  <div className="divide-y divide-gray-800">
+                                    {expandedChapters.map((ch) => {
+                                      const title =
+                                        typeof ch.title === "string" && ch.title.trim()
+                                          ? ch.title.trim()
+                                          : null;
+                                      const rowBusy = busyId === ch.id;
+
+                                      const count = logCounts[ch.id] ?? 0;
+                                      const isLogged = count > 0;
+                                      const showCountBadge = count > 1;
+
+                                      return (
+                                        <div
+                                          key={ch.id}
+                                          className="flex items-center justify-between gap-2 px-3 py-2"
+                                        >
+                                          <div className="min-w-0">
+                                            <div className="text-[12px] font-semibold text-gray-100">
+                                              Ch {ch.chapter_number}
                                             </div>
-                                          ) : null}
-                                        </div>
-
-                                        <div className="flex items-center gap-2 shrink-0">
-                                          <button
-                                            type="button"
-                                            disabled={!canInteract || rowBusy}
-                                            onClick={() => {
-                                              if (innerDrag.drag.current.moved) return;
-                                              onOpenLog(ch.id);
-                                            }}
-                                            className={[
-                                              "rounded-md border px-3 py-1.5 text-[11px] font-semibold",
-                                              "border-gray-700 text-gray-200",
-                                              "hover:bg-white/5 active:bg-white/10",
-                                              "focus:outline-none focus:ring-2 focus:ring-white/10",
-                                              !canInteract || rowBusy
-                                                ? "opacity-60 cursor-not-allowed"
-                                                : "",
-                                            ].join(" ")}
-                                          >
-                                            Review
-                                          </button>
-
-                                          <button
-                                            type="button"
-                                            disabled={!canInteract || rowBusy}
-                                            onClick={() => {
-                                              if (innerDrag.drag.current.moved) return;
-                                              quickLogChapter(ch);
-                                            }}
-                                            className={[
-                                              "relative inline-flex h-8 w-8 items-center justify-center rounded-full border",
-                                              isLogged ? "border-sky-500 text-sky-400" : "border-gray-700 text-gray-200",
-                                              isLogged ? "bg-sky-500/10" : "",
-                                              "hover:bg-white/5 active:bg-white/10",
-                                              "focus:outline-none focus:ring-2 focus:ring-white/10",
-                                              !canInteract || rowBusy ? "opacity-60 cursor-not-allowed" : "",
-                                            ].join(" ")}
-                                            aria-label={`Quick log chapter ${ch.chapter_number}`}
-                                            title={
-                                              isLogged
-                                                ? count > 1
-                                                  ? `Logged ${count} times`
-                                                  : "Logged"
-                                                : "Quick log"
-                                            }
-                                          >
-                                            <Check className="h-4 w-4" />
-
-                                            {showCountBadge ? (
-                                              <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-bold leading-none text-black">
-                                                {count}
-                                              </span>
+                                            {title ? (
+                                              <div className="mt-0.5 truncate text-[11px] text-gray-500">
+                                                {title}
+                                              </div>
                                             ) : null}
-                                          </button>
+                                          </div>
+
+                                          <div className="flex items-center gap-2 shrink-0">
+                                            <button
+                                              type="button"
+                                              disabled={!canInteract || rowBusy}
+                                              onClick={() => {
+                                                if (innerDrag.drag.current.moved) return;
+                                                onOpenLog(ch.id);
+                                              }}
+                                              className={[
+                                                "rounded-md border px-3 py-1.5 text-[11px] font-semibold",
+                                                "border-gray-700 text-gray-200",
+                                                "transition-all duration-150",
+                                                "hover:border-sky-500/70 hover:bg-sky-500/10",
+                                                "active:bg-sky-500/20",
+                                                "focus:outline-none focus:ring-2 focus:ring-sky-500/30",
+                                                !canInteract || rowBusy
+                                                  ? "opacity-60 cursor-not-allowed"
+                                                  : "",
+                                              ].join(" ")}
+                                            >
+                                              Review
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              disabled={!canInteract || rowBusy}
+                                              onClick={() => {
+                                                if (innerDrag.drag.current.moved) return;
+                                                quickLogChapter(ch);
+                                              }}
+                                              className={[
+                                                "relative inline-flex h-8 w-8 items-center justify-center rounded-full border",
+                                                "transition-all duration-150",
+                                                isLogged
+                                                  ? "border-sky-500 text-sky-400 bg-sky-500/10"
+                                                  : "border-gray-700 text-gray-200",
+                                                "hover:border-sky-400 hover:bg-sky-500/20",
+                                                "active:scale-95",
+                                                "focus:outline-none focus:ring-2 focus:ring-sky-500/40",
+                                                !canInteract || rowBusy ? "opacity-60 cursor-not-allowed" : "",
+                                              ].join(" ")}
+                                              aria-label={`Quick log chapter ${ch.chapter_number}`}
+                                              title={
+                                                isLogged
+                                                  ? count > 1
+                                                    ? `Logged ${count} times`
+                                                    : "Logged"
+                                                  : "Quick log"
+                                              }
+                                            >
+                                              <Check className="h-4 w-4" />
+
+                                              {showCountBadge ? (
+                                                <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-bold leading-none text-black">
+                                                  {count}
+                                                </span>
+                                              ) : null}
+                                            </button>
+                                          </div>
                                         </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -798,9 +840,11 @@ export default function MangaQuickLogBox({
 
               {msg ? <div className="mt-3 text-xs text-gray-300">{msg}</div> : null}
 
-              {!volumeMapLoaded ? (
-                <div className="mt-2 text-[11px] text-gray-600">Loading volumes…</div>
-              ) : null}
+              {
+                !volumeMapLoaded ? (
+                  <div className="mt-2 text-[11px] text-gray-600">Loading volumes…</div>
+                ) : null
+              }
             </>
           )}
         </div>
