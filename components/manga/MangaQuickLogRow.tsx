@@ -17,19 +17,20 @@ type Props = {
     chapters: ChapterRow[];
     canInteract: boolean;
 
-    // reuse your existing behaviors
-    onOpenLog: (chapterId?: string) => void;
+    // ✅ NEW: forces the row to refetch "last logged" when logs change
+    refreshToken?: number;
 
-    // optional: lets parent show a toast/message
+    onOpenLog: (chapterId?: string) => void;
     onMessage?: (msg: string | null) => void;
 };
 
 export default function MangaQuickLogRow({
-    mangaId,
-    chapters,
-    canInteract,
-    onOpenLog,
-    onMessage,
+  mangaId,
+  chapters,
+  canInteract,
+  refreshToken,
+  onOpenLog,
+  onMessage,
 }: Props) {
     const [busy, setBusy] = useState(false);
     const [lastLoggedChapterId, setLastLoggedChapterId] = useState<string | null>(
@@ -120,7 +121,7 @@ export default function MangaQuickLogRow({
         return () => {
             cancelled = true;
         };
-    }, [mangaId, chapters]);
+    }, [mangaId, chapters, refreshToken]);
 
     async function quickLog(ch: ChapterRow) {
         if (!ch?.id) return;
