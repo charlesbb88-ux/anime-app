@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Check } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { createMangaChapterLog } from "@/lib/logs";
 
 type ChapterRow = {
     id: string;
@@ -138,19 +139,58 @@ export default function MangaQuickLogRow({
                 return;
             }
 
-            const { error } = await supabase.from("manga_chapter_logs").insert({
-                user_id: user.id,
-                manga_id: mangaId,
-                manga_chapter_id: ch.id,
-            });
+            // ✅ 1) Set watched mark (chapter-scoped)
+            {
+                const del = await supabase
+                    .from("user_marks")
+                    .delete()
+                    .eq("user_id", user.id)
+                    .eq("kind", "watched")
+                    .eq("manga_id", mangaId)
+                    .eq("manga_chapter_id", ch.id)
+                    .is("anime_id", null)
+                    .is("anime_episode_id", null);
 
-            if (error) {
-                console.error("[MangaQuickLogRow] quick log error:", error);
-                onMessage?.("Couldn’t log (see console).");
-                return;
+                if (del.error) {
+                    console.error("[MangaQuickLogRow] watched mark delete failed:", del.error);
+                    onMessage?.("Couldn’t log (watched mark failed).");
+                    return;
+                }
+
+                const ins = await supabase.from("user_marks").insert({
+                    user_id: user.id,
+                    kind: "watched",
+                    manga_id: mangaId,
+                    manga_chapter_id: ch.id,
+                });
+
+                if (ins.error) {
+                    console.error("[MangaQuickLogRow] watched mark insert failed:", ins.error);
+                    onMessage?.("Couldn’t log (watched mark failed).");
+                    return;
+                }
             }
 
-            // update “last logged” so nextChapter advances instantly
+            // ✅ 2) Create the log (same as modal save w/ checkbox ON; no review/like/rating)
+            {
+                const { error } = await createMangaChapterLog({
+                    manga_id: mangaId,
+                    manga_chapter_id: ch.id,
+                    rating: null,
+                    liked: false,
+                    review_id: null,
+                    note: null,
+                    contains_spoilers: false,
+                });
+
+                if (error) {
+                    console.error("[MangaQuickLogRow] createMangaChapterLog failed:", error);
+                    onMessage?.("Couldn’t log (see console).");
+                    return;
+                }
+            }
+
+            // ✅ update “last logged” so nextChapter advances instantly
             setLastLoggedChapterId(ch.id);
             onMessage?.(`Logged Ch ${ch.chapter_number} ✅`);
         } finally {

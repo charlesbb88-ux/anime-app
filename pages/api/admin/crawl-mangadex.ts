@@ -38,7 +38,6 @@ function slimSnapshot(m: MangaDexManga) {
       originalLanguage: m.attributes?.originalLanguage || null,
       publicationDemographic: m.attributes?.publicationDemographic || null,
       tags,
-      // keep these for cursor/debug if present
       updatedAt: (m as any)?.attributes?.updatedAt ?? null,
       createdAt: (m as any)?.attributes?.createdAt ?? null,
     },
@@ -57,40 +56,46 @@ async function ingestOneFromList(m: MangaDexManga) {
   );
 
   const base =
-    titles.title_preferred || titles.title_english || titles.title || `mangadex-${m.id}`;
+    titles.title_preferred ||
+    titles.title_english ||
+    titles.title ||
+    `mangadex-${m.id}`;
   const slug = slugify(base);
 
-  // We can set a temporary cover URL (cheap). Art-jobs will later cache all covers + pick earliest vol.
+  // Temporary cover URL (cheap). Art-jobs will later cache all covers.
   const coverCandidates = getMangaDexCoverCandidates(m);
   const coverUrl = coverCandidates[0] || null;
 
-  const { data: mangaId, error } = await supabaseAdmin.rpc("upsert_manga_from_mangadex", {
-    p_slug: slug,
-    p_title: titles.title,
-    p_title_english: titles.title_english,
-    p_title_native: titles.title_native,
-    p_title_preferred: titles.title_preferred,
-    p_description: description,
-    p_status: status,
-    p_format: null,
-    p_source: "mangadex",
-    p_genres: mergedGenres,
-    p_total_chapters: null,
-    p_total_volumes: null,
-    p_cover_image_url: coverUrl,
-    p_external_id: m.id,
-    p_publication_year: publicationYear,
-    p_snapshot: {
-      ...slimSnapshot(m),
-      normalized: {
-        ...titles,
-        status,
-        genres,
-        themes,
-        coverUrl,
+  const { data: mangaId, error } = await supabaseAdmin.rpc(
+    "upsert_manga_from_mangadex",
+    {
+      p_slug: slug,
+      p_title: titles.title,
+      p_title_english: titles.title_english,
+      p_title_native: titles.title_native,
+      p_title_preferred: titles.title_preferred,
+      p_description: description,
+      p_status: status,
+      p_format: null,
+      p_source: "mangadex",
+      p_genres: mergedGenres,
+      p_total_chapters: null,
+      p_total_volumes: null,
+      p_cover_image_url: coverUrl,
+      p_external_id: m.id,
+      p_publication_year: publicationYear,
+      p_snapshot: {
+        ...slimSnapshot(m),
+        normalized: {
+          ...titles,
+          status,
+          genres,
+          themes,
+          coverUrl,
+        },
       },
-    },
-  });
+    }
+  );
 
   if (error) throw error;
 
@@ -107,26 +112,15 @@ async function ingestOneFromList(m: MangaDexManga) {
   return { manga_id: mangaId, slug, title: titles.title };
 }
 
-function bumpCursorBy1SecondMangaDexFormat(input: string) {
+function bumpIsoBy1ms(input: string) {
   const t = Date.parse(input);
   if (!Number.isFinite(t)) return input;
-
-  const d = new Date(t + 1000);
-
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const yyyy = d.getUTCFullYear();
-  const mm = pad(d.getUTCMonth() + 1);
-  const dd = pad(d.getUTCDate());
-  const hh = pad(d.getUTCHours());
-  const mi = pad(d.getUTCMinutes());
-  const ss = pad(d.getUTCSeconds());
-
-  return `${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}`;
+  return new Date(t + 1).toISOString();
 }
 
 type CrawlStateRow = {
   id: string;
-  cursor_offset: number | null;
+  cursor_offset: number | null; // offset-mode OR updatedAt-bucket offset
   page_limit: number | null;
   total: number | null;
 
@@ -137,11 +131,71 @@ type CrawlStateRow = {
   processed_count?: number | null;
 };
 
+function clampInt(n: number, min: number, max: number) {
+  const x = Number.isFinite(n) ? Math.trunc(n) : min;
+  return Math.max(min, Math.min(max, x));
+}
+
+function msToEta(ms: number) {
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  if (m < 60) return `${m}m ${r}s`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return `${h}h ${rm}m`;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     requireAdmin(req);
 
+    // ==========================
+    // ✅ PROGRESS OUTPUT OPTIONS
+    // ==========================
+    // 1) JSON progress: always included in final response (counts, batch index, items/sec, etc.)
+    // 2) Optional "heartbeat" writes: if client supports streaming, we can flush progress lines.
+    //
+    // In practice: PowerShell Invoke-RestMethod does NOT reliably show streaming chunks.
+    // So the most useful "not frozen" solution is:
+    // - keep each request bounded (maxMs)
+    // - return rich progress stats each call
+    //
+    // If you want real-time progress in the terminal, use curl (it will show streamed chunks).
+    // (still safe to keep this endpoint returning normal JSON at the end)
+
+    // ---- tuning knobs ----
     const overrideLimit = req.query.limit ? Number(req.query.limit) : null;
+    const maxBatches = req.query.maxBatches ? Number(req.query.maxBatches) : 1;
+    const maxMs = req.query.maxMs ? Number(req.query.maxMs) : 45000;
+
+    // Optional: heartbeat=1 enables streamed progress (best with curl)
+    const heartbeat = req.query.heartbeat === "1" || req.query.heartbeat === "true";
+
+    const batches = clampInt(maxBatches, 1, 200);
+    const timeBudgetMs = clampInt(maxMs, 1000, 120000);
+
+    // streaming setup (safe no-op if it doesn't stream in your client)
+    const canStream = heartbeat && typeof (res as any).write === "function";
+    if (canStream) {
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Cache-Control", "no-cache, no-transform");
+      res.setHeader("Connection", "keep-alive");
+      // NOTE: we will write NDJSON-ish progress lines, then finish with a final JSON object.
+      // Many clients accept this; if you prefer strict JSON only, keep heartbeat off.
+    }
+
+    const startedAt = Date.now();
+    const startedIso = new Date(startedAt).toISOString();
+
+    const writeBeat = (obj: any) => {
+      if (!canStream) return;
+      try {
+        (res as any).write(JSON.stringify({ heartbeat: true, at: new Date().toISOString(), ...obj }) + "\n");
+      } catch {}
+    };
 
     // 1) load crawl state
     const { data: state, error: stErr } = await supabaseAdmin
@@ -155,145 +209,233 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (stErr) throw stErr;
     if (!state) throw new Error(`Missing mangadex_crawl_state row id="main"`);
 
-    const limit = Math.max(1, Math.min(100, Number(overrideLimit ?? state.page_limit ?? 100)));
+    const limit = clampInt(Number(overrideLimit ?? state.page_limit ?? 100), 1, 100);
 
-    const mode: "offset" | "updatedat" =
+    // NOTE:
+    // - offset mode: cursor_offset is global offset (subject to 10k window cap)
+    // - updatedAt mode: cursor_offset is bucket offset within current updatedAtSince
+    let mode: "offset" | "updatedat" =
       state.mode === "updatedat" ? "updatedat" : "offset";
 
-    const offset = Math.max(0, Number(state.cursor_offset ?? 0));
-    const processedCount = Number(state.processed_count ?? 0);
+    let cursorOffset = Math.max(0, Number(state.cursor_offset ?? 0));
+    let cursorUpdatedAt = state.cursor_updated_at ?? "1970-01-01T00:00:00.000Z";
+    let cursorLastId = state.cursor_last_id ?? null;
 
-    // ---- MODE A: offset pagination (only valid while offset+limit <= 10000) ----
-    // MangaDex hard cap is offset+limit <= 10000.
+    const startingProcessed = Number(state.processed_count ?? 0);
+
     const WINDOW_CAP = 10000;
-
-    if (mode === "offset" && offset + limit > WINDOW_CAP) {
-      // We are about to exceed window cap. Switch modes WITHOUT restarting imports.
-      //
-      // Resume point should be: the "last updatedAt" we've ingested so far.
-      // Since we don't have it stored yet, we start cursor mode from "now minus a long time"
-      // ONLY if cursor_updated_at is missing. But for your case, we can switch at the boundary
-      // by setting cursor_updated_at to a very old date so it will backfill from earliest updates.
-      //
-      // To avoid a full restart, we *prefer* to set cursor_updated_at based on the last item we just ingested
-      // on the previous successful call. So: use existing cursor_updated_at if present, else set to 1970.
-      const fallback = state.cursor_updated_at ?? "1970-01-01T00:00:00.000Z";
-
-      const { error: upErr } = await supabaseAdmin
-        .from("mangadex_crawl_state")
-        .update({
-          mode: "updatedat",
-          cursor_offset: 0,
-          cursor_updated_at: fallback,
-          cursor_last_id: state.cursor_last_id ?? null,
-          page_limit: limit,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", "main");
-
-      if (upErr) throw upErr;
-
-      return res.status(200).json({
-        ok: true,
-        switchedMode: true,
-        message:
-          "Hit MangaDex 10k window cap. Switched crawl state to updatedAt cursor mode. Call again to continue.",
-        previousMode: "offset",
-        newMode: "updatedat",
-        limit,
-        offset,
-        windowCap: WINDOW_CAP,
-        processedCount,
-      });
-    }
-
-    // 2) fetch one page from MangaDex (Safe + Suggestive only)
     const contentRatings: Array<"safe" | "suggestive"> = ["safe", "suggestive"];
 
-    const page =
-      mode === "offset"
-        ? await listMangaDexMangaPage({
-            limit,
-            offset,
-            contentRatings,
-          })
-        : await listMangaDexMangaPage({
-            limit,
-            offset: 0, // IMPORTANT: we will not use deep offsets in cursor mode
-            contentRatings,
-            updatedAtSince: state.cursor_updated_at ?? "1970-01-01T00:00:00.000Z",
-            orderUpdatedAt: "asc",
-          });
+    // totals across batches
+    let totalIngested = 0;
+    let totalErrors = 0;
 
-    // 3) ingest + enqueue jobs
-    const ingested: any[] = [];
-    const errors: any[] = [];
+    // keep a small sample for response
+    const ingestedSample: any[] = [];
+    const errorsSample: any[] = [];
 
-    for (const m of page.data || []) {
-      try {
-        const out = await ingestOneFromList(m);
-        ingested.push(out);
-      } catch (e: any) {
-        errors.push({ id: (m as any)?.id, error: String(e?.message || e) });
+    // last seen API total (only meaningful in offset mode)
+    let lastTotal: number | null = state.total ?? null;
+
+    // progress metrics
+    let pagesFetched = 0;
+    let lastBeatAt = Date.now();
+    writeBeat({
+      phase: "start",
+      mode,
+      limit,
+      batchesRequested: batches,
+      timeBudgetMs,
+      cursorOffset,
+      cursorUpdatedAt: mode === "updatedat" ? cursorUpdatedAt : null,
+      processedCountStart: startingProcessed,
+    });
+
+    // 2) run multiple pages per request
+    for (let i = 0; i < batches; i++) {
+      const elapsed = Date.now() - startedAt;
+      if (elapsed > timeBudgetMs) {
+        writeBeat({ phase: "stop", reason: "timeBudgetExceeded", elapsedMs: elapsed, batchIndex: i });
+        break;
+      }
+
+      // ---- OFFSET MODE CAP HANDLING ----
+      if (mode === "offset" && cursorOffset + limit > WINDOW_CAP) {
+        cursorUpdatedAt = cursorUpdatedAt || "1970-01-01T00:00:00.000Z";
+        mode = "updatedat";
+        cursorOffset = 0;
+
+        writeBeat({
+          phase: "switchMode",
+          newMode: "updatedat",
+          reason: "windowCap",
+          cursorUpdatedAt,
+          cursorOffset,
+        });
+      }
+
+      writeBeat({
+        phase: "fetch",
+        batchIndex: i + 1,
+        batchesRequested: batches,
+        mode,
+        offset: mode === "offset" ? cursorOffset : null,
+        bucketOffset: mode === "updatedat" ? cursorOffset : null,
+        updatedAtSince: mode === "updatedat" ? cursorUpdatedAt : null,
+      });
+
+      // 3) fetch one page
+      const page =
+        mode === "offset"
+          ? await listMangaDexMangaPage({
+              limit,
+              offset: cursorOffset,
+              contentRatings,
+            })
+          : await listMangaDexMangaPage({
+              limit,
+              offset: cursorOffset, // ✅ bucket offset
+              contentRatings,
+              updatedAtSince: cursorUpdatedAt,
+              orderUpdatedAt: "asc",
+            });
+
+      pagesFetched++;
+
+      lastTotal = Number.isFinite(Number(page.total)) ? Number(page.total) : lastTotal;
+
+      const data = page.data || [];
+
+      // 4) ingest
+      for (const m of data) {
+        try {
+          const out = await ingestOneFromList(m);
+          totalIngested++;
+
+          ingestedSample.push(out);
+          if (ingestedSample.length > 50) ingestedSample.shift();
+        } catch (e: any) {
+          totalErrors++;
+
+          const errRow = { id: (m as any)?.id, error: String(e?.message || e) };
+          errorsSample.push(errRow);
+          if (errorsSample.length > 50) errorsSample.shift();
+        }
+      }
+
+      // periodic beat (at most ~1/sec) so streaming clients see movement
+      const now = Date.now();
+      if (now - lastBeatAt >= 900) {
+        const elapsedMs = now - startedAt;
+        const items = totalIngested + totalErrors;
+        const ips = elapsedMs > 0 ? items / (elapsedMs / 1000) : null;
+
+        // offset-mode percent only makes sense if total is known
+        const offsetProgressPct =
+          mode === "offset" && lastTotal && lastTotal > 0
+            ? Math.min(1, (cursorOffset + limit) / lastTotal)
+            : null;
+
+        writeBeat({
+          phase: "progress",
+          pagesFetched,
+          ingested: totalIngested,
+          errors: totalErrors,
+          itemsPerSec: ips ? Number(ips.toFixed(2)) : null,
+          elapsedMs,
+          offsetProgressPct:
+            offsetProgressPct != null ? Math.round(offsetProgressPct * 1000) / 10 : null,
+        });
+
+        lastBeatAt = now;
+      }
+
+      // 5) advance cursor (NO SKIPS)
+      if (mode === "offset") {
+        const rawNextOffset = cursorOffset + limit;
+        const finished =
+          Number(page.total || 0) > 0 && rawNextOffset >= Number(page.total || 0);
+
+        const last = data[data.length - 1];
+        const lastUpdatedAt = (last as any)?.attributes?.updatedAt ?? null;
+        if (lastUpdatedAt) {
+          cursorUpdatedAt = lastUpdatedAt; // stash resume point
+          cursorLastId = (last as any)?.id ?? cursorLastId;
+        }
+
+        if (finished) {
+          cursorOffset = 0;
+          writeBeat({ phase: "doneOffsetMode", reason: "finishedTotal", rawNextOffset, total: page.total });
+          break;
+        } else {
+          cursorOffset = rawNextOffset;
+        }
+      } else {
+        const last = data[data.length - 1];
+        const lastUpdatedAt: string | null = (last as any)?.attributes?.updatedAt ?? null;
+        const lastId: string | null = (last as any)?.id ?? null;
+
+        cursorLastId = lastId ?? cursorLastId;
+
+        if (!lastUpdatedAt) {
+          cursorOffset = 0;
+          writeBeat({ phase: "doneUpdatedAtMode", reason: "noDataReturned" });
+          break;
+        }
+
+        const curT = Date.parse(cursorUpdatedAt);
+        const lastT = Date.parse(lastUpdatedAt);
+        const sameBucket = Number.isFinite(curT) && Number.isFinite(lastT) && curT === lastT;
+
+        if (sameBucket) {
+          if (data.length < limit) {
+            cursorUpdatedAt = bumpIsoBy1ms(lastUpdatedAt);
+            cursorOffset = 0;
+          } else {
+            cursorOffset = cursorOffset + limit;
+          }
+        } else {
+          cursorUpdatedAt = bumpIsoBy1ms(lastUpdatedAt);
+          cursorOffset = 0;
+        }
+
+        if (data.length < limit) {
+          writeBeat({ phase: "doneUpdatedAtMode", reason: "shortPage", returned: data.length, limit });
+          break;
+        }
       }
     }
 
-    // 4) compute next cursor
-    let finished = false;
+    const finishedAt = Date.now();
+    const elapsedMs = finishedAt - startedAt;
 
-    // Next state fields
-    let nextMode: "offset" | "updatedat" = mode;
-    let nextOffset: number | null = null;
-    let nextCursorUpdatedAt: string | null = state.cursor_updated_at ?? null;
-    let nextCursorLastId: string | null = state.cursor_last_id ?? null;
+    const newProcessedCount = startingProcessed + totalIngested;
+    const items = totalIngested + totalErrors;
+    const itemsPerSec = elapsedMs > 0 ? items / (elapsedMs / 1000) : null;
 
-    if (mode === "offset") {
-      const rawNextOffset = offset + limit;
-      finished = page.total > 0 && rawNextOffset >= page.total;
+    // rough ETA for OFFSET MODE only (because total is finite there)
+    let offsetPct: number | null = null;
+    let offsetEta: string | null = null;
 
-      nextOffset = finished ? null : rawNextOffset;
-
-      // Optional: stash a resume point for the moment we later switch modes.
-      // Use the last item's updatedAt if it exists.
-      const last = (page.data || [])[Math.max(0, (page.data || []).length - 1)];
-      const lastUpdatedAt = (last as any)?.attributes?.updatedAt ?? null;
-      if (lastUpdatedAt) {
-        nextCursorUpdatedAt = lastUpdatedAt;
-        nextCursorLastId = (last as any)?.id ?? null;
+    if (mode === "offset" && lastTotal && lastTotal > 0) {
+      offsetPct = Math.min(1, cursorOffset / lastTotal);
+      if (itemsPerSec && itemsPerSec > 0) {
+        const remaining = Math.max(0, lastTotal - cursorOffset);
+        const etaMs = (remaining / itemsPerSec) * 1000;
+        offsetEta = msToEta(etaMs);
       }
-    } else {
-      // Cursor mode: keep paging forward by updatedAt.
-      // We never deep-page past 10k because we keep offset at 0 and advance the time cursor.
-      const last = (page.data || [])[Math.max(0, (page.data || []).length - 1)];
-      const lastUpdatedAt = (last as any)?.attributes?.updatedAt ?? null;
-      const lastId = (last as any)?.id ?? null;
-
-      if (lastUpdatedAt) {
-        // bump by 1ms so the next call doesn't re-include the last record forever
-        nextCursorUpdatedAt = bumpCursorBy1SecondMangaDexFormat(lastUpdatedAt);
-        nextCursorLastId = lastId;
-      }
-
-      // In cursor mode, "finished" is only true when API returns fewer than limit.
-      // Realistically, MangaDex is always changing, so this may never be permanently finished.
-      finished = (page.data || []).length < limit;
-
-      nextOffset = null; // not used in cursor mode
-      nextMode = "updatedat";
     }
 
-    const newProcessedCount = processedCount + ingested.length;
-
-    // 5) update state
+    // 6) update state once
     const { error: upErr } = await supabaseAdmin
       .from("mangadex_crawl_state")
       .update({
-        mode: nextMode,
-        cursor_offset: nextMode === "offset" ? (finished ? 0 : nextOffset ?? 0) : 0,
+        mode,
+        cursor_offset: cursorOffset,
         page_limit: limit,
-        total: page.total ?? null,
-        cursor_updated_at: nextCursorUpdatedAt,
-        cursor_last_id: nextCursorLastId,
+        total: lastTotal,
+        cursor_updated_at: cursorUpdatedAt, // keep stashed value even in offset mode
+        cursor_last_id: cursorLastId,
         processed_count: newProcessedCount,
         updated_at: new Date().toISOString(),
       })
@@ -301,31 +443,49 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (upErr) throw upErr;
 
-    return res.status(200).json({
+    // final response (always)
+    const finalPayload = {
       ok: true,
+      startedAt: startedIso,
+      finishedAt: new Date(finishedAt).toISOString(),
+      elapsedMs,
+
+      // “not frozen” proof
+      pagesFetched,
+      ingestedCount: totalIngested,
+      errorCount: totalErrors,
+      itemsPerSec: itemsPerSec ? Number(itemsPerSec.toFixed(2)) : null,
+
+      // state
       contentRatings,
-      mode: nextMode,
+      mode,
+      limit,
+      cursorOffset,
+      cursorUpdatedAt: mode === "updatedat" ? cursorUpdatedAt : null,
+      cursorLastId: mode === "updatedat" ? cursorLastId : null,
 
       // progress
       processedCount: newProcessedCount,
+      total: lastTotal,
 
-      // offset mode fields
-      limit,
-      offset: mode === "offset" ? offset : null,
-      total: page.total ?? null,
-      nextOffset: mode === "offset" && !finished ? nextOffset : null,
+      // only meaningful in offset mode
+      offsetProgressPct: offsetPct != null ? Math.round(offsetPct * 1000) / 10 : null,
+      offsetEta,
 
-      // cursor mode fields
-      cursorUpdatedAt: nextMode === "updatedat" ? nextCursorUpdatedAt : null,
-      cursorLastId: nextMode === "updatedat" ? nextCursorLastId : null,
+      // samples
+      ingestedSample,
+      errorsSample,
+    };
 
-      finished,
+    if (canStream) {
+      // close out the stream with one final non-heartbeat payload line
+      try {
+        (res as any).write(JSON.stringify({ heartbeat: false, ...finalPayload }) + "\n");
+      } catch {}
+      return res.status(200).end();
+    }
 
-      ingestedCount: ingested.length,
-      errorCount: errors.length,
-      ingested,
-      errors,
-    });
+    return res.status(200).json(finalPayload);
   } catch (e: any) {
     return res.status(500).json({ error: e?.message || "Unknown error" });
   }

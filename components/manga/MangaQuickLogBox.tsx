@@ -5,6 +5,7 @@ import { ChevronDown, Check } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { buildChapterNavGroups } from "@/lib/chapterNavigation";
 import type { NavGroup } from "@/lib/chapterNavigation";
+import { createMangaChapterLog } from "@/lib/logs";
 
 // ✅ NEW
 import MangaQuickLogRow from "@/components/manga/MangaQuickLogRow";
@@ -162,12 +163,15 @@ export default function MangaQuickLogBox({
 
   const [busyId, setBusyId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [logCounts, setLogCounts] = useState<Record<string, number>>({});
+  const [logCountsLoaded, setLogCountsLoaded] = useState(false);
 
   const [expandedVolumeKey, setExpandedVolumeKey] = useState<string | null>(
     null
   );
 
   const fetchedForMangaId = useRef<string | null>(null);
+  const fetchedLogCountsKey = useRef<string | null>(null);
 
   const panelDrag = useDragScroll({
     allowInteractiveTargets: true,
@@ -261,6 +265,69 @@ export default function MangaQuickLogBox({
       cancelled = true;
     };
   }, [mangaId]);
+
+  // ✅ Load per-chapter log counts for this user+manga (for blue check + badge)
+  useEffect(() => {
+    if (!mangaId) return;
+    if (!Array.isArray(chapters) || chapters.length === 0) return;
+
+    const key = `${mangaId}:${chapters.length}`;
+    if (fetchedLogCountsKey.current === key) return;
+
+    let cancelled = false;
+
+    async function run() {
+      setLogCounts({});
+      setLogCountsLoaded(false);
+
+      const { data: auth, error: authErr } = await supabase.auth.getUser();
+      const user = auth?.user;
+
+      if (cancelled) return;
+
+      if (authErr || !user) {
+        // not logged in => no blue checks
+        fetchedLogCountsKey.current = key;
+        setLogCounts({});
+        setLogCountsLoaded(true);
+        return;
+      }
+
+      // Pull only the chapter ids, then count in JS
+      const { data, error } = await supabase
+        .from("manga_chapter_logs")
+        .select("manga_chapter_id")
+        .eq("manga_id", mangaId)
+        .eq("user_id", user.id);
+
+      if (cancelled) return;
+
+      if (error) {
+        console.warn("[MangaQuickLogBox] load log counts failed:", error);
+        fetchedLogCountsKey.current = key;
+        setLogCounts({});
+        setLogCountsLoaded(true);
+        return;
+      }
+
+      const counts: Record<string, number> = {};
+      for (const row of (data ?? []) as any[]) {
+        const cid = row?.manga_chapter_id;
+        if (!cid) continue;
+        counts[cid] = (counts[cid] ?? 0) + 1;
+      }
+
+      fetchedLogCountsKey.current = key;
+      setLogCounts(counts);
+      setLogCountsLoaded(true);
+    }
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mangaId, chapters]);
 
   const total =
     typeof totalChapters === "number" ? totalChapters : null;
@@ -373,19 +440,64 @@ export default function MangaQuickLogBox({
         return;
       }
 
-      const { error } = await supabase.from("manga_chapter_logs").insert({
-        user_id: user.id,
-        manga_id: mangaId,
-        manga_chapter_id: ch.id,
-      });
+      // ✅ 1) Set watched mark (chapter-scoped) — same intent as GlobalLogModal
+      // Delete any existing watched mark in this exact scope, then insert watched=true
+      {
+        const del = await supabase
+          .from("user_marks")
+          .delete()
+          .eq("user_id", user.id)
+          .eq("kind", "watched")
+          .eq("manga_id", mangaId)
+          .eq("manga_chapter_id", ch.id)
+          .is("anime_id", null)
+          .is("anime_episode_id", null);
 
-      if (error) {
-        console.error("MangaQuickLogBox: quick log error", error);
-        setMsg("Couldn’t log (see console).");
-        return;
+        if (del.error) {
+          console.error("[MangaQuickLogBox] watched mark delete failed:", del.error);
+          setMsg("Couldn’t log (watched mark failed).");
+          return;
+        }
+
+        const ins = await supabase.from("user_marks").insert({
+          user_id: user.id,
+          kind: "watched",
+          manga_id: mangaId,
+          manga_chapter_id: ch.id,
+        });
+
+        if (ins.error) {
+          console.error("[MangaQuickLogBox] watched mark insert failed:", ins.error);
+          setMsg("Couldn’t log (watched mark failed).");
+          return;
+        }
+      }
+
+      // ✅ 2) Create the log like “Save” with checkbox ON, but empty review/like/rating
+      {
+        const { error } = await createMangaChapterLog({
+          manga_id: mangaId,
+          manga_chapter_id: ch.id,
+          // visibility: undefined (same as not passing anything)
+          rating: null,
+          liked: false,
+          review_id: null,
+          note: null,
+          contains_spoilers: false,
+        });
+
+        if (error) {
+          console.error("[MangaQuickLogBox] createMangaChapterLog failed:", error);
+          setMsg("Couldn’t log (see console).");
+          return;
+        }
       }
 
       setMsg(`Logged Ch ${ch.chapter_number} ✅`);
+      setLogCounts((prev) => ({
+        ...prev,
+        [ch.id]: (prev[ch.id] ?? 0) + 1,
+      }));
     } finally {
       setBusyId(null);
     }
@@ -596,6 +708,10 @@ export default function MangaQuickLogBox({
                                         : null;
                                     const rowBusy = busyId === ch.id;
 
+                                    const count = logCounts[ch.id] ?? 0;
+                                    const isLogged = count > 0;
+                                    const showCountBadge = count > 1;
+
                                     return (
                                       <div
                                         key={ch.id}
@@ -641,17 +757,29 @@ export default function MangaQuickLogBox({
                                               quickLogChapter(ch);
                                             }}
                                             className={[
-                                              "inline-flex h-8 w-8 items-center justify-center rounded-full border",
-                                              "border-gray-700 text-gray-200",
+                                              "relative inline-flex h-8 w-8 items-center justify-center rounded-full border",
+                                              isLogged ? "border-sky-500 text-sky-400" : "border-gray-700 text-gray-200",
+                                              isLogged ? "bg-sky-500/10" : "",
                                               "hover:bg-white/5 active:bg-white/10",
                                               "focus:outline-none focus:ring-2 focus:ring-white/10",
-                                              !canInteract || rowBusy
-                                                ? "opacity-60 cursor-not-allowed"
-                                                : "",
+                                              !canInteract || rowBusy ? "opacity-60 cursor-not-allowed" : "",
                                             ].join(" ")}
                                             aria-label={`Quick log chapter ${ch.chapter_number}`}
+                                            title={
+                                              isLogged
+                                                ? count > 1
+                                                  ? `Logged ${count} times`
+                                                  : "Logged"
+                                                : "Quick log"
+                                            }
                                           >
                                             <Check className="h-4 w-4" />
+
+                                            {showCountBadge ? (
+                                              <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-bold leading-none text-black">
+                                                {count}
+                                              </span>
+                                            ) : null}
                                           </button>
                                         </div>
                                       </div>

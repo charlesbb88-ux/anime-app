@@ -278,13 +278,12 @@ export function getCreators(m: MangaDexManga): { authors: any[]; artists: any[] 
 
 export async function listMangaDexMangaPage(opts: {
   limit: number;
-  offset?: number; // optional now
+  offset?: number;
   contentRatings?: Array<"safe" | "suggestive" | "erotica" | "pornographic">;
 
-  // ✅ cursor mode
-  // NOTE: can be ISO (with ms/Z) OR already in MangaDex format; we normalize either way.
+  // cursor mode
   updatedAtSince?: string;
-  orderUpdatedAt?: "asc" | "desc"; // default asc when updatedAtSince provided
+  orderUpdatedAt?: "asc" | "desc";
 }): Promise<MangaDexListPage> {
   const {
     limit,
@@ -298,10 +297,13 @@ export async function listMangaDexMangaPage(opts: {
   url.searchParams.set("limit", String(limit));
   url.searchParams.set("offset", String(offset));
 
+  // ✅ IMPORTANT: without this, relationships won't include cover_art fileName
+  url.searchParams.append("includes[]", "cover_art");
+
   // ✅ filter rating (no porn)
   for (const r of contentRatings) url.searchParams.append("contentRating[]", r);
 
-  // ✅ cursor mode: order by updatedAt + use updatedAtSince
+  // ✅ cursor mode: order by updatedAt + use updatedAtSince (MangaDex format)
   if (updatedAtSince) {
     url.searchParams.set("updatedAtSince", toMangaDexDateTime(updatedAtSince));
     url.searchParams.set("order[updatedAt]", orderUpdatedAt || "asc");
