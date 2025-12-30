@@ -194,7 +194,7 @@ export default function Header({ transparent = false }: { transparent?: boolean 
       <header
         style={{
           width: "100%",
-          padding: "0.5rem 1.5rem",
+          padding: "0.7rem 1.5rem",
           borderBottom: transparent ? "none" : "1px solid #ddd",
           background: transparent ? "transparent" : "#ffffff",
           display: "flex",
@@ -234,14 +234,25 @@ export default function Header({ transparent = false }: { transparent?: boolean 
             <Link
               href="/"
               style={{
-                fontWeight: 700,
-                fontSize: "1.7rem",
                 textDecoration: "none",
-                color: "#000",
                 cursor: "pointer",
               }}
             >
-              INKBASED
+              <span
+                style={{
+                  display: "inline-block",
+                  padding: "0.1rem 0.3rem",
+                  fontWeight: 700,
+                  fontSize: "1.7rem",
+                  color: "#000",
+                  background: "#fff",
+                  border: "2px solid #000",
+                  borderRadius: 0, // adjust: 4 = sharp, 999 = pill
+                  lineHeight: 1,
+                }}
+              >
+                INKBASED
+              </span>
             </Link>
 
             <nav

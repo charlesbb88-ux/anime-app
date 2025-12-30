@@ -9,27 +9,15 @@ import { useEffect, useMemo, useState } from "react";
 import type { Manga, MangaChapter } from "@/lib/types";
 import { getMangaBySlug, getMangaChapter } from "@/lib/manga";
 
+import MangaMetaBox from "@/components/manga/MangaMetaBox";
 import MangaQuickLogBox from "@/components/manga/MangaQuickLogBox";
-
-// ✅ chapter review helper
-import { createMangaChapterReview } from "@/lib/reviews";
-
-// ✅ chapter log helpers
-import { createMangaChapterLog, getMyMangaChapterLogCount } from "@/lib/logs";
-
-// ✅ navigator
 import ChapterNavigator from "@/components/ChapterNavigator";
-
-// ✅ Global Log modal
 import GlobalLogModal from "@/components/reviews/GlobalLogModal";
-
-// ✅ action box (same entry point as other pages)
 import MangaActionBox from "@/components/actions/MangaActionBox";
-
-// ✅ Discussion feed (same as your current chapter page)
-import LeftSidebar from "../../../../components/LeftSidebar";
-import RightSidebar from "../../../../components/RightSidebar";
 import PostFeed from "../../../../components/PostFeed";
+
+import EnglishTitle from "@/components/EnglishTitle";
+import { pickEnglishTitle } from "@/lib/pickEnglishTitle";
 
 import { supabase } from "@/lib/supabaseClient";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
@@ -97,15 +85,6 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
   const [tagsLoading, setTagsLoading] = useState(false);
   const [showSpoilers, setShowSpoilers] = useState(false);
 
-  // ✅ test review state
-  const [savingReview, setSavingReview] = useState(false);
-  const [reviewSaveMsg, setReviewSaveMsg] = useState<string | null>(null);
-
-  // ✅ logging state (direct test + count)
-  const [savingLog, setSavingLog] = useState(false);
-  const [logSaveMsg, setLogSaveMsg] = useState<string | null>(null);
-  const [myLogCount, setMyLogCount] = useState<number | null>(null);
-
   // ✅ open/close the log modal
   const [logOpen, setLogOpen] = useState(false);
 
@@ -172,8 +151,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
     const mangaId = manga?.id;
     if (!mangaId) return;
 
-    // If SSR already gave us a backdrop, you can keep it.
-    // If you want it to randomize again client-side, remove this guard.
+    // keep SSR backdrop if provided
     if (backdropUrl) return;
 
     let cancelled = false;
@@ -196,14 +174,14 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
       const urls =
         Array.isArray(data)
           ? (data as any[])
-              .map((r) => (typeof r?.cached_url === "string" ? r.cached_url.trim() : ""))
-              .filter(Boolean)
+            .map((r) => (typeof r?.cached_url === "string" ? r.cached_url.trim() : ""))
+            .filter(Boolean)
           : [];
 
       if (urls.length === 0) {
         const fallback =
           typeof (manga as any)?.banner_image_url === "string" &&
-          (manga as any).banner_image_url.trim()
+            (manga as any).banner_image_url.trim()
             ? (manga as any).banner_image_url.trim()
             : null;
 
@@ -300,90 +278,6 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
     };
   }, [manga, chapterNum, isValidChapterNumber]);
 
-  // ✅ fetch my log count when chapter loads
-  useEffect(() => {
-    if (!chapter?.id) {
-      setMyLogCount(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    const run = async () => {
-      const { count, error } = await getMyMangaChapterLogCount(chapter.id);
-      if (cancelled) return;
-
-      if (error) {
-        console.error("Error fetching chapter log count:", error);
-        setMyLogCount(null);
-        return;
-      }
-
-      setMyLogCount(count);
-    };
-
-    run();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [chapter?.id]);
-
-  async function handleTestSaveReview() {
-    if (!manga?.id || !chapter?.id) return;
-
-    setSavingReview(true);
-    setReviewSaveMsg(null);
-
-    try {
-      const result = await createMangaChapterReview({
-        manga_id: manga.id,
-        manga_chapter_id: chapter.id,
-        rating: 87,
-        content: `Test review for ${manga.title} - Chapter ${chapterNum} @ ${new Date().toLocaleString()}`,
-        contains_spoilers: false,
-      });
-
-      if (result.error) {
-        console.error("Error saving review:", result.error);
-        setReviewSaveMsg(String((result.error as any)?.message || "Failed to save review."));
-        return;
-      }
-
-      setReviewSaveMsg(`Saved ✅ (review id: ${result.data?.id})`);
-      setFeedNonce((n) => n + 1);
-    } finally {
-      setSavingReview(false);
-    }
-  }
-
-  async function handleTestLogChapter() {
-    if (!manga?.id || !chapter?.id) return;
-
-    setSavingLog(true);
-    setLogSaveMsg(null);
-
-    try {
-      const result = await createMangaChapterLog({
-        manga_id: manga.id,
-        manga_chapter_id: chapter.id,
-      });
-
-      if (result.error) {
-        console.error("Error logging chapter:", result.error);
-        setLogSaveMsg(String((result.error as any)?.message || "Failed to log chapter."));
-        return;
-      }
-
-      setLogSaveMsg(`Logged ✅ (log id: ${result.data?.id})`);
-
-      const { count, error } = await getMyMangaChapterLogCount(chapter.id);
-      if (!error) setMyLogCount(count);
-    } finally {
-      setSavingLog(false);
-    }
-  }
-
   if (!router.isReady) {
     return (
       <div className="mx-auto max-w-5xl px-4 py-8">
@@ -435,16 +329,31 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
 
   const m: any = manga;
 
-  const englishTitle =
-    typeof m?.title_english === "string" && m.title_english.trim() ? m.title_english.trim() : null;
+  // ✅ match manga page title logic
+  const picked = pickEnglishTitle(
+    {
+      title_english: (manga as any).title_english ?? null,
+      title_preferred: (manga as any).title_preferred ?? null,
+      title: manga.title ?? null,
+      title_native: (manga as any).title_native ?? null,
+    },
+    {
+      preferredKeys: ["title_english", "title_preferred", "title"],
+      fallbackKeys: ["title_preferred", "title", "title_native", "title_english"],
+      minScore: 0.55,
+    }
+  );
 
-  const displayPrimaryTitle = englishTitle ?? manga?.title ?? slugString;
+  const displayPrimaryTitle = picked?.value ?? manga.title ?? "Untitled";
 
-  const normalTitle =
-    typeof manga?.title === "string" && manga.title.trim() ? manga.title.trim() : null;
+  const secondaryTitle =
+    typeof (manga as any).title_preferred === "string" &&
+      (manga as any).title_preferred.trim() &&
+      (manga as any).title_preferred.trim() !== displayPrimaryTitle
+      ? (manga as any).title_preferred.trim()
+      : null;
 
-  const showSecondaryTitle =
-    englishTitle !== null && normalTitle !== null && englishTitle !== normalTitle;
+  const showSecondaryTitle = Boolean(secondaryTitle);
 
   const hasGenres = Array.isArray((m as any)?.genres) && (m as any).genres.length > 0;
   const genres: string[] = (m as any)?.genres || [];
@@ -455,7 +364,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
   return (
     <>
       <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
-        {/* Backdrop */}
+        {/* Backdrop (same as manga page) */}
         {backdropUrl && (
           <div className="relative h-[620px] w-full overflow-hidden">
             <Image
@@ -477,10 +386,12 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
           </div>
         )}
 
+        {/* Top section (same as manga page) */}
         <div className="-mt-5 relative z-10 px-3">
           <div className="mb-8 flex flex-row gap-7">
             {/* LEFT COLUMN */}
             <div className="flex-shrink-0 w-56">
+              {/* Poster */}
               {manga?.image_url ? (
                 <img
                   src={(manga as any).image_url}
@@ -493,13 +404,16 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                 </div>
               )}
 
-              {/* Genres */}
+              {/* Genres (same placement as manga page) */}
               {hasGenres && (
                 <div className="mt-4">
                   <h2 className="mb-1 text-sm font-semibold text-black-300">Genres</h2>
                   <div className="flex flex-wrap gap-2">
                     {genres.map((g) => (
-                      <span key={g} className="rounded-full bg-gray-800 px-3 py-1 text-xs text-gray-100">
+                      <span
+                        key={g}
+                        className="rounded-full bg-gray-800 px-3 py-1 text-xs text-gray-100"
+                      >
                         {g}
                       </span>
                     ))}
@@ -507,113 +421,148 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                 </div>
               )}
 
-              {/* Tags */}
-              <div className="mt-5">
-                <div className="mb-1 flex items-center gap-2">
-                  <h2 className="text-base font-semibold text-black-300">Tags</h2>
-                  {tagsLoading && (
-                    <span className="text-[10px] uppercase tracking-wide text-gray-500">
-                      Loading…
-                    </span>
-                  )}
-                </div>
+              {/* Tags (✅ ONLY render if tags exist) */}
+              {tags.length > 0 && (
+                <div className="mt-5">
+                  <div className="mb-1 flex items-center gap-2">
+                    <h2 className="text-base font-semibold text-black-300">Tags</h2>
+                    {tagsLoading && (
+                      <span className="text-[10px] uppercase tracking-wide text-gray-500">
+                        Loading…
+                      </span>
+                    )}
+                  </div>
 
-                {!tagsLoading && tags.length === 0 ? (
-                  <p className="text-sm text-gray-500">No tags imported yet for this manga.</p>
-                ) : (
-                  <>
-                    <div className="flex flex-col gap-1">
-                      <div className="flex w-full flex-col gap-1">
-                        {tags.map((tag) => {
-                          const isSpoiler =
-                            tag.is_general_spoiler === true || tag.is_media_spoiler === true;
+                  <div className="flex flex-col gap-1">
+                    <div className="flex w-full flex-col gap-1">
+                      {tags.map((tag) => {
+                        const isSpoiler =
+                          tag.is_general_spoiler === true || tag.is_media_spoiler === true;
 
-                          if (isSpoiler && !showSpoilers) return null;
+                        if (isSpoiler && !showSpoilers) return null;
 
-                          let percent: number | null = null;
-                          if (typeof tag.rank === "number") {
-                            percent = Math.max(0, Math.min(100, Math.round(tag.rank)));
-                          }
+                        let percent: number | null = null;
+                        if (typeof tag.rank === "number") {
+                          percent = Math.max(0, Math.min(100, Math.round(tag.rank)));
+                        }
 
-                          return (
-                            <div key={tag.id} className="group relative inline-flex">
+                        return (
+                          <div key={tag.id} className="group relative inline-flex">
+                            <span
+                              className="
+                                relative inline-flex w-full items-center justify-between
+                                rounded-full border border-gray-700 bg-gray-900/80
+                                px-3 py-[3px] text-[13px] font-medium
+                                whitespace-nowrap overflow-hidden
+                              "
+                            >
+                              {percent !== null && (
+                                <span
+                                  className="pointer-events-none absolute inset-y-0 left-0 bg-blue-500/20"
+                                  style={{ width: `${percent}%` }}
+                                />
+                              )}
+
                               <span
-                                className="
-                                  relative inline-flex w-full items-center justify-between
-                                  rounded-full border border-gray-700 bg-gray-900/80
-                                  px-3 py-[3px] text-[13px] font-medium
-                                  whitespace-nowrap overflow-hidden
-                                "
+                                className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"
+                                  }`}
                               >
-                                {percent !== null && (
-                                  <span
-                                    className="pointer-events-none absolute inset-y-0 left-0 bg-blue-500/20"
-                                    style={{ width: `${percent}%` }}
-                                  />
-                                )}
-
-                                <span className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"}`}>
-                                  {tag.name}
-                                </span>
-
-                                {percent !== null && (
-                                  <span className="relative text-[11px] font-semibold text-gray-200">
-                                    {percent}%
-                                  </span>
-                                )}
+                                {tag.name}
                               </span>
 
-                              {tag.description && (
-                                <div
-                                  className="
-                                    pointer-events-none absolute left-0 top-full z-20 mt-1 w-64
-                                    rounded-md bg-black px-3 py-2 text-xs text-gray-100 shadow-lg
-                                    opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0
-                                    transition duration-200 delay-150
-                                  "
-                                >
-                                  {tag.description}
-                                </div>
+                              {percent !== null && (
+                                <span className="relative text-[11px] font-semibold text-gray-200">
+                                  {percent}%
+                                </span>
                               )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                            </span>
 
-                    {spoilerCount > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setShowSpoilers((prev) => !prev)}
-                        className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
-                      >
-                        {showSpoilers
-                          ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`
-                          : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`}
-                      </button>
-                    )}
-                  </>
-                )}
+                            {tag.description && (
+                              <div
+                                className="
+                                  pointer-events-none absolute left-0 top-full z-20 mt-1 w-64
+                                  rounded-md bg-black px-3 py-2 text-xs text-gray-100 shadow-lg
+                                  opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0
+                                  transition duration-200 delay-150
+                                "
+                              >
+                                {tag.description}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {spoilerCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSpoilers((prev) => !prev)}
+                      className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
+                    >
+                      {showSpoilers
+                        ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`
+                        : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Meta box (same spot as manga page) */}
+              <div className="mt-4">
+                <MangaMetaBox
+                  titleEnglish={(manga as any).title_english ?? null}
+                  titlePreferred={(manga as any).title_preferred ?? null}
+                  titleNative={(manga as any).title_native ?? null}
+                  totalVolumes={(manga as any).total_volumes ?? null}
+                  totalChapters={(manga as any).total_chapters ?? null}
+                  format={(m as any).format ?? null}
+                  status={(m as any).status ?? null}
+                  startDate={(m as any).start_date ?? null}
+                  endDate={(m as any).end_date ?? null}
+                  season={(m as any).season ?? null}
+                  seasonYear={(m as any).season_year ?? null}
+                  averageScore={(m as any).average_score ?? null}
+                />
               </div>
             </div>
 
             {/* RIGHT COLUMN */}
             <div className="min-w-100 flex-1">
+              {/* ROW 1 — TITLE (same as manga page) */}
               <div className="mb-2">
-                <h1 className="text-4xl font-bold leading-tight">{displayPrimaryTitle}</h1>
+                <EnglishTitle
+                  as="h1"
+                  className="text-4xl font-bold leading-tight"
+                  titles={{
+                    title_english: (manga as any).title_english ?? null,
+                    title_preferred: (manga as any).title_preferred ?? null,
+                    title: manga.title ?? null,
+                    title_native: (manga as any).title_native ?? null,
+                  }}
+                  fallback={manga.title ?? (manga as any).title_native ?? "Untitled"}
+                />
 
-                {showSecondaryTitle && (
+                {showSecondaryTitle && secondaryTitle && (
                   <h2 className="mt-1 text-xl font-semibold leading-snug text-gray-500">
-                    {normalTitle}
+                    {secondaryTitle}
                   </h2>
                 )}
 
+                {/* chapter-only line */}
                 <div className="mt-2">
                   <p className="text-2xl font-bold">Chapter {chapterNum}</p>
+                  {isChapterLoading && <p className="mt-1 text-xs text-gray-500">Loading chapter…</p>}
+                  {!isChapterLoading && chapterError && (
+                    <p className="mt-1 text-xs text-red-500">{chapterError}</p>
+                  )}
                 </div>
               </div>
 
+              {/* ROW 2 — LEFT CONTENT + ActionBox pinned top-right (same as manga page) */}
               <div className="relative w-full">
+                {/* RIGHT SIDE: ActionBox pinned */}
                 <div className="absolute right-0 top-1 flex flex-col items-end gap-2">
                   <MangaActionBox
                     key={actionBoxNonce}
@@ -627,14 +576,16 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
 
                   <MangaQuickLogBox
                     mangaId={manga?.id ?? ""}
-                    onOpenLog={(chapterId) => {
+                    totalChapters={(manga as any)?.total_chapters ?? null}
+                    onOpenLog={() => {
                       setLogOpen(true);
-                      void chapterId;
                     }}
                   />
                 </div>
 
+                {/* LEFT SIDE: reserve space so text never goes under ActionBox */}
                 <div className="min-w-0 pr-[260px]">
+                  {/* Synopsis (same as manga page) */}
                   {typeof (m as any)?.description === "string" && (m as any).description.trim() && (
                     <div className="mt-6 mb-3">
                       <p className="whitespace-pre-line text-base text-black">
@@ -643,6 +594,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                     </div>
                   )}
 
+                  {/* Chapter Navigator (same spot as manga page) */}
                   <div className="mt-4 min-w-0 overflow-hidden">
                     <ChapterNavigator
                       slug={slugString}
@@ -651,96 +603,22 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                     />
                   </div>
 
-                  <div className="mt-4">
+                  {/* Back link (small, like manga page “Back home” row) */}
+                  <div className="mt-1">
                     <Link
                       href={`/manga/${slugString}`}
-                      className="text-xs text-blue-400 hover:text-blue-300"
+                      className="text-xs text-black hover:underline"
                     >
                       ← Back to manga main page
                     </Link>
                   </div>
 
-                  {manga && chapter && (
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleTestSaveReview}
-                        disabled={savingReview}
-                        className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-1 text-xs font-medium text-gray-200 hover:bg-gray-900/60 disabled:opacity-60"
-                      >
-                        {savingReview ? "Saving…" : "Test: Save chapter review"}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleTestLogChapter}
-                        disabled={savingLog}
-                        className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-1 text-xs font-medium text-gray-200 hover:bg-gray-900/60 disabled:opacity-60"
-                      >
-                        {savingLog ? "Logging…" : "Test: Log chapter"}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setLogOpen(true)}
-                        className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-1 text-xs font-medium text-gray-200 hover:bg-gray-900/60"
-                      >
-                        Log
-                      </button>
-
-                      {typeof myLogCount === "number" && (
-                        <span className="text-xs text-gray-400">
-                          You logged this{" "}
-                          <span className="font-semibold text-gray-200">{myLogCount}</span>{" "}
-                          time{myLogCount === 1 ? "" : "s"}
-                        </span>
-                      )}
-
-                      {reviewSaveMsg && <span className="text-xs text-gray-400">{reviewSaveMsg}</span>}
-                      {logSaveMsg && <span className="text-xs text-gray-400">{logSaveMsg}</span>}
-                    </div>
-                  )}
-
-                  <div className="mt-6 border-t border-gray-200 pt-4 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold">Chapter details</p>
-                      {isChapterLoading && <p className="text-xs text-gray-500">Loading chapter…</p>}
-                    </div>
-
-                    {!isChapterLoading && chapterError && (
-                      <p className="text-xs text-red-500">{chapterError}</p>
-                    )}
-
-                    {!isChapterLoading && !chapterError && !chapter && (
-                      <p className="text-xs text-gray-500">
-                        No chapter data found for this chapter number.
-                      </p>
-                    )}
-
-                    {chapter && (
-                      <div className="space-y-1">
-                        {chapter.title && (
-                          <p className="text-sm text-gray-800">
-                            Chapter title: <span className="font-medium">{chapter.title}</span>
-                          </p>
-                        )}
-
-                        {(chapter as any).release_date && (
-                          <p className="text-xs text-gray-600">
-                            Release date: {new Date((chapter as any).release_date).toLocaleString()}
-                          </p>
-                        )}
-
-                        {(chapter as any).synopsis ? (
-                          <p className="text-sm text-gray-700 mt-2">{(chapter as any).synopsis}</p>
-                        ) : (
-                          !chapter.title && (
-                            <p className="text-xs text-gray-500">
-                              No title or synopsis has been added for this chapter yet.
-                            </p>
-                          )
-                        )}
-                      </div>
+                  {/* Feed (✅ moved up to match manga page layout) */}
+                  <div className="mt-6">
+                    {manga?.id && chapter?.id ? (
+                      <PostFeed key={feedNonce} mangaId={manga.id} mangaChapterId={chapter.id} />
+                    ) : (
+                      <p className="text-sm text-gray-500">Loading discussion…</p>
                     )}
                   </div>
                 </div>
@@ -749,35 +627,12 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
             {/* end right col */}
           </div>
         </div>
-      </div>
 
-      {/* DISCUSSION / FEED SECTION */}
-      <div
-        style={{
-          marginTop: "1.5rem",
-          maxWidth: "80rem",
-          marginLeft: "auto",
-          marginRight: "auto",
-          padding: "2rem 1.5rem",
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 19rem) minmax(0, 41rem) minmax(0, 19rem)",
-          gap: "1rem",
-        }}
-      >
-        <div>
-          <LeftSidebar />
-        </div>
-
-        <div>
-          {manga?.id && chapter?.id ? (
-            <PostFeed key={feedNonce} mangaId={manga.id} mangaChapterId={chapter.id} />
-          ) : (
-            <p className="text-sm text-gray-500">Loading discussion…</p>
-          )}
-        </div>
-
-        <div>
-          <RightSidebar />
+        {/* bottom links row (same vibe as manga page) */}
+        <div className="mt-3 flex items-center gap-4">
+          <Link href={`/manga/${slugString}/art`} className="text-sm text-blue-500 hover:underline">
+            Art
+          </Link>
         </div>
       </div>
 
@@ -789,12 +644,9 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
         mangaId={manga?.id ?? null}
         mangaChapterId={chapter?.id ?? null}
         onSuccess={async () => {
+          // refresh feed + actionbox like manga page
           setFeedNonce((n) => n + 1);
           setActionBoxNonce((n) => n + 1);
-
-          if (!chapter?.id) return;
-          const { count, error } = await getMyMangaChapterLogCount(chapter.id);
-          if (!error) setMyLogCount(count);
         }}
       />
     </>

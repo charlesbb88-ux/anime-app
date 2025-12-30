@@ -443,102 +443,94 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                 </div>
               )}
 
-              {/* Tags (moved here) */}
-              <div className="mt-5">
-                <div className="mb-1 flex items-center gap-2">
-                  <h2 className="text-base font-semibold text-black-300">Tags</h2>
-                  {tagsLoading && (
-                    <span className="text-[10px] uppercase tracking-wide text-gray-500">
-                      Loading…
-                    </span>
-                  )}
-                </div>
+              {/* Tags (only render if tags exist) */}
+              {tags.length > 0 && (
+                <div className="mt-5">
+                  <div className="mb-1 flex items-center gap-2">
+                    <h2 className="text-base font-semibold text-black-300">Tags</h2>
+                    {tagsLoading && (
+                      <span className="text-[10px] uppercase tracking-wide text-gray-500">
+                        Loading…
+                      </span>
+                    )}
+                  </div>
 
-                {!tagsLoading && tags.length === 0 ? (
-                  <p className="text-sm text-gray-500">
-                    No tags imported yet for this manga.
-                  </p>
-                ) : (
-                  <>
-                    <div className="flex flex-col gap-1">
-                      <div className="flex w-full flex-col gap-1">
-                        {tags.map((tag) => {
-                          const isSpoiler =
-                            tag.is_general_spoiler === true ||
-                            tag.is_media_spoiler === true;
+                  <div className="flex flex-col gap-1">
+                    <div className="flex w-full flex-col gap-1">
+                      {tags.map((tag) => {
+                        const isSpoiler =
+                          tag.is_general_spoiler === true ||
+                          tag.is_media_spoiler === true;
 
-                          if (isSpoiler && !showSpoilers) return null;
+                        if (isSpoiler && !showSpoilers) return null;
 
-                          let percent: number | null = null;
-                          if (typeof tag.rank === "number") {
-                            percent = Math.max(0, Math.min(100, Math.round(tag.rank)));
-                          }
+                        let percent: number | null = null;
+                        if (typeof tag.rank === "number") {
+                          percent = Math.max(0, Math.min(100, Math.round(tag.rank)));
+                        }
 
-                          return (
-                            <div key={tag.id} className="group relative inline-flex">
-                              <span
-                                className="
-                                  relative inline-flex w-full items-center justify-between
-                                  rounded-full border border-gray-700 bg-gray-900/80
-                                  px-3 py-[3px] text-[13px] font-medium
-                                  whitespace-nowrap overflow-hidden
-                                "
-                              >
-                                {percent !== null && (
-                                  <span
-                                    className="pointer-events-none absolute inset-y-0 left-0 bg-blue-500/20"
-                                    style={{ width: `${percent}%` }}
-                                  />
-                                )}
-
+                        return (
+                          <div key={tag.id} className="group relative inline-flex">
+                            <span
+                              className="
+                  relative inline-flex w-full items-center justify-between
+                  rounded-full border border-gray-700 bg-gray-900/80
+                  px-3 py-[3px] text-[13px] font-medium
+                  whitespace-nowrap overflow-hidden
+                "
+                            >
+                              {percent !== null && (
                                 <span
-                                  className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"
-                                    }`}
-                                >
-                                  {tag.name}
-                                </span>
+                                  className="pointer-events-none absolute inset-y-0 left-0 bg-blue-500/20"
+                                  style={{ width: `${percent}%` }}
+                                />
+                              )}
 
-                                {percent !== null && (
-                                  <span className="relative text-[11px] font-semibold text-gray-200">
-                                    {percent}%
-                                  </span>
-                                )}
+                              <span
+                                className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"
+                                  }`}
+                              >
+                                {tag.name}
                               </span>
 
-                              {tag.description && (
-                                <div
-                                  className="
-                                    pointer-events-none absolute left-0 top-full z-20 mt-1 w-64
-                                    rounded-md bg-black px-3 py-2 text-xs text-gray-100 shadow-lg
-                                    opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0
-                                    transition duration-200 delay-150
-                                  "
-                                >
-                                  {tag.description}
-                                </div>
+                              {percent !== null && (
+                                <span className="relative text-[11px] font-semibold text-gray-200">
+                                  {percent}%
+                                </span>
                               )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                            </span>
 
-                    {spoilerCount > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setShowSpoilers((prev) => !prev)}
-                        className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
-                      >
-                        {showSpoilers
-                          ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
-                          }`
-                          : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
-                          }`}
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
+                            {tag.description && (
+                              <div
+                                className="
+                    pointer-events-none absolute left-0 top-full z-20 mt-1 w-64
+                    rounded-md bg-black px-3 py-2 text-xs text-gray-100 shadow-lg
+                    opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0
+                    transition duration-200 delay-150
+                  "
+                              >
+                                {tag.description}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {spoilerCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSpoilers((prev) => !prev)}
+                      className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
+                    >
+                      {showSpoilers
+                        ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`
+                        : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`}
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="mt-4">
                 <MangaMetaBox
                   titleEnglish={manga.title_english}
@@ -624,32 +616,6 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                       />
                     </div>
                   )}
-
-                  {/* Test save review + confirmation line (same spot style) */}
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleTestSaveReview}
-                      disabled={savingReview}
-                      className="rounded-md border border-gray-700 bg-gray-900/40 px-3 py-1 text-xs font-medium text-gray-200 hover:bg-gray-900/60 disabled:opacity-60"
-                    >
-                      {savingReview ? "Saving…" : "Test: Save review"}
-                    </button>
-
-                    {reviewSaveMsg && (
-                      <span className="text-xs text-gray-400">{reviewSaveMsg}</span>
-                    )}
-
-                    {typeof myMangaSeriesLogCount === "number" && (
-                      <span className="text-xs text-gray-400">
-                        You logged this{" "}
-                        <span className="font-semibold text-gray-200">
-                          {myMangaSeriesLogCount}
-                        </span>{" "}
-                        time{myMangaSeriesLogCount === 1 ? "" : "s"}
-                      </span>
-                    )}
-                  </div>
 
                   {/* Feed (moved up to match anime page layout) */}
                   <div className="mt-6">

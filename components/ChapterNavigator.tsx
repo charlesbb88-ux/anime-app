@@ -19,6 +19,7 @@ type ChapterRow = {
   chapter_number: number;
   title: string | null;
 };
+
 type CoverRow = {
   volume: string | null;
   locale: string | null;
@@ -53,7 +54,6 @@ function normVol(v: any): string | null {
   if (!s0) return null;
   if (s0.toLowerCase() === "none") return null;
 
-  // normalize numeric volumes ("05" -> "5")
   if (/^\d+(\.\d+)?$/.test(s0)) {
     const n = Number(s0);
     if (!Number.isFinite(n) || n <= 0) return null;
@@ -73,11 +73,9 @@ function pickBestCoverUrl(rows: CoverRow[]): string | null {
   const usable = (rows || []).filter((r) => r?.cached_url);
   if (!usable.length) return null;
 
-  // prefer is_main
   const mains = usable.filter((r) => r.is_main);
   const pool = mains.length ? mains : usable;
 
-  // prefer locale order
   const pref = ["en", "ja"];
   for (const p of pref) {
     const hit = pool.find(
@@ -89,50 +87,6 @@ function pickBestCoverUrl(rows: CoverRow[]): string | null {
   return pool[0].cached_url ?? null;
 }
 
-function sortVolumeKeys(keys: string[]) {
-  const numeric: string[] = [];
-  const other: string[] = [];
-
-  for (const k of keys) {
-    const s = String(k ?? "").trim();
-    if (!s) continue;
-    if (s.toLowerCase() === "none") continue;
-    (isNumericLike(s) ? numeric : other).push(s);
-  }
-
-  numeric.sort((a, b) => {
-    const na = Number(a);
-    const nb = Number(b);
-    if (na !== nb) return na - nb;
-    return a.localeCompare(b);
-  });
-
-  other.sort((a, b) => a.localeCompare(b));
-
-  return [...numeric, ...other];
-}
-
-function toNumericChapterList(chs: string[]): number[] {
-  const nums = (chs || [])
-    .map((s) => String(s ?? "").trim())
-    .filter((s) => /^(\d+)(\.\d+)?$/.test(s))
-    .map((s) => Number(s))
-    .filter((n) => Number.isFinite(n) && n > 0);
-
-  nums.sort((a, b) => a - b);
-  return nums;
-}
-
-function formatChapterRange(nums: number[]): string | null {
-  if (!nums.length) return null;
-
-  const min = Math.floor(nums[0]);
-  const max = Math.floor(nums[nums.length - 1]);
-
-  if (min === max) return String(min);
-  return `${min}–${max}`;
-}
-
 export default function ChapterNavigator({
   slug,
   totalChapters,
@@ -140,9 +94,49 @@ export default function ChapterNavigator({
   className,
 }: Props) {
   // ---------------------------------------
-  // totals / routing
+  // refs / state (declare BEFORE any use)
   // ---------------------------------------
-  const total = typeof totalChapters === "number" ? totalChapters : null;
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const rafScrollRef = useRef<number | null>(null);
+
+  const snappingRef = useRef(false);
+  const animRef = useRef<number | null>(null);
+
+  const fastWheelRef = useRef(false);
+  const fastWheelClearRef = useRef<number | null>(null);
+
+  const [viewportW, setViewportW] = useState(0);
+  const [scrollLeft, setScrollLeft] = useState(0);
+
+  const [mangaId, setMangaId] = useState<string | null>(null);
+  const [derivedTotalChapters, setDerivedTotalChapters] = useState<number | null>(
+    null
+  );
+
+  const [volumeMap, setVolumeMap] = useState<Record<string, string[]> | null>(
+    null
+  );
+  const [volumeMapLoaded, setVolumeMapLoaded] = useState(false);
+  const [selectedVolume, setSelectedVolume] = useState<string | null>(null); // null = All
+  const [volumeDragging, setVolumeDragging] = useState(false);
+
+  const [coverRows, setCoverRows] = useState<CoverRow[]>([]);
+  const [metaByNumber, setMetaByNumber] = useState<Record<number, ChapterMeta>>(
+    {}
+  );
+
+  // ---------------------------------------
+  // totals / routing (safe + stable)
+  // ---------------------------------------
+  const propTotal =
+    typeof totalChapters === "number" &&
+    Number.isFinite(totalChapters) &&
+    totalChapters > 0
+      ? Math.floor(totalChapters)
+      : null;
+
+  const total = propTotal ?? derivedTotalChapters;
+
   const hasTotal =
     typeof total === "number" && Number.isFinite(total) && total > 0;
 
@@ -160,25 +154,15 @@ export default function ChapterNavigator({
   const chapterBase = `${mangaHref}/chapter`;
 
   // ---------------------------------------
-  // virtualization layout constants
+  // layout constants
   // ---------------------------------------
   const CARD_W = 120;
-  const CARD_H = 180;
   const GAP = 12;
   const STEP = CARD_W + GAP;
 
   // ---------------------------------------
-  // scroller tracking
+  // viewport width tracking
   // ---------------------------------------
-  const scrollerRef = useRef<HTMLDivElement | null>(null);
-  const rafScrollRef = useRef<number | null>(null);
-
-  const snappingRef = useRef(false);
-  const animRef = useRef<number | null>(null);
-
-  const [viewportW, setViewportW] = useState(0);
-  const [scrollLeft, setScrollLeft] = useState(0);
-
   useEffect(() => {
     function update() {
       const node = scrollerRef.current;
@@ -257,12 +241,6 @@ export default function ChapterNavigator({
     return clamp(raw, 0, getMaxIndexFromCount(count));
   }
 
-  // ---------------------------------------
-  // IMPORTANT: fast-wheel guard
-  // ---------------------------------------
-  const fastWheelRef = useRef(false);
-  const fastWheelClearRef = useRef<number | null>(null);
-
   function markFastWheel(absDelta: number, count: number) {
     const FAST_DELTA = 60;
     if (absDelta < FAST_DELTA) return;
@@ -286,15 +264,20 @@ export default function ChapterNavigator({
   }
 
   // ---------------------------------------
-  // manga id (cached)
+  // manga id lookup
   // ---------------------------------------
-  const [mangaId, setMangaId] = useState<string | null>(null);
-
   useEffect(() => {
     let cancelled = false;
 
     async function run() {
       setMangaId(null);
+      setDerivedTotalChapters(null);
+      setVolumeMap(null);
+      setSelectedVolume(null);
+      setVolumeMapLoaded(false);
+      setCoverRows([]);
+      setMetaByNumber({});
+
       if (!slug) return;
 
       const { data, error } = await supabase
@@ -316,15 +299,42 @@ export default function ChapterNavigator({
   }, [slug]);
 
   // ---------------------------------------
-  // volume map + selection
+  // derive total chapters from DB (so range groups exist even if prop is null)
   // ---------------------------------------
-  const [volumeMap, setVolumeMap] = useState<Record<string, string[]> | null>(
-    null
-  );
-  const [volumeMapLoaded, setVolumeMapLoaded] = useState(false);
-  const [selectedVolume, setSelectedVolume] = useState<string | null>(null); // null = All
-  const [volumeDragging, setVolumeDragging] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
 
+    async function run() {
+      setDerivedTotalChapters(null);
+      if (!mangaId) return;
+
+      const { data, error } = await supabase
+        .from("manga_chapters")
+        .select("chapter_number")
+        .eq("manga_id", mangaId)
+        .order("chapter_number", { ascending: false })
+        .limit(1);
+
+      if (cancelled) return;
+      if (error || !Array.isArray(data) || data.length === 0) return;
+
+      const raw = (data[0] as any)?.chapter_number;
+      const n = typeof raw === "number" ? raw : Number(raw);
+
+      if (Number.isFinite(n) && n > 0) {
+        setDerivedTotalChapters(Math.floor(n));
+      }
+    }
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [mangaId]);
+
+  // ---------------------------------------
+  // volume map
+  // ---------------------------------------
   useEffect(() => {
     let cancelled = false;
 
@@ -351,7 +361,6 @@ export default function ChapterNavigator({
         }
       }
 
-      // ✅ mark loaded even if no map / error
       setVolumeMapLoaded(true);
     }
 
@@ -364,12 +373,11 @@ export default function ChapterNavigator({
   // ---------------------------------------
   // covers
   // ---------------------------------------
-  const [coverRows, setCoverRows] = useState<CoverRow[]>([]);
-
   useEffect(() => {
     let cancelled = false;
 
     async function run() {
+      setCoverRows([]);
       if (!mangaId) return;
 
       const { data, error } = await supabase
@@ -392,7 +400,6 @@ export default function ChapterNavigator({
         return;
       }
 
-      console.log("[ChapterNavigator] manga_covers rows:", data.length);
       setCoverRows(
         (data as any[]).map((r) => ({
           volume: r?.volume ?? null,
@@ -410,7 +417,8 @@ export default function ChapterNavigator({
   }, [mangaId]);
 
   // ---------------------------------------
-  // nav groups (from lib/chapterNavigation)
+  // nav groups (volumes + fallback ranges)
+  // IMPORTANT: this is what controls the "range groups"
   // ---------------------------------------
   const navGroups = useMemo<NavGroup[]>(() => {
     if (!mangaId) return [];
@@ -426,7 +434,7 @@ export default function ChapterNavigator({
   const showVolumeButtons = navGroups.length > 0;
 
   // ---------------------------------------
-  // build volume->cover + chapter->cover maps
+  // volume cover map
   // ---------------------------------------
   const coverUrlByVolume = useMemo(() => {
     const byVol: Record<string, CoverRow[]> = {};
@@ -446,22 +454,22 @@ export default function ChapterNavigator({
 
   const chapterCoverByNumber = useMemo(() => {
     const out: Record<number, string | null> = {};
-
-    // "nearest previous volume cover" fallback for range groups
     let lastVolumeCover: string | null = null;
 
     for (const g of navGroups) {
       if (g.kind === "volume") {
-        const volIdRaw = String(g.key || "");
-        const volId = volIdRaw.startsWith("vol-") ? volIdRaw.slice(4) : volIdRaw;
-        const v = normVol(volId);
+        const key = String(g.key || "");
 
+        // supports lib keys like: "vol:1" or "vol:05"
+        const rawVol =
+          key.startsWith("vol:") ? key.slice(4) : key.startsWith("vol-") ? key.slice(4) : key;
+
+        const v = normVol(rawVol);
         const cover = v ? coverUrlByVolume[v] ?? null : null;
         if (cover) lastVolumeCover = cover;
 
         for (const ch of g.chapters) out[ch] = cover;
       } else {
-        // range group uses the last known volume cover (if any)
         for (const ch of g.chapters) out[ch] = lastVolumeCover;
       }
     }
@@ -469,21 +477,19 @@ export default function ChapterNavigator({
     return out;
   }, [navGroups, coverUrlByVolume]);
 
-  // skeleton while nav isn't ready (so it doesn't flash wrong pills)
+  // skeleton while nav isn't ready
   const showNavSkeleton = !!slug && (!mangaId || !volumeMapLoaded);
 
   // ---------------------------------------
   // displayed chapters (All vs selected group)
   // ---------------------------------------
   const displayChapters: number[] = useMemo(() => {
-    // if a specific volume/range is selected, show its chapters
     if (selectedVolume) {
       const g = navGroups.find((n) => n.key === selectedVolume);
       if (g) return g.chapters;
     }
 
-    // All mode:
-    // Prefer actual chapter identifiers from volumeMap so decimals (e.g. 14.5) appear.
+    // All mode: prefer actual chapter identifiers from volumeMap so decimals show
     if (volumeMap && typeof volumeMap === "object") {
       const all: number[] = [];
 
@@ -492,18 +498,16 @@ export default function ChapterNavigator({
         for (const raw of arr) {
           const s = String(raw ?? "").trim();
           if (!s) continue;
-          if (!/^(\d+)(\.\d+)?$/.test(s)) continue;
+          if (!isNumericLike(s)) continue;
 
           const n = Number(s);
           if (Number.isFinite(n) && n > 0) all.push(n);
         }
       }
 
-      // dedupe + sort
       const uniq = Array.from(new Set(all));
       uniq.sort((a, b) => a - b);
 
-      // If total is known, optionally cap to it (but keep decimals <= total)
       if (hasTotal && cappedTotal) {
         return uniq.filter((n) => n <= cappedTotal + 0.999999);
       }
@@ -511,7 +515,6 @@ export default function ChapterNavigator({
       return uniq;
     }
 
-    // fallback: no map available, use integer 1..total
     if (!hasTotal || !cappedTotal) return [];
     const nums: number[] = [];
     for (let i = 1; i <= cappedTotal; i++) nums.push(i);
@@ -521,7 +524,7 @@ export default function ChapterNavigator({
   const chapterCount = displayChapters.length;
 
   // ---------------------------------------
-  // scroll handler (throttled + snap when settled)
+  // scroll handler (throttled + snap)
   // ---------------------------------------
   function onScroll() {
     const el = scrollerRef.current;
@@ -544,7 +547,6 @@ export default function ChapterNavigator({
       if (dragRef.current.isDown) return;
       if (snappingRef.current) return;
       if (fastWheelRef.current) return;
-
       if (chapterCount <= 0) return;
 
       const idx = getNearestIndex(chapterCount);
@@ -552,7 +554,7 @@ export default function ChapterNavigator({
     }, 130);
   }
 
-  // initial centering (and when switching All/Volume)
+  // initial centering
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
@@ -575,7 +577,7 @@ export default function ChapterNavigator({
   }, [slug, viewportW, selectedVolume, chapterCount]);
 
   // ---------------------------------------
-  // virtualization window (based on displayChapters)
+  // virtualization window
   // ---------------------------------------
   const VBUF = 14;
 
@@ -607,17 +609,12 @@ export default function ChapterNavigator({
   }, [chapterCount, displayChapters, viewportW, scrollLeft]);
 
   // ---------------------------------------
-  // meta fetch for visible window (chapter title + chapter artwork)
+  // meta fetch (chapter title)
   // ---------------------------------------
-  const [metaByNumber, setMetaByNumber] = useState<Record<number, ChapterMeta>>(
-    {}
-  );
-
   useEffect(() => {
     let cancelled = false;
 
     async function run() {
-      if (!slug) return;
       if (!mangaId) return;
       if (!visibleChapterNumbers.length) return;
 
@@ -637,30 +634,25 @@ export default function ChapterNavigator({
       if (chErr || !chs) {
         setMetaByNumber((prev) => {
           const next = { ...prev };
-          for (const n of wantedNums) {
-            if (!next[n]) next[n] = { title: null };
-          }
+          for (const n of wantedNums) if (!next[n]) next[n] = { title: null };
           return next;
         });
         return;
       }
 
-      const chapterRows = chs as ChapterRow[];
-
-      const idByNumber: Record<number, string> = {};
+      const rows = chs as ChapterRow[];
       const titleByNumber: Record<number, string | null> = {};
-      for (const c of chapterRows) {
+
+      for (const c of rows) {
         if (typeof c.chapter_number !== "number") continue;
-        idByNumber[c.chapter_number] = c.id;
         titleByNumber[c.chapter_number] = c.title ?? null;
       }
-
-      if (cancelled) return;
 
       setMetaByNumber((prev) => {
         const next = { ...prev };
         for (const n of wantedNums) {
-          const chId = idByNumber[n];
+          if (!next[n]) next[n] = { title: null };
+          if (titleByNumber[n] !== undefined) next[n] = { title: titleByNumber[n] };
         }
         return next;
       });
@@ -671,45 +663,42 @@ export default function ChapterNavigator({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug, mangaId, visibleChapterNumbers.join("|")]);
+  }, [mangaId, visibleChapterNumbers.join("|")]);
 
   // ---------------------------------------
-  // drag physics
+  // drag physics (chapter scroller)
   // ---------------------------------------
   const [dragging, setDragging] = useState(false);
 
   const dragRef = useRef<{
     isDown: boolean;
     didDrag: boolean;
-
     startX: number;
     startScrollLeft: number;
     startIndex: number;
-
     lastX: number;
-
     blockNextClick: boolean;
     maxMovePx: number;
-
     samples: Array<{ t: number; x: number }>;
-  }>({
-    isDown: false,
-    didDrag: false,
-    startX: 0,
-    startScrollLeft: 0,
-    startIndex: 0,
-    lastX: 0,
-    blockNextClick: false,
-    maxMovePx: 0,
-    samples: [],
-  });
+  }>(
+    {
+      isDown: false,
+      didDrag: false,
+      startX: 0,
+      startScrollLeft: 0,
+      startIndex: 0,
+      lastX: 0,
+      blockNextClick: false,
+      maxMovePx: 0,
+      samples: [],
+    }
+  );
 
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
 
     const handler = (ev: WheelEvent) => {
-      // We replicate your onWheel logic, but using the native event.
       if (snappingRef.current) {
         ev.preventDefault();
         return;
@@ -735,7 +724,6 @@ export default function ChapterNavigator({
 
       if (fastWheelRef.current) return;
 
-      // snap after settling
       if ((handler as any)._t) window.clearTimeout((handler as any)._t);
       (handler as any)._t = window.setTimeout(() => {
         if (dragRef.current.isDown) return;
@@ -748,13 +736,11 @@ export default function ChapterNavigator({
       }, 110);
     };
 
-    // ✅ key part: passive: false so preventDefault works
     el.addEventListener("wheel", handler, { passive: false });
 
     return () => {
       el.removeEventListener("wheel", handler as any);
     };
-    // IMPORTANT: include the things used inside handler that can change
   }, [chapterCount, viewportW, scrollLeft]);
 
   const DRAG_THRESHOLD_PX = 6;
@@ -835,7 +821,9 @@ export default function ChapterNavigator({
       duration <= TINY_FLICK_MAX_MS &&
       Math.abs(dx) <= TINY_FLICK_MAX_PX;
 
-    const draggedScroll = Math.abs(el.scrollLeft - dragRef.current.startScrollLeft);
+    const draggedScroll = Math.abs(
+      el.scrollLeft - dragRef.current.startScrollLeft
+    );
     const farDrag = draggedScroll > step * 1.1;
     const isFlickAllowed = isFlick && !farDrag;
 
@@ -902,7 +890,10 @@ export default function ChapterNavigator({
         Math.abs(dxFromStart)
       );
 
-      if (!dragRef.current.didDrag && Math.abs(dxFromStart) >= DRAG_THRESHOLD_PX) {
+      if (
+        !dragRef.current.didDrag &&
+        Math.abs(dxFromStart) >= DRAG_THRESHOLD_PX
+      ) {
         dragRef.current.didDrag = true;
         setDragging(true);
       }
@@ -928,61 +919,8 @@ export default function ChapterNavigator({
     window.addEventListener("pointercancel", onWinUp, { passive: true });
   }
 
-  function onWheel(e: React.WheelEvent<HTMLDivElement>) {
-    const el = scrollerRef.current;
-    if (!el) return;
-
-    if (snappingRef.current) {
-      e.preventDefault();
-      return;
-    }
-
-    stopAnim();
-
-    const mostlyVertical = Math.abs(e.deltaY) > Math.abs(e.deltaX);
-    if (mostlyVertical && !e.shiftKey) {
-      e.preventDefault();
-      el.scrollLeft += e.deltaY;
-      markFastWheel(Math.abs(e.deltaY), Math.max(1, chapterCount));
-      return;
-    }
-
-    markFastWheel(
-      Math.max(Math.abs(e.deltaX), Math.abs(e.deltaY)),
-      Math.max(1, chapterCount)
-    );
-
-    if (fastWheelRef.current) return;
-
-    if ((onWheel as any)._t) window.clearTimeout((onWheel as any)._t);
-    (onWheel as any)._t = window.setTimeout(() => {
-      if (dragRef.current.isDown) return;
-      if (snappingRef.current) return;
-      if (fastWheelRef.current) return;
-      if (chapterCount <= 0) return;
-
-      const idx = getNearestIndex(chapterCount);
-      scrollToIndex(idx, 220);
-    }, 110);
-  }
-
   // ---------------------------------------
-  // UI styles
-  // ---------------------------------------
-  const cardBase =
-    "group relative shrink-0 rounded-xs bg-[var(--card-bg)] ring-1 ring-[var(--ring)] shadow-sm transition";
-  const cardHover =
-    "hover:bg-[var(--card-bg-hover)] hover:shadow-md hover:ring-black/10";
-  const cardSize = "h-[180px] w-[120px]";
-  const thumbSize = "h-full w-[120px] shrink-0";
-
-  const pillBase =
-    "select-none rounded-sm border px-0 py-1 text-xs font-semibold transition";
-  const pillOn = "bg-white text-black border-black";
-  const pillOff = "bg-black text-white border-white/20 hover:border-white/40";
-
-  // ---------------------------------------
-  // drag-to-scroll for the volume button row
+  // drag-to-scroll for volume button row
   // ---------------------------------------
   const volumeRowRef = useRef<HTMLDivElement | null>(null);
 
@@ -1025,7 +963,10 @@ export default function ChapterNavigator({
         Math.abs(dx)
       );
 
-      if (!volumeDragRef.current.didDrag && Math.abs(dx) >= VOLUME_DRAG_THRESHOLD_PX) {
+      if (
+        !volumeDragRef.current.didDrag &&
+        Math.abs(dx) >= VOLUME_DRAG_THRESHOLD_PX
+      ) {
         volumeDragRef.current.didDrag = true;
         setVolumeDragging(true);
       }
@@ -1061,8 +1002,25 @@ export default function ChapterNavigator({
     onClick();
   }
 
-  // ✅ IMPORTANT: only return AFTER all hooks are declared
-  if (chapterCount <= 0) return null;
+  // ---------------------------------------
+  // UI styles
+  // ---------------------------------------
+  const cardBase =
+    "group relative shrink-0 rounded-xs bg-[var(--card-bg)] ring-1 ring-[var(--ring)] shadow-sm transition";
+  const cardHover =
+    "hover:bg-[var(--card-bg-hover)] hover:shadow-md hover:ring-black/10";
+  const cardSize = "h-[180px] w-[120px]";
+
+  const pillBase =
+    "select-none rounded-sm border px-0 py-1 text-xs font-semibold transition";
+  const pillOn = "bg-white text-black border-black";
+  const pillOff = "bg-black text-white border-white/20 hover:border-white/40";
+
+  // ---------------------------------------
+  // render guards
+  // ---------------------------------------
+  const showNothingYet = !!slug && (!mangaId || !volumeMapLoaded);
+  if (!showNothingYet && chapterCount <= 0) return null;
 
   return (
     <div
@@ -1075,7 +1033,7 @@ export default function ChapterNavigator({
         } as React.CSSProperties
       }
     >
-      {/* Volume buttons (ONLY if volumes exist) */}
+      {/* Volume buttons */}
       {showVolumeButtons ? (
         <div
           ref={volumeRowRef}
@@ -1130,6 +1088,7 @@ export default function ChapterNavigator({
         <div className="mb-2 h-[39px] w-full rounded-sm bg-black/10" />
       ) : null}
 
+      {/* Chapter scroller */}
       <div className="w-full overflow-hidden rounded-sm border border-black bg-black">
         <div
           ref={scrollerRef}
@@ -1149,7 +1108,6 @@ export default function ChapterNavigator({
               const meta = metaByNumber[n];
               const title = meta?.title ?? `Chapter ${n}`;
 
-              // ✅ Prefer volume/range cover first, fallback to chapter artwork
               const imageUrl = chapterCoverByNumber[n] ?? null;
 
               const metaLine = `CH${pad2(n)}`;
@@ -1192,10 +1150,11 @@ export default function ChapterNavigator({
                       <div className="absolute inset-0 bg-black" />
                     )}
 
-                    {/* overlay text (no side column anymore) */}
                     <div className="absolute inset-x-0 bottom-0">
                       <div className="bg-black/70 backdrop-blur-[2px] px-3 py-2">
-                        <div className="text-[11px] font-semibold text-white/80">{metaLine}</div>
+                        <div className="text-[11px] font-semibold text-white/80">
+                          {metaLine}
+                        </div>
 
                         <div
                           className="mt-0.5 text-sm font-semibold text-white leading-snug"

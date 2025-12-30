@@ -177,6 +177,8 @@ export default function MangaQuickLogRow({
       ? nextChapter.title.trim()
       : null;
 
+  const isDisabled = !canInteract || busy;
+
   return (
     <div className="border-b border-gray-800 bg-black">
       <div className="px-3 py-2">
@@ -198,31 +200,41 @@ export default function MangaQuickLogRow({
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
+              {/* Match MangaQuickLogBox row button styling (sky hover) */}
               <button
                 type="button"
-                disabled={!canInteract || busy}
+                disabled={isDisabled}
                 onClick={() => onOpenLog(nextChapter.id)}
                 className={[
-                  "rounded-md border px-3 py-1.5 text-[11px] font-semibold",
+                  "relative rounded-md border px-3 py-1.5 text-[11px] font-semibold",
+                  "transition-all duration-150",
+                  // default (matches rows in the box when no review)
                   "border-gray-700 text-gray-200",
-                  "hover:bg-white/5 active:bg-white/10",
-                  "focus:outline-none focus:ring-2 focus:ring-white/10",
-                  !canInteract || busy ? "opacity-60 cursor-not-allowed" : "",
+                  // ✅ same hover/active/focus feel as the logbox
+                  "hover:border-sky-500/70 hover:bg-sky-500/10",
+                  "active:bg-sky-500/20 active:scale-[0.98]",
+                  "focus:outline-none focus:ring-2 focus:ring-sky-500/30",
+                  isDisabled ? "opacity-60 cursor-not-allowed" : "",
                 ].join(" ")}
               >
                 Review
               </button>
 
+              {/* Match MangaQuickLogBox check-circle styling (sky hover) */}
               <button
                 type="button"
-                disabled={!canInteract || busy}
+                disabled={isDisabled}
                 onClick={() => quickLog(nextChapter)}
                 className={[
-                  "inline-flex h-8 w-8 items-center justify-center rounded-full border",
+                  "relative inline-flex h-8 w-8 items-center justify-center rounded-full border",
+                  "transition-all duration-150",
+                  // default (matches rows in the box when not logged)
                   "border-gray-700 text-gray-200",
-                  "hover:bg-white/5 active:bg-white/10",
-                  "focus:outline-none focus:ring-2 focus:ring-white/10",
-                  !canInteract || busy ? "opacity-60 cursor-not-allowed" : "",
+                  // ✅ same hover/active/focus feel as the logbox
+                  "hover:border-sky-400 hover:bg-sky-500/20",
+                  "active:scale-95",
+                  "focus:outline-none focus:ring-2 focus:ring-sky-500/40",
+                  isDisabled ? "opacity-60 cursor-not-allowed" : "",
                 ].join(" ")}
                 aria-label={`Quick log chapter ${nextChapter.chapter_number}`}
               >
