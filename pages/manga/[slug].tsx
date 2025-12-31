@@ -5,30 +5,21 @@ import type { NextPage, GetServerSideProps } from "next";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import Image from "next/image";
-import MangaMetaBox from "@/components/manga/MangaMetaBox";
 
+import MangaMetaBox from "@/components/manga/MangaMetaBox";
 import MangaQuickLogBox from "@/components/manga/MangaQuickLogBox";
+import ChapterNavigator from "@/components/ChapterNavigator";
+import PostFeed from "../../components/PostFeed";
+import GlobalLogModal from "@/components/reviews/GlobalLogModal";
+import MangaActionBox from "@/components/actions/MangaActionBox";
+import EnglishTitle from "@/components/EnglishTitle";
 
 import { supabase } from "@/lib/supabaseClient";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-
-// ✅ review helper
 import { createMangaSeriesReview } from "@/lib/reviews";
-
-// ✅ chapter navigator (manga version of EpisodeNavigator)
-import ChapterNavigator from "@/components/ChapterNavigator";
-
-// ✅ Discussion feed
-import PostFeed from "../../components/PostFeed";
-
-// ✅ Global Log modal
-import GlobalLogModal from "@/components/reviews/GlobalLogModal";
-
-// ✅ Letterboxd-style action box (manga)
-import MangaActionBox from "@/components/actions/MangaActionBox";
-
-import EnglishTitle from "@/components/EnglishTitle";
 import { pickEnglishTitle } from "@/lib/pickEnglishTitle";
+
+import FeedShell from "@/components/FeedShell";
 
 type Manga = {
   id: string;
@@ -75,7 +66,6 @@ type MangaPageProps = {
 };
 
 function normalizeBackdropUrl(url: string) {
-  // keep your option to downscale if you ever store huge originals like TMDB
   if (url.includes("https://image.tmdb.org/t/p/original/")) {
     return url.replace("/t/p/original/", "/t/p/w1280/");
   }
@@ -90,13 +80,11 @@ function cleanSynopsis(raw: string) {
     .replace(/<\/?i>/gi, "")
     .replace(/<[^>]+>/g, "");
 
-  // ✅ remove everything after “extra sections”
   s = s
-    .replace(/\n---[\s\S]*$/m, "") // cut after divider
+    .replace(/\n---[\s\S]*$/m, "")
     .replace(/\n\*\*Awards:\*\*[\s\S]*$/m, "")
     .replace(/\n\*\*Additional Links:\*\*[\s\S]*$/m, "");
 
-  // remove standalone markdown dividers like ---
   s = s.replace(/^\s*[-*_]{3,}\s*$/gm, "");
   return s
     .replace(/\n{3,}/g, "\n\n")
@@ -350,9 +338,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
       title_native: manga.title_native,
     },
     {
-      // priority order for “English-looking” pick:
       preferredKeys: ["title_english", "title_preferred", "title"],
-      // if none look english, fall back in this order:
       fallbackKeys: ["title_preferred", "title", "title_native", "title_english"],
       minScore: 0.55,
     }
@@ -424,7 +410,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                 </div>
               )}
 
-              {/* Genres (moved here) */}
+              {/* Genres */}
               {hasGenres && (
                 <div className="mt-4">
                   <h2 className="mb-1 text-sm font-semibold text-black-300">
@@ -434,7 +420,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                     {genres.map((g) => (
                       <span
                         key={g}
-                        className="rounded-full bg-gray-800 px-3 py-1 text-xs text-gray-100"
+                        className="rounded-full bg-black px-3 py-1 text-xs text-gray-100"
                       >
                         {g}
                       </span>
@@ -443,7 +429,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                 </div>
               )}
 
-              {/* Tags (only render if tags exist) */}
+              {/* Tags */}
               {tags.length > 0 && (
                 <div className="mt-5">
                   <div className="mb-1 flex items-center gap-2">
@@ -473,11 +459,11 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                           <div key={tag.id} className="group relative inline-flex">
                             <span
                               className="
-                  relative inline-flex w-full items-center justify-between
-                  rounded-full border border-gray-700 bg-gray-900/80
-                  px-3 py-[3px] text-[13px] font-medium
-                  whitespace-nowrap overflow-hidden
-                "
+                                relative inline-flex w-full items-center justify-between
+                                rounded-full border border-gray-700 bg-gray-900/80
+                                px-3 py-[3px] text-[13px] font-medium
+                                whitespace-nowrap overflow-hidden
+                              "
                             >
                               {percent !== null && (
                                 <span
@@ -503,11 +489,11 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                             {tag.description && (
                               <div
                                 className="
-                    pointer-events-none absolute left-0 top-full z-20 mt-1 w-64
-                    rounded-md bg-black px-3 py-2 text-xs text-gray-100 shadow-lg
-                    opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0
-                    transition duration-200 delay-150
-                  "
+                                  pointer-events-none absolute left-0 top-full z-20 mt-1 w-64
+                                  rounded-md bg-black px-3 py-2 text-xs text-gray-100 shadow-lg
+                                  opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0
+                                  transition duration-200 delay-150
+                                "
                               >
                                 {tag.description}
                               </div>
@@ -525,12 +511,15 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                       className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
                     >
                       {showSpoilers
-                        ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`
-                        : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`}
+                        ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
+                        }`
+                        : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
+                        }`}
                     </button>
                   )}
                 </div>
               )}
+
               <div className="mt-4">
                 <MangaMetaBox
                   titleEnglish={manga.title_english}
@@ -551,8 +540,8 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
 
             {/* RIGHT COLUMN */}
             <div className="min-w-100 flex-1">
-              {/* ROW 1 — TITLE (English primary) */}
-              <div className="mb-2">
+              {/* ROW 1 — PRIMARY TITLE ONLY (no secondary here) */}
+              <div className="mb-0">
                 <EnglishTitle
                   as="h1"
                   className="text-4xl font-bold leading-tight"
@@ -564,19 +553,12 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                   }}
                   fallback={manga.title ?? manga.title_native ?? "Untitled"}
                 />
-
-                {/* Secondary title: show the “normal title” under English */}
-                {showSecondaryTitle && secondaryTitle && (
-                  <h2 className="mt-1 text-xl font-semibold leading-snug text-gray-500">
-                    {secondaryTitle}
-                  </h2>
-                )}
               </div>
 
               {/* ROW 2 — LEFT CONTENT + ActionBox pinned top-right */}
               <div className="relative w-full">
                 {/* RIGHT SIDE: ActionBox (pinned) */}
-                <div className="absolute right-0 top-1 flex flex-col items-end gap-2">
+                <div className="absolute right-0 top-6 flex flex-col items-end gap-2">
                   <MangaActionBox
                     key={actionBoxNonce}
                     mangaId={manga.id}
@@ -597,6 +579,13 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
 
                 {/* LEFT SIDE: reserve space so text never goes under ActionBox */}
                 <div className="min-w-0 pr-[260px]">
+                  {/* ✅ Secondary title now lives here so it wraps before ActionBox */}
+                  {showSecondaryTitle && secondaryTitle && (
+                    <h2 className="mt-0 text-xl font-semibold leading-snug text-gray-500">
+                      {secondaryTitle}
+                    </h2>
+                  )}
+
                   {/* Synopsis */}
                   {typeof m.description === "string" && m.description.trim() && (
                     <div className="mt-6 mb-3">
@@ -608,7 +597,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
 
                   {/* Chapter Navigator */}
                   {slug && (
-                    <div className="mt-4 min-w-0 overflow-hidden">
+                    <div className="mt-10 min-w-0 overflow-hidden">
                       <ChapterNavigator
                         slug={slug}
                         totalChapters={manga.total_chapters}
@@ -617,12 +606,18 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                     </div>
                   )}
 
-                  {/* Feed (moved up to match anime page layout) */}
+                  {/* Feed */}
                   <div className="mt-6">
-                    <PostFeed key={feedNonce} mangaId={manga.id} />
+                    <FeedShell>
+                      <PostFeed key={feedNonce} mangaId={manga.id} />
+                    </FeedShell>
                   </div>
                 </div>
               </div>
+
+              {/* (Optional) keep this if you want to see your test state somewhere.
+                  leaving untouched: reviewSaveMsg exists but is not rendered in your current file */}
+              {reviewSaveMsg ? null : null}
             </div>
           </div>
         </div>
@@ -661,7 +656,6 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
 
           if (userError || !user) return;
 
-          // count by manga + current user
           const { count: myCount, error: myErr } = await supabase
             .from("manga_series_logs")
             .select("id", { count: "exact", head: true })
@@ -670,10 +664,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
 
           if (!myErr) setMyMangaSeriesLogCount(myCount ?? 0);
 
-          // refresh ActionBox immediately (read/liked/watchlist/rating)
           setActionBoxNonce((n) => n + 1);
-
-          // refresh PostFeed immediately (so the new review/log shows without reload)
           setFeedNonce((n) => n + 1);
         }}
       />
@@ -711,13 +702,12 @@ export const getServerSideProps: GetServerSideProps<MangaPageProps> = async (ctx
     .select("cached_url")
     .eq("manga_id", mangaRow.id)
     .not("cached_url", "is", null)
-    .limit(200); // safety cap
+    .limit(200);
 
   if (coverErr || !covers || covers.length === 0) {
     return { props: { initialBackdropUrl: null } };
   }
 
-  // Filter out empty strings just in case
   const urls = covers
     .map((c: any) => (typeof c.cached_url === "string" ? c.cached_url.trim() : ""))
     .filter(Boolean);
@@ -726,7 +716,6 @@ export const getServerSideProps: GetServerSideProps<MangaPageProps> = async (ctx
     return { props: { initialBackdropUrl: null } };
   }
 
-  // Pick random
   const pick = urls[Math.floor(Math.random() * urls.length)];
 
   return {

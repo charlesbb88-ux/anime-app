@@ -477,7 +477,7 @@ export default function CommentRow(props: CommentRowProps) {
     <div
       style={{
         position: "relative",
-        border: "1px solid #11111111",
+        border: "1px solid #000",
         borderRadius: 0,
         background: canHighlight && isHovered ? "#f7f9fb" : "#ffffff",
         cursor: isClickable ? "pointer" : "default",
@@ -526,7 +526,7 @@ export default function CommentRow(props: CommentRowProps) {
                 bottom: "1.6rem",
                 right: 0,
                 background: "#fff",
-                border: "1px solid #ddd",
+                border: "1px solid #000",
                 borderRadius: "4px",
                 boxShadow: "0 2px 6px rgba(0, 0, 0, 0.08)",
                 minWidth: "130px",
@@ -566,7 +566,7 @@ export default function CommentRow(props: CommentRowProps) {
                     width: "100%",
                     textAlign: "left",
                     padding: "0.45rem 0.7rem",
-                    borderTop: "1px solid #eee",
+                    borderTop: "1px solid #000",
                     background: "transparent",
                     cursor: "pointer",
                     fontSize: "0.9rem",

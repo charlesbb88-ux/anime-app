@@ -771,11 +771,10 @@ export default function PostFeed({
       {user && (
         <div
           style={{
-            border: "1px solid #00000011",
+            border: "1px solid #000",
             borderRadius: 0,
             background: "#ffffff",
             marginBottom: 0,
-            borderBottom: "none",
           }}
         >
           <div
