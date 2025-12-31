@@ -694,7 +694,7 @@ export default function MangaQuickLogBox({
           "w-full px-3 py-2 text-left text-[12px] font-semibold text-gray-100",
           "transition-colors duration-150",
           "hover:bg-sky-500/10 active:bg-sky-500/20",
-          "focus:outline-none focus:ring-2 focus:ring-sky-500/30",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/30",
           "flex items-center justify-between",
         ].join(" ")}
       >
