@@ -440,7 +440,7 @@ export default function MangaQuickLogRow({
             {/* Quick Log header row */}
             <div className="border-b border-gray-700/80 bg-black">
                 <div className="px-3 py-2">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-300">
+                    <div className="text-center text-[11px] font-semibold uppercase tracking-wide text-gray-300">
                         Quick Log
                     </div>
                 </div>
