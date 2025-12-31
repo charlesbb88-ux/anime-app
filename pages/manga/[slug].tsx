@@ -402,7 +402,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                 <img
                   src={manga.image_url}
                   alt={manga.title}
-                  className="h-84 w-56 rounded-md object-cover border-2 border-black/100"
+                  className="h-84 w-56 rounded-md object-cover border-3 border-black/100"
                 />
               ) : (
                 <div className="flex h-64 w-56 items-center justify-center rounded-lg bg-gray-800 text-4xl font-bold text-gray-200">
@@ -520,7 +520,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                 </div>
               )}
 
-              <div className="mt-4">
+              <div className="mt-8">
                 <MangaMetaBox
                   titleEnglish={manga.title_english}
                   titlePreferred={manga.title_preferred}
@@ -541,7 +541,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
             {/* RIGHT COLUMN */}
             <div className="min-w-100 flex-1">
               {/* ROW 1 — PRIMARY TITLE ONLY (no secondary here) */}
-              <div className="mb-0">
+              <div className="mb-0 pl-4">
                 <EnglishTitle
                   as="h1"
                   className="text-4xl font-bold leading-tight"
@@ -578,7 +578,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                 </div>
 
                 {/* LEFT SIDE: reserve space so text never goes under ActionBox */}
-                <div className="min-w-0 pr-[260px]">
+                <div className="min-w-0 pr-[290px] pl-4">
                   {/* ✅ Secondary title now lives here so it wraps before ActionBox */}
                   {showSecondaryTitle && secondaryTitle && (
                     <h2 className="mt-0 text-xl font-semibold leading-snug text-gray-500">
