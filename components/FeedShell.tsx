@@ -8,7 +8,7 @@ export default function FeedShell({
   return (
     <div
       style={{
-        border: "8px solid #000",
+        border: "3px solid #000",
         background: "#fff",
         borderRadius: 4,
       }}
