@@ -553,10 +553,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                 {/* chapter-only line */}
                 <div className="mt-2">
                   <p className="text-2xl font-bold">Chapter {chapterNum}</p>
-                  {isChapterLoading && <p className="mt-1 text-xs text-gray-500">Loading chapter…</p>}
-                  {!isChapterLoading && chapterError && (
-                    <p className="mt-1 text-xs text-red-500">{chapterError}</p>
-                  )}
+                  {chapterError && <p className="mt-1 text-xs text-red-500">{chapterError}</p>}
                 </div>
               </div>
 

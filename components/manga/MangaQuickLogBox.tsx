@@ -671,6 +671,9 @@ export default function MangaQuickLogBox({
         refreshToken={(refreshToken ?? 0) * 100000 + logBump + reviewBump}
         onOpenLog={onOpenLog}
         onMessage={setMsg}
+        onLogCreated={() => {
+          setLogBump((n) => n + 1);
+        }}
       />
 
       <button
