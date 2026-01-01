@@ -19,12 +19,14 @@ function postHref(postId: string) {
 type Visibility = "public" | "friends" | "private";
 
 type ActivityItem =
+  // ✅ Series snapshot log
   | {
     id: string;
     kind: "log";
     type: "manga_series";
     title: string;
-    rating: number | null; // could be 0..100 OR 1..10 half-stars depending on your schema
+
+    rating: number | null;
     note: string | null;
     logged_at: string;
     visibility: Visibility;
@@ -32,23 +34,57 @@ type ActivityItem =
     liked?: boolean | null;
     review_id?: string | null;
   }
+  // ✅ Chapter snapshot log
+  | {
+    id: string;
+    kind: "log";
+    type: "manga_chapter";
+    title: string;
+    subLabel?: string;
+
+    rating: number | null;
+    note: string | null;
+    logged_at: string;
+    visibility: Visibility;
+
+    liked?: boolean | null;
+    review_id?: string | null;
+  }
+  // ✅ Series standalone review
   | {
     id: string;
     kind: "review";
     type: "manga_series_review";
     title: string;
-    logged_at: string; // reviews.created_at
-    rating: number | null; // could be 0..100
+
+    logged_at: string;
+    rating: number | null;
     content: string | null;
     contains_spoilers: boolean;
   }
+  // ✅ Chapter standalone review
+  | {
+    id: string;
+    kind: "review";
+    type: "manga_chapter_review";
+    title: string;
+    subLabel?: string;
+
+    logged_at: string;
+    rating: number | null;
+    content: string | null;
+    contains_spoilers: boolean;
+  }
+  // ✅ Marks (series OR chapter)
   | {
     id: string;
     kind: "mark";
     type: "watched" | "liked" | "watchlist" | "rating";
     title: string;
-    logged_at: string; // user_marks.created_at
-    stars?: number | null; // half-stars 1..10 (only for rating mark)
+    subLabel?: string;
+
+    logged_at: string;
+    stars?: number | null;
   };
 
 function getMangaDisplayTitle(manga: any): string {
@@ -66,7 +102,6 @@ type MangaActivityPageProps = {
 };
 
 function normalizeBackdropUrl(url: string) {
-  // keep same behavior as your manga main/chapter pages
   if (url.includes("https://image.tmdb.org/t/p/original/")) {
     return url.replace("/t/p/original/", "/t/p/w1280/");
   }
@@ -149,7 +184,6 @@ function HalfStarsRow({ halfStars }: { halfStars: number }) {
 
 /* -------------------- Snapshot helpers -------------------- */
 
-// Convert a 0..100 rating to half-stars 1..10
 function rating100ToHalfStars(rating: number | null): number | null {
   if (typeof rating !== "number" || !Number.isFinite(rating)) return null;
   const clamped = clampInt(rating, 0, 100);
@@ -157,16 +191,11 @@ function rating100ToHalfStars(rating: number | null): number | null {
   return clampInt(Math.round(clamped / 10), 1, 10);
 }
 
-// Flexible: if your logs/reviews store 1..10 already, use it directly.
-// If they store 0..100, convert.
 function ratingToHalfStarsFlexible(rating: number | null): number | null {
   if (typeof rating !== "number" || !Number.isFinite(rating)) return null;
   if (rating <= 0) return null;
 
-  // If it looks like half-stars already (1..10)
   if (rating <= 10) return clampInt(rating, 1, 10);
-
-  // Otherwise assume 0..100
   return rating100ToHalfStars(rating);
 }
 
@@ -176,17 +205,26 @@ function joinWithCommasAnd(parts: string[]) {
   return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
 }
 
-function actionWord(a: "reviewed" | "liked" | "watched" | "rated") {
+function actionWordSeries(a: "reviewed" | "liked" | "watched" | "rated") {
   if (a === "rated") return "rated";
   if (a === "reviewed") return "reviewed";
   if (a === "liked") return "liked";
   return "watched";
 }
 
-function buildSnapshotPrefix(
-  actions: Array<"reviewed" | "liked" | "watched" | "rated">
-) {
-  return `You ${joinWithCommasAnd(actions.map(actionWord))}`;
+function buildSnapshotPrefixSeries(actions: Array<"reviewed" | "liked" | "watched" | "rated">) {
+  return `You ${joinWithCommasAnd(actions.map(actionWordSeries))}`;
+}
+
+function actionWordChapter(a: "reviewed" | "liked" | "read" | "rated") {
+  if (a === "rated") return "rated";
+  if (a === "reviewed") return "reviewed";
+  if (a === "liked") return "liked";
+  return "read";
+}
+
+function buildSnapshotPrefixChapter(actions: Array<"reviewed" | "liked" | "read" | "rated">) {
+  return `You ${joinWithCommasAnd(actions.map(actionWordChapter))}`;
 }
 
 const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUrl }) => {
@@ -194,6 +232,7 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
   const { slug } = router.query as { slug?: string };
 
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [backdropUrl] = useState<string | null>(initialBackdropUrl);
   const [posterUrl, setPosterUrl] = useState<string | null>(null);
   const [pageTitle, setPageTitle] = useState<string>("Your activity");
@@ -201,13 +240,22 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  const [feedLimit, setFeedLimit] = useState(20);
+  const prefetchLimit = Math.max(60, feedLimit * 3);
+
   const [reviewIdToPostId, setReviewIdToPostId] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let mounted = true;
 
     async function run() {
-      setLoading(true);
+      // If we already have items on screen, this is a "load more" fetch.
+      // Keep the list visible and just show a small loading state.
+      if (feedLimit > 20) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
       setError(null);
 
       const {
@@ -216,12 +264,17 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
       } = await supabase.auth.getUser();
 
       if (!user || userErr) {
+        setLoading(false);
+        setLoadingMore(false);
         router.replace("/login");
         return;
       }
 
       if (!slug) {
-        if (mounted) setLoading(false);
+        if (mounted) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
         return;
       }
 
@@ -237,6 +290,7 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
       if (mangaRes.error || !manga?.id) {
         setError("Manga not found.");
         setLoading(false);
+        setLoadingMore(false);
         return;
       }
 
@@ -244,6 +298,7 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
       setPageTitle(`Your activity · ${mangaTitle}`);
       setPosterUrl(manga?.image_url ?? null);
 
+      // ✅ Pull series activity + ALL chapter activity for this manga
       const [
         seriesLogsRes,
         seriesReviewsRes,
@@ -251,7 +306,12 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
         likedMarkRes,
         watchlistMarkRes,
         ratingMarkRes,
+
+        chapterLogsRes,
+        chapterReviewsRes,
+        chapterMarksRes,
       ] = await Promise.all([
+        // ----- Series -----
         supabase
           .from("manga_series_logs")
           .select("id, logged_at, rating, note, visibility, liked, review_id")
@@ -310,16 +370,92 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
           .is("anime_id", null)
           .is("anime_episode_id", null)
           .maybeSingle(),
+
+        // ----- Chapters (ALL) -----
+        supabase
+          .from("manga_chapter_logs")
+          .select("id, manga_chapter_id, logged_at, rating, note, visibility, liked, review_id")
+          .eq("user_id", user.id)
+          .eq("manga_id", manga.id)
+          .order("logged_at", { ascending: false })
+          .limit(prefetchLimit),
+
+
+        supabase
+          .from("reviews")
+          .select("id, manga_chapter_id, created_at, rating, content, contains_spoilers")
+          .eq("user_id", user.id)
+          .eq("manga_id", manga.id)
+          .not("manga_chapter_id", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(prefetchLimit),
+
+
+        supabase
+          .from("user_marks")
+          .select("id, manga_chapter_id, kind, created_at, stars")
+          .eq("user_id", user.id)
+          .eq("manga_id", manga.id)
+          .not("manga_chapter_id", "is", null)
+          .is("anime_id", null)
+          .is("anime_episode_id", null)
+          .order("created_at", { ascending: false })
+          .limit(prefetchLimit),
       ]);
 
-      // -------------------- Step 2: build review_id -> post_id map --------------------
+      if (!mounted) return;
+
+      // ✅ Build chapterId -> "Chapter X" labels (only for chapters that appear in activity)
+      const chapterIds = new Set<string>();
+
+      for (const row of chapterLogsRes.data ?? []) {
+        if ((row as any)?.manga_chapter_id) chapterIds.add(String((row as any).manga_chapter_id));
+      }
+      for (const row of chapterReviewsRes.data ?? []) {
+        if ((row as any)?.manga_chapter_id) chapterIds.add(String((row as any).manga_chapter_id));
+      }
+      for (const row of chapterMarksRes.data ?? []) {
+        if ((row as any)?.manga_chapter_id) chapterIds.add(String((row as any).manga_chapter_id));
+      }
+
+      let chapterIdToSubLabel: Record<string, string> = {};
+
+      if (chapterIds.size > 0) {
+        const idList = Array.from(chapterIds);
+
+        const chaptersRes = await supabase
+          .from("manga_chapters")
+          .select("id, chapter_number")
+          .in("id", idList.slice(0, prefetchLimit));
+
+        if (chaptersRes.data) {
+          for (const ch of chaptersRes.data as any[]) {
+            if (!ch?.id) continue;
+            const num = ch?.chapter_number;
+            const label =
+              num != null && num !== "" ? `Chapter ${num}` : "Chapter";
+            chapterIdToSubLabel[String(ch.id)] = label;
+          }
+        }
+      }
+
+      // ✅ Build review_id -> post_id map (series + chapter)
       const reviewIdsToResolve = new Set<string>();
 
+      // series logs have review_id
       for (const row of seriesLogsRes.data ?? []) {
         if ((row as any)?.review_id) reviewIdsToResolve.add(String((row as any).review_id));
       }
-
+      // chapter logs have review_id
+      for (const row of chapterLogsRes.data ?? []) {
+        if ((row as any)?.review_id) reviewIdsToResolve.add(String((row as any).review_id));
+      }
+      // series reviews
       for (const r of seriesReviewsRes.data ?? []) {
+        if ((r as any)?.id) reviewIdsToResolve.add(String((r as any).id));
+      }
+      // chapter reviews
+      for (const r of chapterReviewsRes.data ?? []) {
         if ((r as any)?.id) reviewIdsToResolve.add(String((r as any).id));
       }
 
@@ -344,28 +480,26 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
       }
 
       if (mounted) setReviewIdToPostId(nextReviewIdToPostId);
-      // -------------------------------------------------------------------------------
 
-      if (!mounted) return;
-
+      // -------------------- Merge items --------------------
       const merged: ActivityItem[] = [];
 
-      // Build sets for de-duping
-      const attachedReviewIds = new Set<string>();
+      // de-dupe standalone reviews if attached to snapshot logs
+      const attachedSeriesReviewIds = new Set<string>();
+      const attachedChapterReviewIds = new Set<string>();
 
+      // ----- Series mark suppression helpers (unchanged from your page) -----
       const seriesLogSnapshots = (seriesLogsRes.data ?? []).map((row: any) => {
         const loggedAtIso = String(row?.logged_at ?? "");
         const ms = new Date(loggedAtIso).getTime();
 
         const liked = typeof row?.liked === "boolean" ? row.liked : Boolean(row?.liked);
 
-        const hs = ratingToHalfStarsFlexible(
-          typeof row?.rating === "number" ? row.rating : null
-        );
+        const hs = ratingToHalfStarsFlexible(typeof row?.rating === "number" ? row.rating : null);
         const hasRating = hs !== null;
 
         const reviewId = row?.review_id ? String(row.review_id) : null;
-        if (reviewId) attachedReviewIds.add(reviewId);
+        if (reviewId) attachedSeriesReviewIds.add(reviewId);
 
         return {
           ms: Number.isFinite(ms) ? ms : null,
@@ -399,7 +533,7 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
         return false;
       }
 
-      function maybePushMark(
+      function maybePushSeriesMark(
         mark: any,
         type: "watched" | "liked" | "watchlist" | "rating",
         title: string
@@ -429,15 +563,16 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
         });
       }
 
-      maybePushMark(watchedMarkRes.data, "watched", mangaTitle);
-      maybePushMark(likedMarkRes.data, "liked", mangaTitle);
-      maybePushMark(watchlistMarkRes.data, "watchlist", mangaTitle);
-      maybePushMark(ratingMarkRes.data, "rating", mangaTitle);
+      // series marks (singletons)
+      maybePushSeriesMark(watchedMarkRes.data, "watched", mangaTitle);
+      maybePushSeriesMark(likedMarkRes.data, "liked", mangaTitle);
+      maybePushSeriesMark(watchlistMarkRes.data, "watchlist", mangaTitle);
+      maybePushSeriesMark(ratingMarkRes.data, "rating", mangaTitle);
 
-      // Standalone series reviews (only if not attached to snapshot logs)
+      // series standalone reviews (not attached)
       (seriesReviewsRes.data ?? []).forEach((row: any) => {
         if (!row?.id || !row?.created_at) return;
-        if (attachedReviewIds.has(String(row.id))) return;
+        if (attachedSeriesReviewIds.has(String(row.id))) return;
 
         merged.push({
           id: String(row.id),
@@ -451,7 +586,7 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
         });
       });
 
-      // Series logs (snapshot style)
+      // series logs (snapshot cards)
       (seriesLogsRes.data ?? []).forEach((row: any) => {
         merged.push({
           id: String(row.id),
@@ -467,12 +602,81 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
         });
       });
 
-      const finalItems = merged.sort(
-        (a, b) => new Date(b.logged_at).getTime() - new Date(a.logged_at).getTime()
-      );
+      // ----- Chapter activity -----
+      // mark attached chapter reviews via chapter logs review_id
+      (chapterLogsRes.data ?? []).forEach((row: any) => {
+        const rid = row?.review_id ? String(row.review_id) : null;
+        if (rid) attachedChapterReviewIds.add(rid);
+      });
+
+      // chapter marks (can be many, so we list them all)
+      (chapterMarksRes.data ?? []).forEach((row: any) => {
+        if (!row?.id || !row?.created_at || !row?.kind) return;
+        const chId = row?.manga_chapter_id ? String(row.manga_chapter_id) : "";
+        const subLabel = chId ? chapterIdToSubLabel[chId] : undefined;
+
+        const kind = String(row.kind) as "watched" | "liked" | "watchlist" | "rating";
+        if (!["watched", "liked", "watchlist", "rating"].includes(kind)) return;
+
+        merged.push({
+          id: String(row.id),
+          kind: "mark",
+          type: kind,
+          title: mangaTitle,
+          subLabel,
+          logged_at: String(row.created_at),
+          stars: kind === "rating" ? (row.stars ?? null) : undefined,
+        });
+      });
+
+      // chapter standalone reviews (not attached)
+      (chapterReviewsRes.data ?? []).forEach((row: any) => {
+        if (!row?.id || !row?.created_at) return;
+        if (attachedChapterReviewIds.has(String(row.id))) return;
+
+        const chId = row?.manga_chapter_id ? String(row.manga_chapter_id) : "";
+        const subLabel = chId ? chapterIdToSubLabel[chId] : undefined;
+
+        merged.push({
+          id: String(row.id),
+          kind: "review",
+          type: "manga_chapter_review",
+          title: mangaTitle,
+          subLabel,
+          logged_at: String(row.created_at),
+          rating: typeof row.rating === "number" ? row.rating : null,
+          content: row.content ?? null,
+          contains_spoilers: Boolean(row.contains_spoilers),
+        });
+      });
+
+      // chapter logs (snapshot cards)
+      (chapterLogsRes.data ?? []).forEach((row: any) => {
+        const chId = row?.manga_chapter_id ? String(row.manga_chapter_id) : "";
+        const subLabel = chId ? chapterIdToSubLabel[chId] : undefined;
+
+        merged.push({
+          id: String(row.id),
+          kind: "log",
+          type: "manga_chapter",
+          title: mangaTitle,
+          subLabel,
+          rating: typeof row.rating === "number" ? row.rating : null,
+          note: row.note ?? null,
+          logged_at: String(row.logged_at),
+          visibility: (row.visibility as Visibility) ?? "public",
+          liked: typeof row.liked === "boolean" ? row.liked : Boolean(row.liked),
+          review_id: row.review_id ?? null,
+        });
+      });
+
+      const finalItems = merged
+        .sort((a, b) => new Date(b.logged_at).getTime() - new Date(a.logged_at).getTime())
+        .slice(0, feedLimit);
 
       setItems(finalItems);
       setLoading(false);
+      setLoadingMore(false);
     }
 
     run();
@@ -480,9 +684,9 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
     return () => {
       mounted = false;
     };
-  }, [router, slug]);
+  }, [slug, feedLimit]);
 
-  if (loading) {
+  if (loading && items.length === 0) {
     return (
       <div className="flex min-h-screen items-center justify-center text-sm text-neutral-500">
         Loading…
@@ -492,13 +696,13 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
 
   return (
     <MangaMediaHeaderLayout
-  backdropUrl={backdropUrl}
-  posterUrl={posterUrl}
-  title={pageTitle}
-  backdropHeightClassName="h-[620px]"
-  overlaySrc="/overlays/my-overlay4.png"
-  reserveRightClassName="pr-[260px]"
->
+      backdropUrl={backdropUrl}
+      posterUrl={posterUrl}
+      title={pageTitle}
+      backdropHeightClassName="h-[620px]"
+      overlaySrc="/overlays/my-overlay4.png"
+      reserveRightClassName="pr-[260px]"
+    >
       <div className="min-w-0">
         {error ? (
           <div className="text-sm text-red-300">{error}</div>
@@ -507,7 +711,7 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
         ) : (
           <ul className="space-y-1">
             {items.map((item) => {
-              // ✅ SERIES SNAPSHOT CARD (from manga_series_logs only)
+              // ✅ SERIES SNAPSHOT CARD
               if (item.kind === "log" && item.type === "manga_series") {
                 const actions: Array<"watched" | "liked" | "rated" | "reviewed"> = [];
 
@@ -519,7 +723,7 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
 
                 if (item.review_id) actions.push("reviewed");
 
-                const prefix = buildSnapshotPrefix(actions);
+                const prefix = buildSnapshotPrefixSeries(actions);
 
                 const postId = item.review_id
                   ? reviewIdToPostId[String(item.review_id)]
@@ -558,14 +762,75 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
                 );
               }
 
-              // ✅ MARKS
+              // ✅ CHAPTER SNAPSHOT CARD
+              if (item.kind === "log" && item.type === "manga_chapter") {
+                const actions: Array<"read" | "liked" | "rated" | "reviewed"> = [];
+
+                actions.push("read");
+                if (item.liked) actions.push("liked");
+
+                const hs = ratingToHalfStarsFlexible(item.rating);
+                if (hs !== null) actions.push("rated");
+
+                if (item.review_id) actions.push("reviewed");
+
+                const prefix = buildSnapshotPrefixChapter(actions);
+
+                const postId = item.review_id
+                  ? reviewIdToPostId[String(item.review_id)]
+                  : undefined;
+
+                return (
+                  <li key={`chapter-snap-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        {postId ? (
+                          <Link
+                            href={postHref(postId)}
+                            className="inline hover:underline"
+                            title="View review post"
+                          >
+                            {prefix}{" "}
+                            <span className="font-bold text-white">{item.title}</span>
+                            {item.subLabel ? (
+                              <span className="ml-1 text-neutral-300">· {item.subLabel}</span>
+                            ) : null}
+                            {hs !== null ? <HalfStarsRow halfStars={hs} /> : null}
+                            <span className="ml-1"> on {formatOnFullDate(item.logged_at)}</span>
+                          </Link>
+                        ) : (
+                          <>
+                            {prefix}{" "}
+                            <span className="font-bold text-white">{item.title}</span>
+                            {item.subLabel ? (
+                              <span className="ml-1 text-neutral-300">· {item.subLabel}</span>
+                            ) : null}
+                            {hs !== null ? <HalfStarsRow halfStars={hs} /> : null}
+                            <span className="ml-1"> on {formatOnFullDate(item.logged_at)}</span>
+                          </>
+                        )}
+                      </div>
+
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
+                    </div>
+                  </li>
+                );
+              }
+
+              // ✅ MARKS (series or chapter)
               if (item.kind === "mark" && item.type === "watched") {
                 return (
                   <li key={`watched-${item.id}`} className={CARD_CLASS}>
                     <div className="flex items-center justify-between gap-4">
                       <div className="text-sm font-medium">
                         You marked{" "}
-                        <span className="font-bold text-white">{item.title}</span> as watched
+                        <span className="font-bold text-white">{item.title}</span>
+                        {item.subLabel ? (
+                          <span className="ml-1 text-neutral-300">· {item.subLabel}</span>
+                        ) : null}{" "}
+                        as {item.subLabel ? "read" : "watched"}
                       </div>
                       <div className="whitespace-nowrap text-xs text-neutral-100">
                         {formatRelativeShort(item.logged_at)}
@@ -581,6 +846,9 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
                     <div className="flex items-center justify-between gap-4">
                       <div className="text-sm font-medium">
                         You liked <span className="font-bold text-white">{item.title}</span>
+                        {item.subLabel ? (
+                          <span className="ml-1 text-neutral-300">· {item.subLabel}</span>
+                        ) : null}
                       </div>
                       <div className="whitespace-nowrap text-xs text-neutral-100">
                         {formatRelativeShort(item.logged_at)}
@@ -596,7 +864,11 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
                     <div className="flex items-center justify-between gap-4">
                       <div className="text-sm font-medium">
                         You added{" "}
-                        <span className="font-bold text-white">{item.title}</span> to your watchlist
+                        <span className="font-bold text-white">{item.title}</span>
+                        {item.subLabel ? (
+                          <span className="ml-1 text-neutral-300">· {item.subLabel}</span>
+                        ) : null}{" "}
+                        to your watchlist
                       </div>
                       <div className="whitespace-nowrap text-xs text-neutral-100">
                         {formatRelativeShort(item.logged_at)}
@@ -614,6 +886,9 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
                     <div className="flex items-center justify-between gap-4">
                       <div className="text-sm font-medium">
                         You rated <span className="font-bold text-white">{item.title}</span>
+                        {item.subLabel ? (
+                          <span className="ml-1 text-neutral-300">· {item.subLabel}</span>
+                        ) : null}
                         {hs > 0 ? <HalfStarsRow halfStars={hs} /> : null}
                       </div>
                       <div className="whitespace-nowrap text-xs text-neutral-100">
@@ -624,7 +899,7 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
                 );
               }
 
-              // ✅ Standalone series review
+              // ✅ STANDALONE REVIEW (series OR chapter)
               if (item.kind === "review") {
                 const postId = reviewIdToPostId[String(item.id)];
 
@@ -640,11 +915,17 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
                           >
                             You reviewed{" "}
                             <span className="font-bold text-white">{item.title}</span>
+                            {"subLabel" in item && item.subLabel ? (
+                              <span className="ml-1 text-neutral-300">· {item.subLabel}</span>
+                            ) : null}
                           </Link>
                         ) : (
                           <>
                             You reviewed{" "}
                             <span className="font-bold text-white">{item.title}</span>
+                            {"subLabel" in item && item.subLabel ? (
+                              <span className="ml-1 text-neutral-300">· {item.subLabel}</span>
+                            ) : null}
                           </>
                         )}
                       </div>
@@ -660,6 +941,19 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
             })}
           </ul>
         )}
+
+        {!error && items.length >= feedLimit ? (
+          <div className="mt-3 flex justify-center">
+            <button
+              type="button"
+              disabled={loadingMore}
+              onClick={() => setFeedLimit((n) => n + 20)}
+              className="inline-flex rounded bg-black px-3 py-2 text-sm text-neutral-100 hover:bg-neutral-700 disabled:opacity-50"
+            >
+              {loadingMore ? "Loading…" : "Load more"}
+            </button>
+          </div>
+        ) : null}
 
         <div className="mt-4">
           <Link
@@ -684,14 +978,12 @@ export default MangaActivityPage;
 
 export const getServerSideProps: GetServerSideProps<MangaActivityPageProps> = async (ctx) => {
   const raw = ctx.params?.slug;
-  const slug =
-    typeof raw === "string" ? raw : Array.isArray(raw) && raw[0] ? raw[0] : null;
+  const slug = typeof raw === "string" ? raw : Array.isArray(raw) && raw[0] ? raw[0] : null;
 
   if (!slug) {
     return { props: { initialBackdropUrl: null } };
   }
 
-  // 1) Get manga id by slug (server-side)
   const { data: mangaRow, error: mangaErr } = await supabaseAdmin
     .from("manga")
     .select("id")
@@ -702,13 +994,12 @@ export const getServerSideProps: GetServerSideProps<MangaActivityPageProps> = as
     return { props: { initialBackdropUrl: null } };
   }
 
-  // 2) Pull ALL cached images for this manga from public.manga_covers (same pool as main + chapter pages)
   const { data: covers, error: coverErr } = await supabaseAdmin
     .from("manga_covers")
     .select("cached_url")
     .eq("manga_id", mangaRow.id)
     .not("cached_url", "is", null)
-    .limit(200); // safety cap
+    .limit(200);
 
   if (coverErr || !covers || covers.length === 0) {
     return { props: { initialBackdropUrl: null } };
