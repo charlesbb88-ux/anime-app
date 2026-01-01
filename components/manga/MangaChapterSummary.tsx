@@ -48,6 +48,7 @@ export default function MangaChapterSummary({ chapterId, onTopSummary, mode = "d
             .from("manga_chapter_summaries")
             .select("id, user_id, content, contains_spoilers, upvotes, created_at")
             .eq("chapter_id", chapterId)
+            .eq("status", "active")
             .order("upvotes", { ascending: false })
             .order("created_at", { ascending: false })
             .limit(1)
