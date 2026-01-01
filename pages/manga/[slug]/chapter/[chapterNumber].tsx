@@ -26,6 +26,9 @@ import FeedShell from "@/components/FeedShell";
 
 import MangaChapterSummary from "@/components/manga/MangaChapterSummary";
 
+import { buildChapterNavGroups } from "@/lib/chapterNavigation";
+import type { NavGroup } from "@/lib/chapterNavigation";
+
 type MangaTag = {
   id: number;
   manga_id: string;
@@ -37,6 +40,59 @@ type MangaTag = {
   is_media_spoiler: boolean | null;
   category: string | null;
 };
+
+type CoverRow = {
+  volume: string | null;
+  locale: string | null;
+  cached_url: string | null;
+  is_main: boolean | null;
+};
+
+type VolumeMapRow = {
+  mapping: Record<string, string[]> | null;
+};
+
+function isNumericLike2(s: string) {
+  return /^(\d+)(\.\d+)?$/.test(String(s).trim());
+}
+
+function normVol(v: any): string | null {
+  const s0 = String(v ?? "").trim();
+  if (!s0) return null;
+  if (s0.toLowerCase() === "none") return null;
+
+  if (/^\d+(\.\d+)?$/.test(s0)) {
+    const n = Number(s0);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return String(Math.trunc(n));
+  }
+
+  const m = s0.match(/(\d+)/);
+  if (m?.[1]) {
+    const n = Number(m[1]);
+    if (Number.isFinite(n) && n > 0) return String(Math.trunc(n));
+  }
+
+  return s0;
+}
+
+function pickBestCoverUrl(rows: CoverRow[]): string | null {
+  const usable = (rows || []).filter((r) => r?.cached_url);
+  if (!usable.length) return null;
+
+  const mains = usable.filter((r) => r.is_main);
+  const pool = mains.length ? mains : usable;
+
+  const pref = ["en", "ja"];
+  for (const p of pref) {
+    const hit = pool.find(
+      (r) => (r.locale || "").toLowerCase() === p && r.cached_url
+    );
+    if (hit?.cached_url) return hit.cached_url;
+  }
+
+  return pool[0].cached_url ?? null;
+}
 
 type MangaChapterPageProps = {
   initialBackdropUrl: string | null;
@@ -72,6 +128,10 @@ function cleanSynopsis(raw: string) {
 const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl }) => {
   const router = useRouter();
   const { slug, chapterNumber } = router.query;
+
+  const [volumeMap, setVolumeMap] = useState<Record<string, string[]> | null>(null);
+  const [volumeMapLoaded, setVolumeMapLoaded] = useState(false);
+  const [coverRows, setCoverRows] = useState<CoverRow[]>([]);
 
   const [manga, setManga] = useState<Manga | null>(null);
   const [isMangaLoading, setIsMangaLoading] = useState(true);
@@ -122,6 +182,68 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
   const isNumericLike = /^(\d+)(\.\d+)?$/.test(trimmed);
   const chapterNum = isNumericLike ? Number(trimmed) : NaN;
   const isValidChapterNumber = Number.isFinite(chapterNum) && chapterNum > 0;
+
+  const chapterPosterUrl = useMemo(() => {
+    if (!isValidChapterNumber) return null;
+    if (!volumeMapLoaded) return null;
+
+    // group covers by volume -> best url
+    const byVol: Record<string, CoverRow[]> = {};
+    for (const r of coverRows) {
+      const v = normVol(r.volume);
+      if (!v) continue;
+      if (!byVol[v]) byVol[v] = [];
+      byVol[v].push(r);
+    }
+
+    const coverUrlByVolume: Record<string, string | null> = {};
+    for (const v of Object.keys(byVol)) {
+      coverUrlByVolume[v] = pickBestCoverUrl(byVol[v]);
+    }
+
+    // build nav groups like ChapterNavigator does
+    const totalRaw = (manga as any)?.total_chapters;
+    const total =
+      typeof totalRaw === "number" && Number.isFinite(totalRaw) && totalRaw > 0
+        ? Math.floor(totalRaw)
+        : null;
+
+    const navGroups: NavGroup[] = buildChapterNavGroups({
+      volumeMap,
+      totalChapters: total,
+      chunkSize: 25,
+    });
+
+    // map chapter -> cover (with "carry forward last volume cover" behavior)
+    const chapterCoverByNumber: Record<number, string | null> = {};
+    let lastVolumeCover: string | null = null;
+
+    for (const g of navGroups) {
+      if (g.kind === "volume") {
+        const key = String(g.key || "");
+        const rawVol =
+          key.startsWith("vol:") ? key.slice(4) : key.startsWith("vol-") ? key.slice(4) : key;
+
+        const v = normVol(rawVol);
+        const cover = v ? coverUrlByVolume[v] ?? null : null;
+        if (cover) lastVolumeCover = cover;
+
+        for (const ch of g.chapters) chapterCoverByNumber[ch] = cover;
+      } else {
+        for (const ch of g.chapters) chapterCoverByNumber[ch] = lastVolumeCover;
+      }
+    }
+
+    // ✅ the one we want for THIS page's chapter
+    return chapterCoverByNumber[chapterNum] ?? null;
+  }, [
+    isValidChapterNumber,
+    chapterNum,
+    volumeMapLoaded,
+    volumeMap,
+    coverRows,
+    manga,
+  ]);
 
   // Load manga by slug
   useEffect(() => {
@@ -251,6 +373,71 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
 
     return () => {
       isMounted = false;
+    };
+  }, [manga?.id]);
+
+  // ✅ Volume map + covers (used to pick the "current chapter's volume cover" poster)
+  useEffect(() => {
+    const mangaId = manga?.id;
+    if (!mangaId) {
+      setVolumeMap(null);
+      setVolumeMapLoaded(false);
+      setCoverRows([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function run() {
+      setVolumeMap(null);
+      setVolumeMapLoaded(false);
+      setCoverRows([]);
+
+      // volume map
+      const { data: vm, error: vmErr } = await supabase
+        .from("manga_volume_chapter_map")
+        .select("mapping")
+        .eq("manga_id", mangaId)
+        .eq("source", "mangadex")
+        .maybeSingle();
+
+      if (!cancelled) {
+        if (!vmErr && vm) {
+          const row = vm as unknown as VolumeMapRow;
+          if (row?.mapping && typeof row.mapping === "object") {
+            setVolumeMap(row.mapping);
+          }
+        }
+        setVolumeMapLoaded(true);
+      }
+
+      // covers
+      const { data: covers, error: coverErr } = await supabase
+        .from("manga_covers")
+        .select("volume, locale, cached_url, is_main")
+        .eq("manga_id", mangaId)
+        .not("cached_url", "is", null);
+
+      if (cancelled) return;
+
+      if (coverErr || !Array.isArray(covers)) {
+        setCoverRows([]);
+        return;
+      }
+
+      setCoverRows(
+        (covers as any[]).map((r) => ({
+          volume: r?.volume ?? null,
+          locale: r?.locale ?? null,
+          cached_url: r?.cached_url ?? null,
+          is_main: r?.is_main ?? null,
+        }))
+      );
+    }
+
+    run();
+    return () => {
+      cancelled = true;
     };
   }, [manga?.id]);
 
@@ -406,9 +593,9 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
             {/* LEFT COLUMN */}
             <div className="flex-shrink-0 w-56">
               {/* Poster */}
-              {manga?.image_url ? (
+              {(chapterPosterUrl || (manga as any).image_url) ? (
                 <img
-                  src={(manga as any).image_url}
+                  src={chapterPosterUrl ?? (manga as any).image_url}
                   alt={manga?.title ?? slugString}
                   className="h-84 w-56 rounded-md object-cover border-3 border-black/100"
                 />
