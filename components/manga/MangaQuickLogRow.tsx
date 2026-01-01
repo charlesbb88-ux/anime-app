@@ -452,11 +452,9 @@ export default function MangaQuickLogRow({
             ) : (
                 <div className="relative overflow-hidden">
                     {/* green action revealed by swipe */}
-                    <div className="absolute inset-0 flex items-center bg-green-500">
-                        <div className="flex items-center gap-3 pl-4">
-                            <div className="h-6 w-6 rounded-full bg-white/20" />
-                            <div className="text-[14px] font-semibold text-white">Chapter Logged</div>
-                        </div>
+                    {/* green action revealed by swipe */}
+                    <div className="absolute inset-0 flex items-center justify-center bg-green-500">
+                        <div className="text-[14px] font-semibold text-white">Chapter Logged</div>
                     </div>
 
                     {/* sliding foreground */}

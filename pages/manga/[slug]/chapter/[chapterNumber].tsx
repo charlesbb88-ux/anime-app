@@ -613,7 +613,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                     {genres.map((g) => (
                       <span
                         key={g}
-                        className="rounded-full bg-gray-800 px-3 py-1 text-xs text-gray-100"
+                        className="rounded-full bg-black px-3 py-1 text-xs text-gray-100"
                       >
                         {g}
                       </span>

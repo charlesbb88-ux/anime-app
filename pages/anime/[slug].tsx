@@ -390,7 +390,7 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                     {genres.map((g) => (
                       <span
                         key={g}
-                        className="rounded-full bg-gray-800 px-3 py-1 text-xs text-gray-100"
+                        className="rounded-full bg-black px-3 py-1 text-xs text-gray-100"
                       >
                         {g}
                       </span>
@@ -439,7 +439,7 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                               >
                                 {percent !== null && (
                                   <span
-                                    className="pointer-events-none absolute inset-y-0 left-0 bg-blue-500/20"
+                                    className="pointer-events-none absolute inset-y-0 left-0 bg-black"
                                     style={{ width: `${percent}%` }}
                                   />
                                 )}
