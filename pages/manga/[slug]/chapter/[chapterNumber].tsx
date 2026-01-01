@@ -591,7 +591,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                   {chapterError && <p className="mt-1 text-xs text-red-500">{chapterError}</p>}
 
                   {/* Synopsis area (chapter pages: community summary OR the full composer goes here) */}
-                  <div className="mt-6 mb-3">
+                  <div className="mt-6 mb-3 min-h-[55px]">
                     {chapter && (
                       <>
                         {/* If summary exists: show text + icon (inline) */}

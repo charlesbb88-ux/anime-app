@@ -23,7 +23,7 @@ type ChapterSummaryRow = {
     created_at: string;
 };
 
-const MAX_CHARS = 1200;
+const MAX_CHARS = 500;
 
 export default function MangaChapterSummary({ chapterId, onTopSummary, mode = "default" }: Props) {
     const [summary, setSummary] = useState<ChapterSummaryRow | null>(null); // top summary (global)
