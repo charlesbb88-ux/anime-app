@@ -24,6 +24,8 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 import FeedShell from "@/components/FeedShell";
 
+import MangaChapterSummary from "@/components/manga/MangaChapterSummary";
+
 type MangaTag = {
   id: number;
   manga_id: string;
@@ -74,6 +76,10 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
   const [manga, setManga] = useState<Manga | null>(null);
   const [isMangaLoading, setIsMangaLoading] = useState(true);
   const [mangaError, setMangaError] = useState<string | null>(null);
+  const [communityTopSummary, setCommunityTopSummary] = useState<{
+    content: string;
+    contains_spoilers: boolean;
+  } | null>(null);
 
   const [chapter, setChapter] = useState<MangaChapter | null>(null);
   const [isChapterLoading, setIsChapterLoading] = useState(false);
@@ -578,13 +584,28 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                   </h2>
                   {chapterError && <p className="mt-1 text-xs text-red-500">{chapterError}</p>}
 
-                  {/* Synopsis (same as manga page) */}
-                  {typeof (m as any)?.description === "string" && (m as any).description.trim() && (
-                    <div className="mt-6 mb-3">
-                      <p className="whitespace-pre-line text-base text-black">
-                        {cleanSynopsis((m as any).description)}
-                      </p>
-                    </div>
+                  {/* Synopsis area (chapter pages: ONLY show community summary; never show series synopsis) */}
+                  <div className="mt-6 mb-3">
+                    {communityTopSummary ? (
+                      <div>
+                        {communityTopSummary.contains_spoilers && (
+                          <div className="mb-2 inline-flex rounded-full bg-red-900/40 px-2 py-0.5 text-[11px] font-semibold text-red-200">
+                            Spoilers
+                          </div>
+                        )}
+
+                        <p className="whitespace-pre-line text-base text-black">
+                          {communityTopSummary.content}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {chapter && (
+                    <MangaChapterSummary
+                      chapterId={chapter.id}
+                      onTopSummary={setCommunityTopSummary}
+                    />
                   )}
 
                   {/* Chapter Navigator (same spot as manga page) */}
