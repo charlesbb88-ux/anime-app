@@ -2,545 +2,817 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { NextPage } from "next";
+import type { NextPage, GetServerSideProps } from "next";
 import { useRouter } from "next/router";
 import Link from "next/link";
 
 import { supabase } from "@/lib/supabaseClient";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import MangaMediaHeaderLayout from "@/components/layouts/MangaMediaHeaderLayout";
+
+const CARD_CLASS = "bg-black p-4 text-neutral-100";
+
+function postHref(postId: string) {
+  return `/posts/${postId}`;
+}
+
+type Visibility = "public" | "friends" | "private";
 
 type ActivityItem =
-    | {
-        id: string;
-        kind: "log";
-        type: "manga_chapter";
-        title: string;
-        subLabel?: string;
-        rating: number | null;
-        note: string | null;
-        logged_at: string;
-        visibility: "public" | "friends" | "private";
+  | {
+      id: string;
+      kind: "log";
+      type: "manga_chapter";
+      title: string;
+      subLabel?: string;
+
+      rating: number | null;
+      note: string | null;
+      logged_at: string;
+      visibility: Visibility;
+
+      // optional snapshot helpers (if your table has them)
+      liked?: boolean | null;
+      review_id?: string | null;
     }
-    | {
-        id: string;
-        kind: "review";
-        type: "manga_chapter_review";
-        title: string;
-        subLabel?: string;
-        logged_at: string; // created_at from reviews
-        rating: number | null; // 0..100
-        content: string | null;
-        contains_spoilers: boolean;
+  | {
+      id: string;
+      kind: "review";
+      type: "manga_chapter_review";
+      title: string;
+      subLabel?: string;
+
+      logged_at: string; // reviews.created_at
+      rating: number | null; // 0..100
+      content: string | null;
+      contains_spoilers: boolean;
     }
-    | {
-        id: string;
-        kind: "mark";
-        type: "watched" | "liked" | "watchlist" | "rating";
-        title: string;
-        subLabel?: string;
-        logged_at: string;
-        // ⭐ rating uses HALF-STARS stored as 1..10
-        stars?: number | null;
+  | {
+      id: string;
+      kind: "mark";
+      type: "watched" | "liked" | "watchlist" | "rating";
+      title: string;
+      subLabel?: string;
+
+      logged_at: string; // user_marks.created_at
+      stars?: number | null; // half-stars 1..10 (rating mark)
     };
 
 function getMangaDisplayTitle(manga: any): string {
-    return (
-        manga?.title_english ||
-        manga?.title_preferred ||
-        manga?.title_native ||
-        manga?.title ||
-        "Unknown manga"
-    );
+  return (
+    manga?.title_english ||
+    manga?.title_preferred ||
+    manga?.title_native ||
+    manga?.title ||
+    "Unknown manga"
+  );
+}
+
+type MangaChapterActivityPageProps = {
+  initialBackdropUrl: string | null;
+};
+
+function normalizeBackdropUrl(url: string) {
+  if (url.includes("https://image.tmdb.org/t/p/original/")) {
+    return url.replace("/t/p/original/", "/t/p/w1280/");
+  }
+  return url;
 }
 
 /* -------------------- Dates -------------------- */
 
 function formatRelativeShort(iso: string) {
-    const d = new Date(iso);
-    const now = new Date();
+  const d = new Date(iso);
+  const now = new Date();
 
-    const diffMs = now.getTime() - d.getTime();
-    const diffSec = Math.floor(diffMs / 1000);
-    const diffMin = Math.floor(diffSec / 60);
-    const diffHr = Math.floor(diffMin / 60);
-    const diffDay = Math.floor(diffHr / 24);
+  const diffMs = now.getTime() - d.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHr = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHr / 24);
 
-    if (diffSec < 60) return "now";
-    if (diffMin < 60) return `${diffMin}m`;
-    if (diffHr < 24) return `${diffHr}h`;
-    if (diffDay < 30) return `${diffDay}d`;
+  if (diffSec < 60) return "now";
+  if (diffMin < 60) return `${diffMin}m`;
+  if (diffHr < 24) return `${diffHr}h`;
+  if (diffDay < 30) return `${diffDay}d`;
 
-    return d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  return d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
 }
 
 function formatOnFullDate(iso: string) {
-    return new Date(iso).toLocaleDateString(undefined, {
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-    });
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 /* -------------------- Half-star visuals -------------------- */
 
 function clampInt(n: number, min: number, max: number) {
-    return Math.max(min, Math.min(max, Math.round(n)));
+  return Math.max(min, Math.min(max, Math.round(n)));
 }
 
 function computeStarFillPercent(halfStars: number, starIndex: number) {
-    const starHalfStart = (starIndex - 1) * 2; // 0,2,4,6,8
-    const remaining = halfStars - starHalfStart;
+  const starHalfStart = (starIndex - 1) * 2;
+  const remaining = halfStars - starHalfStart;
 
-    if (remaining >= 2) return 100 as const;
-    if (remaining === 1) return 50 as const;
-    return 0 as const;
+  if (remaining >= 2) return 100 as const;
+  if (remaining === 1) return 50 as const;
+  return 0 as const;
 }
 
 function StarVisual({ filledPercent }: { filledPercent: 0 | 50 | 100 }) {
-    return (
-        <span className="relative inline-block">
-            <span className="text-[18px] leading-none text-gray-600">★</span>
+  return (
+    <span className="relative inline-block">
+      <span className="text-[18px] leading-none text-gray-600">★</span>
 
-            {filledPercent > 0 && (
-                <span
-                    className="pointer-events-none absolute left-0 top-0 overflow-hidden text-[18px] leading-none text-emerald-400"
-                    style={{ width: `${filledPercent}%` }}
-                >
-                    ★
-                </span>
-            )}
+      {filledPercent > 0 && (
+        <span
+          className="pointer-events-none absolute left-0 top-0 overflow-hidden text-[18px] leading-none text-emerald-400"
+          style={{ width: `${filledPercent}%` }}
+        >
+          ★
         </span>
-    );
+      )}
+    </span>
+  );
 }
 
 function HalfStarsRow({ halfStars }: { halfStars: number }) {
-    const hs = clampInt(halfStars, 0, 10);
+  const hs = clampInt(halfStars, 0, 10);
 
-    return (
-        <span className="ml-2 inline-flex items-center gap-[2px] align-middle">
-            {Array.from({ length: 5 }).map((_, i) => {
-                const starIndex = i + 1;
-                const fill = computeStarFillPercent(hs, starIndex);
-                return <StarVisual key={starIndex} filledPercent={fill} />;
-            })}
-        </span>
-    );
+  return (
+    <span className="ml-2 inline-flex items-center gap-[2px] align-middle">
+      {Array.from({ length: 5 }).map((_, i) => {
+        const starIndex = i + 1;
+        const fill = computeStarFillPercent(hs, starIndex);
+        return <StarVisual key={starIndex} filledPercent={fill} />;
+      })}
+    </span>
+  );
 }
 
-const MangaChapterActivityPage: NextPage = () => {
-    const router = useRouter();
-    const { slug, chapterNumber } = router.query as { slug?: string; chapterNumber?: string };
+/* -------------------- Snapshot helpers -------------------- */
 
-    const [loading, setLoading] = useState(true);
-    const [pageTitle, setPageTitle] = useState<string>("Your activity");
-    const [items, setItems] = useState<ActivityItem[]>([]);
-    const [error, setError] = useState<string | null>(null);
+// Convert a 0..100 rating to half-stars 1..10
+function rating100ToHalfStars(rating: number | null): number | null {
+  if (typeof rating !== "number" || !Number.isFinite(rating)) return null;
+  const clamped = clampInt(rating, 0, 100);
+  if (clamped <= 0) return null;
+  return clampInt(Math.round(clamped / 10), 1, 10);
+}
 
-    useEffect(() => {
-        let mounted = true;
+// Flexible: if your logs store 1..10 already, use it directly; else treat as 0..100.
+function ratingToHalfStarsFlexible(rating: number | null): number | null {
+  if (typeof rating !== "number" || !Number.isFinite(rating)) return null;
+  if (rating <= 0) return null;
 
-        async function run() {
-            setLoading(true);
-            setError(null);
+  if (rating <= 10) return clampInt(rating, 1, 10);
+  return rating100ToHalfStars(rating);
+}
 
-            const {
-                data: { user },
-                error: userErr,
-            } = await supabase.auth.getUser();
+function joinWithCommasAnd(parts: string[]) {
+  if (parts.length <= 1) return parts[0] ?? "";
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
+}
 
-            if (!user || userErr) {
-                router.replace("/login");
-                return;
-            }
+function actionWord(a: "reviewed" | "liked" | "read" | "rated") {
+  if (a === "rated") return "rated";
+  if (a === "reviewed") return "reviewed";
+  if (a === "liked") return "liked";
+  return "read";
+}
 
-            if (!slug || !chapterNumber) {
-                if (mounted) setLoading(false);
-                return;
-            }
+function buildSnapshotPrefix(actions: Array<"reviewed" | "liked" | "read" | "rated">) {
+  return `You ${joinWithCommasAnd(actions.map(actionWord))}`;
+}
 
-            const chapterNum = Number(chapterNumber);
-            if (!Number.isInteger(chapterNum) || chapterNum <= 0) {
-                setError("Invalid chapter number.");
-                setLoading(false);
-                return;
-            }
+const MangaChapterActivityPage: NextPage<MangaChapterActivityPageProps> = ({
+  initialBackdropUrl,
+}) => {
+  const router = useRouter();
+  const { slug, chapterNumber } = router.query as {
+    slug?: string;
+    chapterNumber?: string;
+  };
 
-            // ✅ fetch manga by slug
-            const mangaRes = await supabase
-                .from("manga")
-                .select("id, slug, title, title_english, title_native, title_preferred")
-                .eq("slug", slug)
-                .maybeSingle();
+  const [loading, setLoading] = useState(true);
+  const [backdropUrl] = useState<string | null>(initialBackdropUrl);
+  const [posterUrl, setPosterUrl] = useState<string | null>(null);
+  const [pageTitle, setPageTitle] = useState<string>("Your activity");
 
-            if (!mounted) return;
+  const [items, setItems] = useState<ActivityItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-            const manga = mangaRes.data ?? null;
+  const [reviewIdToPostId, setReviewIdToPostId] = useState<Record<string, string>>({});
 
-            if (mangaRes.error || !manga?.id) {
-                setError("Manga not found.");
-                setLoading(false);
-                return;
-            }
+  useEffect(() => {
+    let mounted = true;
 
-            // ✅ fetch chapter by manga_id + chapter_number
-            // (Assumes your table is `manga_chapters` and it has `manga_id` + `chapter_number`)
-            const chapterRes = await supabase
-                .from("manga_chapters")
-                .select("id, chapter_number, title")
-                .eq("manga_id", manga.id)
-                .eq("chapter_number", chapterNum)
-                .maybeSingle();
+    async function run() {
+      setLoading(true);
+      setError(null);
 
-            if (!mounted) return;
+      const {
+        data: { user },
+        error: userErr,
+      } = await supabase.auth.getUser();
 
-            const chapter = chapterRes.data ?? null;
+      if (!user || userErr) {
+        router.replace("/login");
+        return;
+      }
 
-            if (chapterRes.error || !chapter?.id) {
-                setError("Chapter not found.");
-                setLoading(false);
-                return;
-            }
+      if (!slug || !chapterNumber) {
+        if (mounted) setLoading(false);
+        return;
+      }
 
-            const mangaTitle = getMangaDisplayTitle(manga);
-            const subLabel = chapter.chapter_number != null ? `Chapter ${chapter.chapter_number}` : "Chapter";
+      // ✅ allow decimals like 78.1
+      const raw = String(chapterNumber);
 
-            setPageTitle(`Your activity · ${mangaTitle} · ${subLabel}`);
+      if (!/^\d+(\.\d+)?$/.test(raw)) {
+        setError("Invalid chapter number.");
+        setLoading(false);
+        return;
+      }
 
-            const [
-                chapterLogs,
-                chapterReviews,
-                watchedMark,
-                likedMark,
-                watchlistMark,
-                ratingMark,
-            ] = await Promise.all([
-                // ✅ chapter logs (scoped to this chapter)
-                supabase
-                    .from("manga_chapter_logs")
-                    .select("id, logged_at, rating, note, visibility")
-                    .eq("user_id", user.id)
-                    .eq("manga_id", manga.id)
-                    .eq("manga_chapter_id", chapter.id)
-                    .order("logged_at", { ascending: false }),
+      const chapterNum = Number(raw);
+      if (!(chapterNum > 0)) {
+        setError("Invalid chapter number.");
+        setLoading(false);
+        return;
+      }
 
-                // ✅ Reviews table: chapter review = manga_id set AND manga_chapter_id = chapter.id
-                supabase
-                    .from("reviews")
-                    .select("id, created_at, rating, content, contains_spoilers")
-                    .eq("user_id", user.id)
-                    .eq("manga_id", manga.id)
-                    .eq("manga_chapter_id", chapter.id)
-                    .order("created_at", { ascending: false }),
+      // ✅ fetch manga by slug
+      const mangaRes = await supabase
+        .from("manga")
+        .select("id, slug, title, title_english, title_native, title_preferred, image_url")
+        .eq("slug", slug)
+        .maybeSingle();
 
-                // ✅ marks scoped to this chapter
-                supabase
-                    .from("user_marks")
-                    .select("id, created_at")
-                    .eq("user_id", user.id)
-                    .eq("kind", "watched")
-                    .eq("manga_id", manga.id)
-                    .eq("manga_chapter_id", chapter.id)
-                    .is("anime_id", null)
-                    .is("anime_episode_id", null)
-                    .maybeSingle(),
+      if (!mounted) return;
 
-                supabase
-                    .from("user_marks")
-                    .select("id, created_at")
-                    .eq("user_id", user.id)
-                    .eq("kind", "liked")
-                    .eq("manga_id", manga.id)
-                    .eq("manga_chapter_id", chapter.id)
-                    .is("anime_id", null)
-                    .is("anime_episode_id", null)
-                    .maybeSingle(),
+      const manga = mangaRes.data ?? null;
 
-                supabase
-                    .from("user_marks")
-                    .select("id, created_at")
-                    .eq("user_id", user.id)
-                    .eq("kind", "watchlist")
-                    .eq("manga_id", manga.id)
-                    .eq("manga_chapter_id", chapter.id)
-                    .is("anime_id", null)
-                    .is("anime_episode_id", null)
-                    .maybeSingle(),
+      if (mangaRes.error || !manga?.id) {
+        setError("Manga not found.");
+        setLoading(false);
+        return;
+      }
 
-                supabase
-                    .from("user_marks")
-                    .select("id, created_at, stars")
-                    .eq("user_id", user.id)
-                    .eq("kind", "rating")
-                    .eq("manga_id", manga.id)
-                    .eq("manga_chapter_id", chapter.id)
-                    .is("anime_id", null)
-                    .is("anime_episode_id", null)
-                    .maybeSingle(),
-            ]);
+      // ✅ fetch chapter by manga_id + chapter_number
+      const chapterRes = await supabase
+        .from("manga_chapters")
+        .select("id, chapter_number, title")
+        .eq("manga_id", manga.id)
+        .eq("chapter_number", chapterNum)
+        .maybeSingle();
 
-            if (!mounted) return;
+      if (!mounted) return;
 
-            if (chapterLogs.error) console.error("Manga chapter activity: chapterLogs error", chapterLogs.error);
-            if (chapterReviews.error) console.error("Manga chapter activity: chapterReviews error", chapterReviews.error);
+      const chapter = chapterRes.data ?? null;
 
-            const merged: ActivityItem[] = [];
+      if (chapterRes.error || !chapter?.id) {
+        setError("Chapter not found.");
+        setLoading(false);
+        return;
+      }
 
-            // ✅ MARKS (chapter-scoped only)
-            if (watchedMark.data?.id) {
-                merged.push({
-                    id: watchedMark.data.id,
-                    kind: "mark",
-                    type: "watched",
-                    title: mangaTitle,
-                    subLabel,
-                    logged_at: watchedMark.data.created_at,
-                });
-            }
+      const mangaTitle = getMangaDisplayTitle(manga);
+      const subLabel =
+        chapter.chapter_number != null ? `Chapter ${chapter.chapter_number}` : "Chapter";
 
-            if (likedMark.data?.id) {
-                merged.push({
-                    id: likedMark.data.id,
-                    kind: "mark",
-                    type: "liked",
-                    title: mangaTitle,
-                    subLabel,
-                    logged_at: likedMark.data.created_at,
-                });
-            }
+      setPosterUrl(manga?.image_url ?? null);
+      setPageTitle(`Your activity · ${mangaTitle} · ${subLabel}`);
 
-            if (watchlistMark.data?.id) {
-                merged.push({
-                    id: watchlistMark.data.id,
-                    kind: "mark",
-                    type: "watchlist",
-                    title: mangaTitle,
-                    subLabel,
-                    logged_at: watchlistMark.data.created_at,
-                });
-            }
+      const [
+        chapterLogsRes,
+        chapterReviewsRes,
+        watchedMarkRes,
+        likedMarkRes,
+        watchlistMarkRes,
+        ratingMarkRes,
+      ] = await Promise.all([
+        supabase
+          .from("manga_chapter_logs")
+          // include liked/review_id if they exist; if not, Supabase will error only if column truly doesn't exist
+          // If your table does NOT have these columns, remove them from select.
+          .select("id, logged_at, rating, note, visibility, liked, review_id")
+          .eq("user_id", user.id)
+          .eq("manga_id", manga.id)
+          .eq("manga_chapter_id", chapter.id)
+          .order("logged_at", { ascending: false }),
 
-            if (ratingMark.data?.id) {
-                merged.push({
-                    id: ratingMark.data.id,
-                    kind: "mark",
-                    type: "rating",
-                    title: mangaTitle,
-                    subLabel,
-                    logged_at: ratingMark.data.created_at,
-                    stars: ratingMark.data.stars ?? null,
-                });
-            }
+        supabase
+          .from("reviews")
+          .select("id, created_at, rating, content, contains_spoilers")
+          .eq("user_id", user.id)
+          .eq("manga_id", manga.id)
+          .eq("manga_chapter_id", chapter.id)
+          .order("created_at", { ascending: false }),
 
-            // ✅ Reviews (chapter)
-            chapterReviews.data?.forEach((row: any) => {
-                merged.push({
-                    id: row.id,
-                    kind: "review",
-                    type: "manga_chapter_review",
-                    title: mangaTitle,
-                    subLabel,
-                    logged_at: row.created_at,
-                    rating: typeof row.rating === "number" ? row.rating : null,
-                    content: row.content ?? null,
-                    contains_spoilers: Boolean(row.contains_spoilers),
-                });
-            });
+        supabase
+          .from("user_marks")
+          .select("id, created_at")
+          .eq("user_id", user.id)
+          .eq("kind", "watched")
+          .eq("manga_id", manga.id)
+          .eq("manga_chapter_id", chapter.id)
+          .is("anime_id", null)
+          .is("anime_episode_id", null)
+          .maybeSingle(),
 
-            // ✅ Chapter logs
-            chapterLogs.data?.forEach((row: any) => {
-                merged.push({
-                    id: row.id,
-                    kind: "log",
-                    type: "manga_chapter",
-                    title: mangaTitle,
-                    subLabel,
-                    rating: row.rating,
-                    note: row.note,
-                    logged_at: row.logged_at,
-                    visibility: row.visibility,
-                });
-            });
+        supabase
+          .from("user_marks")
+          .select("id, created_at")
+          .eq("user_id", user.id)
+          .eq("kind", "liked")
+          .eq("manga_id", manga.id)
+          .eq("manga_chapter_id", chapter.id)
+          .is("anime_id", null)
+          .is("anime_episode_id", null)
+          .maybeSingle(),
 
-            merged.sort((a, b) => new Date(b.logged_at).getTime() - new Date(a.logged_at).getTime());
+        supabase
+          .from("user_marks")
+          .select("id, created_at")
+          .eq("user_id", user.id)
+          .eq("kind", "watchlist")
+          .eq("manga_id", manga.id)
+          .eq("manga_chapter_id", chapter.id)
+          .is("anime_id", null)
+          .is("anime_episode_id", null)
+          .maybeSingle(),
 
-            setItems(merged);
-            setLoading(false);
+        supabase
+          .from("user_marks")
+          .select("id, created_at, stars")
+          .eq("user_id", user.id)
+          .eq("kind", "rating")
+          .eq("manga_id", manga.id)
+          .eq("manga_chapter_id", chapter.id)
+          .is("anime_id", null)
+          .is("anime_episode_id", null)
+          .maybeSingle(),
+      ]);
+
+      // -------------------- Step 2: build review_id -> post_id map (chapter-scoped) --------------------
+      const reviewIdsToResolve = new Set<string>();
+
+      for (const row of chapterLogsRes.data ?? []) {
+        const rid = (row as any)?.review_id;
+        if (rid) reviewIdsToResolve.add(String(rid));
+      }
+
+      for (const r of chapterReviewsRes.data ?? []) {
+        if ((r as any)?.id) reviewIdsToResolve.add(String((r as any).id));
+      }
+
+      let nextReviewIdToPostId: Record<string, string> = {};
+
+      if (reviewIdsToResolve.size > 0) {
+        const reviewIdList = Array.from(reviewIdsToResolve);
+
+        const postsRes = await supabase
+          .from("posts")
+          .select("id, review_id")
+          .eq("user_id", user.id)
+          .eq("manga_id", manga.id)
+          .eq("manga_chapter_id", chapter.id)
+          .in("review_id", reviewIdList);
+
+        if (postsRes.data) {
+          for (const p of postsRes.data as any[]) {
+            if (!p?.id || !p?.review_id) continue;
+            nextReviewIdToPostId[String(p.review_id)] = String(p.id);
+          }
+        }
+      }
+
+      if (mounted) setReviewIdToPostId(nextReviewIdToPostId);
+      // -----------------------------------------------------------------------------------------------
+
+      if (!mounted) return;
+
+      const merged: ActivityItem[] = [];
+
+      // Build sets for de-duping standalone reviews
+      const attachedReviewIds = new Set<string>();
+
+      // Snapshot suppression helpers (same logic as main)
+      const chapterLogSnapshots = (chapterLogsRes.data ?? []).map((row: any) => {
+        const loggedAtIso = String(row?.logged_at ?? "");
+        const ms = new Date(loggedAtIso).getTime();
+
+        const liked = typeof row?.liked === "boolean" ? row.liked : Boolean(row?.liked);
+
+        const hs = ratingToHalfStarsFlexible(
+          typeof row?.rating === "number" ? row.rating : null
+        );
+        const hasRating = hs !== null;
+
+        const reviewId = row?.review_id ? String(row.review_id) : null;
+        if (reviewId) attachedReviewIds.add(reviewId);
+
+        return {
+          ms: Number.isFinite(ms) ? ms : null,
+          liked,
+          hasRating,
+          hasRead: true,
+        };
+      });
+
+      function shouldSuppressMarkBecauseOfNearbyChapterLog(
+        markType: "watched" | "liked" | "rating" | "watchlist",
+        markCreatedAtIso: string
+      ) {
+        if (markType === "watchlist") return false;
+
+        const markMs = new Date(markCreatedAtIso).getTime();
+        if (!Number.isFinite(markMs)) return false;
+
+        const windowMs = 2 * 60 * 1000;
+
+        for (const snap of chapterLogSnapshots) {
+          if (snap.ms == null) continue;
+          const diff = Math.abs(markMs - snap.ms);
+          if (diff > windowMs) continue;
+
+          if (markType === "watched" && snap.hasRead) return true;
+          if (markType === "liked" && snap.liked) return true;
+          if (markType === "rating" && snap.hasRating) return true;
         }
 
-        run();
+        return false;
+      }
 
-        return () => {
-            mounted = false;
-        };
-    }, [router, slug, chapterNumber]);
+      function maybePushMark(
+        mark: any,
+        type: "watched" | "liked" | "watchlist" | "rating",
+        title: string
+      ) {
+        if (!mark?.id || !mark?.created_at) return;
 
-    if (loading) {
-        return (
-            <div className="flex min-h-screen items-center justify-center text-sm text-neutral-500">
-                Loading…
-            </div>
-        );
+        const createdAt = String(mark.created_at);
+
+        const suppress =
+          type === "rating"
+            ? shouldSuppressMarkBecauseOfNearbyChapterLog("rating", createdAt)
+            : type === "liked"
+            ? shouldSuppressMarkBecauseOfNearbyChapterLog("liked", createdAt)
+            : type === "watched"
+            ? shouldSuppressMarkBecauseOfNearbyChapterLog("watched", createdAt)
+            : shouldSuppressMarkBecauseOfNearbyChapterLog("watchlist", createdAt);
+
+        if (suppress) return;
+
+        merged.push({
+          id: String(mark.id),
+          kind: "mark",
+          type,
+          title,
+          subLabel,
+          logged_at: createdAt,
+          stars: type === "rating" ? (mark.stars ?? null) : undefined,
+        });
+      }
+
+      maybePushMark(watchedMarkRes.data, "watched", mangaTitle);
+      maybePushMark(likedMarkRes.data, "liked", mangaTitle);
+      maybePushMark(watchlistMarkRes.data, "watchlist", mangaTitle);
+      maybePushMark(ratingMarkRes.data, "rating", mangaTitle);
+
+      // Standalone chapter reviews (only if not attached to snapshot logs)
+      (chapterReviewsRes.data ?? []).forEach((row: any) => {
+        if (!row?.id || !row?.created_at) return;
+        if (attachedReviewIds.has(String(row.id))) return;
+
+        merged.push({
+          id: String(row.id),
+          kind: "review",
+          type: "manga_chapter_review",
+          title: mangaTitle,
+          subLabel,
+          logged_at: String(row.created_at),
+          rating: typeof row.rating === "number" ? row.rating : null,
+          content: row.content ?? null,
+          contains_spoilers: Boolean(row.contains_spoilers),
+        });
+      });
+
+      // Chapter logs (snapshot style)
+      (chapterLogsRes.data ?? []).forEach((row: any) => {
+        merged.push({
+          id: String(row.id),
+          kind: "log",
+          type: "manga_chapter",
+          title: mangaTitle,
+          subLabel,
+          rating: typeof row.rating === "number" ? row.rating : null,
+          note: row.note ?? null,
+          logged_at: String(row.logged_at),
+          visibility: (row.visibility as Visibility) ?? "public",
+          liked: typeof row.liked === "boolean" ? row.liked : Boolean(row.liked),
+          review_id: row.review_id ?? null,
+        });
+      });
+
+      const finalItems = merged.sort(
+        (a, b) => new Date(b.logged_at).getTime() - new Date(a.logged_at).getTime()
+      );
+
+      setItems(finalItems);
+      setLoading(false);
     }
 
+    run();
+
+    return () => {
+      mounted = false;
+    };
+  }, [router, slug, chapterNumber]);
+
+  if (loading) {
     return (
-        <main className="mx-auto max-w-3xl px-4 py-8">
-            <div className="mb-4">
-                <Link
-                    href={slug && chapterNumber ? `/manga/${slug}/chapter/${chapterNumber}` : "/manga"}
-                    className="text-xs text-blue-500 hover:text-blue-400"
-                >
-                    ← Back to chapter
-                </Link>
-            </div>
-
-            <h1 className="mb-6 text-2xl font-semibold tracking-tight">{pageTitle}</h1>
-
-            {error ? (
-                <div className="text-sm text-red-300">{error}</div>
-            ) : items.length === 0 ? (
-                <div className="text-sm text-neutral-500">No activity yet.</div>
-            ) : (
-                <ul className="space-y-4">
-                    {items.map((item) => {
-                        if (item.kind === "mark" && item.type === "watched") {
-                            return (
-                                <li key={`watched-${item.id}`} className="rounded-md border border-neutral-800 p-4">
-                                    <div className="flex items-center justify-between gap-4">
-                                        <div className="text-sm font-medium">
-                                            You marked{" "}
-                                            <span className="font-bold text-black">{item.title}</span>
-                                            {item.subLabel ? <span className="ml-2 text-neutral-400">· {item.subLabel}</span> : null}{" "}
-                                            as read
-                                        </div>
-
-                                        <div className="text-xs text-neutral-500 whitespace-nowrap">
-                                            {formatRelativeShort(item.logged_at)}
-                                        </div>
-                                    </div>
-                                </li>
-                            );
-                        }
-
-                        if (item.kind === "mark" && item.type === "liked") {
-                            return (
-                                <li key={`liked-${item.id}`} className="rounded-md border border-neutral-800 p-4">
-                                    <div className="flex items-center justify-between gap-4">
-                                        <div className="text-sm font-medium">
-                                            You liked{" "}
-                                            <span className="font-bold text-black">{item.title}</span>
-                                            {item.subLabel ? <span className="ml-2 text-neutral-400">· {item.subLabel}</span> : null}
-                                        </div>
-
-                                        <div className="text-xs text-neutral-500 whitespace-nowrap">
-                                            {formatRelativeShort(item.logged_at)}
-                                        </div>
-                                    </div>
-                                </li>
-                            );
-                        }
-
-                        if (item.kind === "mark" && item.type === "watchlist") {
-                            return (
-                                <li key={`watchlist-${item.id}`} className="rounded-md border border-neutral-800 p-4">
-                                    <div className="flex items-center justify-between gap-4">
-                                        <div className="text-sm font-medium">
-                                            You added{" "}
-                                            <span className="font-bold text-black">{item.title}</span>
-                                            {item.subLabel ? <span className="ml-2 text-neutral-400">· {item.subLabel}</span> : null}{" "}
-                                            to your watchlist
-                                        </div>
-
-                                        <div className="text-xs text-neutral-500 whitespace-nowrap">
-                                            {formatRelativeShort(item.logged_at)}
-                                        </div>
-                                    </div>
-                                </li>
-                            );
-                        }
-
-                        if (item.kind === "mark" && item.type === "rating") {
-                            const hs = clampInt(Number(item.stars ?? 0), 0, 10);
-
-                            return (
-                                <li key={`rating-${item.id}`} className="rounded-md border border-neutral-800 p-4">
-                                    <div className="flex items-center justify-between gap-4">
-                                        <div className="text-sm font-medium">
-                                            You rated{" "}
-                                            <span className="font-bold text-black">{item.title}</span>
-                                            {item.subLabel ? <span className="ml-2 text-neutral-400">· {item.subLabel}</span> : null}
-                                            {hs > 0 ? <HalfStarsRow halfStars={hs} /> : null}
-                                        </div>
-
-                                        <div className="text-xs text-neutral-500 whitespace-nowrap">
-                                            {formatRelativeShort(item.logged_at)}
-                                        </div>
-                                    </div>
-                                </li>
-                            );
-                        }
-
-                        if (item.kind === "review") {
-                            return (
-                                <li key={`review-${item.id}`} className="rounded-md border border-neutral-800 p-4">
-                                    <div className="flex items-center justify-between gap-4">
-                                        <div className="text-sm font-medium">
-                                            You reviewed{" "}
-                                            <span className="font-bold text-black">{item.title}</span>
-                                            {item.subLabel ? <span className="ml-2 text-neutral-400">· {item.subLabel}</span> : null}
-                                        </div>
-
-                                        <div className="text-xs text-neutral-500 whitespace-nowrap">
-                                            {formatRelativeShort(item.logged_at)}
-                                        </div>
-                                    </div>
-
-                                    {item.rating !== null && <div className="mt-2 text-sm">Rating: {item.rating}</div>}
-
-                                    {item.content ? (
-                                        <div className="mt-1 text-sm text-neutral-400 line-clamp-2">
-                                            {item.content}
-                                        </div>
-                                    ) : null}
-                                </li>
-                            );
-                        }
-
-                        // ✅ logs (only)
-                        if (item.kind === "log") {
-                            return (
-                                <li
-                                    key={`log-${item.type}-${item.id}`}
-                                    className="rounded-md border border-neutral-800 p-4"
-                                >
-                                    <div className="flex items-center justify-between gap-4">
-                                        <div className="text-sm font-medium">
-                                            You read{" "}
-                                            <span className="font-bold text-black">{item.title}</span>
-                                            {item.subLabel ? (
-                                                <span className="ml-2 text-neutral-400">· {item.subLabel}</span>
-                                            ) : null}{" "}
-                                            on {formatOnFullDate(item.logged_at)}
-                                        </div>
-
-                                        <div className="text-xs text-neutral-500 whitespace-nowrap">
-                                            {formatRelativeShort(item.logged_at)}
-                                        </div>
-                                    </div>
-
-                                    {item.rating !== null && <div className="mt-2 text-sm">Rating: {item.rating}</div>}
-
-                                    {item.note ? (
-                                        <div className="mt-1 text-sm text-neutral-400 line-clamp-2">{item.note}</div>
-                                    ) : null}
-                                </li>
-                            );
-                        }
-
-                        return null;
-                    })}
-                </ul>
-            )}
-        </main>
+      <div className="flex min-h-screen items-center justify-center text-sm text-neutral-500">
+        Loading…
+      </div>
     );
+  }
+
+  return (
+    <MangaMediaHeaderLayout
+      backdropUrl={backdropUrl}
+      posterUrl={posterUrl}
+      title={pageTitle}
+      backdropHeightClassName="h-[620px]"
+      overlaySrc="/overlays/my-overlay4.png"
+      reserveRightClassName="pr-[260px]"
+    >
+      <div className="min-w-0">
+        {error ? (
+          <div className="text-sm text-red-300">{error}</div>
+        ) : items.length === 0 ? (
+          <div className="text-sm text-neutral-500">No activity yet.</div>
+        ) : (
+          <ul className="space-y-1">
+            {items.map((item) => {
+              // ✅ CHAPTER SNAPSHOT CARD (from manga_chapter_logs only)
+              if (item.kind === "log" && item.type === "manga_chapter") {
+                const actions: Array<"read" | "liked" | "rated" | "reviewed"> = [];
+
+                actions.push("read");
+
+                if (item.liked) actions.push("liked");
+
+                const hs = ratingToHalfStarsFlexible(item.rating);
+                if (hs !== null) actions.push("rated");
+
+                if (item.review_id) actions.push("reviewed");
+
+                const prefix = buildSnapshotPrefix(actions);
+
+                const postId = item.review_id
+                  ? reviewIdToPostId[String(item.review_id)]
+                  : undefined;
+
+                return (
+                  <li key={`chapter-snap-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        {postId ? (
+                          <Link
+                            href={postHref(postId)}
+                            className="inline hover:underline"
+                            title="View review post"
+                          >
+                            {prefix}{" "}
+                            <span className="font-bold text-white">{item.title}</span>
+                            {item.subLabel ? (
+                              <span className="ml-1 text-neutral-300">· {item.subLabel}</span>
+                            ) : null}
+                            {hs !== null ? <HalfStarsRow halfStars={hs} /> : null}
+                            <span className="ml-1"> on {formatOnFullDate(item.logged_at)}</span>
+                          </Link>
+                        ) : (
+                          <>
+                            {prefix}{" "}
+                            <span className="font-bold text-white">{item.title}</span>
+                            {item.subLabel ? (
+                              <span className="ml-1 text-neutral-300">· {item.subLabel}</span>
+                            ) : null}
+                            {hs !== null ? <HalfStarsRow halfStars={hs} /> : null}
+                            <span className="ml-1"> on {formatOnFullDate(item.logged_at)}</span>
+                          </>
+                        )}
+                      </div>
+
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
+                    </div>
+                  </li>
+                );
+              }
+
+              // ✅ MARKS
+              if (item.kind === "mark" && item.type === "watched") {
+                return (
+                  <li key={`watched-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        You marked{" "}
+                        <span className="font-bold text-white">{item.title}</span>
+                        {item.subLabel ? (
+                          <span className="ml-1 text-neutral-300">· {item.subLabel}</span>
+                        ) : null}{" "}
+                        as read
+                      </div>
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
+                    </div>
+                  </li>
+                );
+              }
+
+              if (item.kind === "mark" && item.type === "liked") {
+                return (
+                  <li key={`liked-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        You liked <span className="font-bold text-white">{item.title}</span>
+                        {item.subLabel ? (
+                          <span className="ml-1 text-neutral-300">· {item.subLabel}</span>
+                        ) : null}
+                      </div>
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
+                    </div>
+                  </li>
+                );
+              }
+
+              if (item.kind === "mark" && item.type === "watchlist") {
+                return (
+                  <li key={`watchlist-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        You added{" "}
+                        <span className="font-bold text-white">{item.title}</span>
+                        {item.subLabel ? (
+                          <span className="ml-1 text-neutral-300">· {item.subLabel}</span>
+                        ) : null}{" "}
+                        to your watchlist
+                      </div>
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
+                    </div>
+                  </li>
+                );
+              }
+
+              if (item.kind === "mark" && item.type === "rating") {
+                const hs = clampInt(Number(item.stars ?? 0), 0, 10);
+
+                return (
+                  <li key={`rating-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        You rated <span className="font-bold text-white">{item.title}</span>
+                        {item.subLabel ? (
+                          <span className="ml-1 text-neutral-300">· {item.subLabel}</span>
+                        ) : null}
+                        {hs > 0 ? <HalfStarsRow halfStars={hs} /> : null}
+                      </div>
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
+                    </div>
+                  </li>
+                );
+              }
+
+              // ✅ Standalone chapter review
+              if (item.kind === "review") {
+                const postId = reviewIdToPostId[String(item.id)];
+
+                return (
+                  <li key={`review-${item.id}`} className={CARD_CLASS}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="text-sm font-medium">
+                        {postId ? (
+                          <Link
+                            href={postHref(postId)}
+                            className="inline hover:underline"
+                            title="View review post"
+                          >
+                            You reviewed{" "}
+                            <span className="font-bold text-white">{item.title}</span>
+                            {item.subLabel ? (
+                              <span className="ml-1 text-neutral-300">· {item.subLabel}</span>
+                            ) : null}
+                          </Link>
+                        ) : (
+                          <>
+                            You reviewed{" "}
+                            <span className="font-bold text-white">{item.title}</span>
+                            {item.subLabel ? (
+                              <span className="ml-1 text-neutral-300">· {item.subLabel}</span>
+                            ) : null}
+                          </>
+                        )}
+                      </div>
+                      <div className="whitespace-nowrap text-xs text-neutral-100">
+                        {formatRelativeShort(item.logged_at)}
+                      </div>
+                    </div>
+                  </li>
+                );
+              }
+
+              return null;
+            })}
+          </ul>
+        )}
+
+        <div className="mt-4">
+          <Link
+            href={slug && chapterNumber ? `/manga/${slug}/chapter/${chapterNumber}` : "/"}
+            className="text-sm text-neutral-300 hover:underline"
+          >
+            ← Back
+          </Link>
+        </div>
+      </div>
+    </MangaMediaHeaderLayout>
+  );
 };
 
+(MangaChapterActivityPage as any).headerTransparent = true;
+
 export default MangaChapterActivityPage;
+
+/* -------------------------------------------------------------------------- */
+/*                               SSR BACKDROP                                 */
+/* -------------------------------------------------------------------------- */
+
+export const getServerSideProps: GetServerSideProps<MangaChapterActivityPageProps> = async (
+  ctx
+) => {
+  const rawSlug = ctx.params?.slug;
+  const slug =
+    typeof rawSlug === "string"
+      ? rawSlug
+      : Array.isArray(rawSlug) && rawSlug[0]
+      ? rawSlug[0]
+      : null;
+
+  if (!slug) {
+    return { props: { initialBackdropUrl: null } };
+  }
+
+  // 1) Get manga id by slug (server-side)
+  const { data: mangaRow, error: mangaErr } = await supabaseAdmin
+    .from("manga")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+
+  if (mangaErr || !mangaRow?.id) {
+    return { props: { initialBackdropUrl: null } };
+  }
+
+  // 2) Pull ALL cached images for this manga from public.manga_covers
+  const { data: covers, error: coverErr } = await supabaseAdmin
+    .from("manga_covers")
+    .select("cached_url")
+    .eq("manga_id", mangaRow.id)
+    .not("cached_url", "is", null)
+    .limit(200);
+
+  if (coverErr || !covers || covers.length === 0) {
+    return { props: { initialBackdropUrl: null } };
+  }
+
+  const urls = covers
+    .map((c: any) => (typeof c.cached_url === "string" ? c.cached_url.trim() : ""))
+    .filter(Boolean);
+
+  if (urls.length === 0) {
+    return { props: { initialBackdropUrl: null } };
+  }
+
+  const pick = urls[Math.floor(Math.random() * urls.length)];
+
+  return {
+    props: {
+      initialBackdropUrl: normalizeBackdropUrl(pick),
+    },
+  };
+};

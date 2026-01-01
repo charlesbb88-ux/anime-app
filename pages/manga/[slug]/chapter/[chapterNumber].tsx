@@ -22,6 +22,8 @@ import { pickEnglishTitle } from "@/lib/pickEnglishTitle";
 import { supabase } from "@/lib/supabaseClient";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
+import FeedShell from "@/components/FeedShell";
+
 type MangaTag = {
   id: number;
   manga_id: string;
@@ -396,7 +398,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                 <img
                   src={(manga as any).image_url}
                   alt={manga?.title ?? slugString}
-                  className="h-84 w-56 rounded-md object-cover border-2 border-black/100"
+                  className="h-84 w-56 rounded-md object-cover border-3 border-black/100"
                 />
               ) : (
                 <div className="flex h-64 w-56 items-center justify-center rounded-lg bg-gray-800 text-4xl font-bold text-gray-200">
@@ -531,7 +533,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
             {/* RIGHT COLUMN */}
             <div className="min-w-100 flex-1">
               {/* ROW 1 — TITLE (same as manga page) */}
-              <div className="mb-2">
+              <div className="mb-0 pl-1">
                 <EnglishTitle
                   as="h1"
                   className="text-4xl font-bold leading-tight"
@@ -543,24 +545,12 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                   }}
                   fallback={manga.title ?? (manga as any).title_native ?? "Untitled"}
                 />
-
-                {showSecondaryTitle && secondaryTitle && (
-                  <h2 className="mt-1 text-xl font-semibold leading-snug text-gray-500">
-                    {secondaryTitle}
-                  </h2>
-                )}
-
-                {/* chapter-only line */}
-                <div className="mt-2">
-                  <p className="text-2xl font-bold">Chapter {chapterNum}</p>
-                  {chapterError && <p className="mt-1 text-xs text-red-500">{chapterError}</p>}
-                </div>
               </div>
 
               {/* ROW 2 — LEFT CONTENT + ActionBox pinned top-right (same as manga page) */}
               <div className="relative w-full">
                 {/* RIGHT SIDE: ActionBox pinned */}
-                <div className="absolute right-0 top-1 flex flex-col items-end gap-2">
+                <div className="absolute right-0 top-6 flex flex-col items-end gap-2">
                   <MangaActionBox
                     key={actionBoxNonce}
                     mangaId={manga?.id ?? null}
@@ -581,7 +571,13 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                 </div>
 
                 {/* LEFT SIDE: reserve space so text never goes under ActionBox */}
-                <div className="min-w-0 pr-[260px]">
+                <div className="min-w-0 pr-[270px] pl-1">
+                  {/* Chapter number (acts like the manga page's "secondary title" slot) */}
+                  <h2 className="mt-0 text-xl font-semibold leading-snug text-black">
+                    Chapter {chapterNum}
+                  </h2>
+                  {chapterError && <p className="mt-1 text-xs text-red-500">{chapterError}</p>}
+
                   {/* Synopsis (same as manga page) */}
                   {typeof (m as any)?.description === "string" && (m as any).description.trim() && (
                     <div className="mt-6 mb-3">
@@ -592,7 +588,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                   )}
 
                   {/* Chapter Navigator (same spot as manga page) */}
-                  <div className="mt-4 min-w-0 overflow-hidden">
+                  <div className="mt-10 min-w-0 overflow-hidden">
                     <ChapterNavigator
                       slug={slugString}
                       totalChapters={(manga as any)?.total_chapters ?? null}
@@ -610,13 +606,15 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                     </Link>
                   </div>
 
-                  {/* Feed (✅ moved up to match manga page layout) */}
+                  {/* Feed (match manga page: always inside FeedShell) */}
                   <div className="mt-6">
-                    {manga?.id && chapter?.id ? (
-                      <PostFeed key={feedNonce} mangaId={manga.id} mangaChapterId={chapter.id} />
-                    ) : (
-                      <p className="text-sm text-gray-500">Loading discussion…</p>
-                    )}
+                    <FeedShell>
+                      {manga?.id && chapter?.id ? (
+                        <PostFeed key={feedNonce} mangaId={manga.id} mangaChapterId={chapter.id} />
+                      ) : (
+                        <p className="text-sm text-gray-500">Loading discussion…</p>
+                      )}
+                    </FeedShell>
                   </div>
                 </div>
               </div>
