@@ -82,6 +82,12 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
   } | null>(null);
 
   const [chapter, setChapter] = useState<MangaChapter | null>(null);
+
+  // ✅ Clear old community summary immediately when switching chapters
+  useEffect(() => {
+    setCommunityTopSummary(null);
+  }, [chapter?.id]);
+
   const [isChapterLoading, setIsChapterLoading] = useState(false);
   const [chapterError, setChapterError] = useState<string | null>(null);
 
@@ -584,29 +590,40 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                   </h2>
                   {chapterError && <p className="mt-1 text-xs text-red-500">{chapterError}</p>}
 
-                  {/* Synopsis area (chapter pages: ONLY show community summary; never show series synopsis) */}
+                  {/* Synopsis area (chapter pages: community summary OR the full composer goes here) */}
                   <div className="mt-6 mb-3">
-                    {communityTopSummary ? (
-                      <div>
-                        {communityTopSummary.contains_spoilers && (
-                          <div className="mb-2 inline-flex rounded-full bg-red-900/40 px-2 py-0.5 text-[11px] font-semibold text-red-200">
-                            Spoilers
+                    {chapter && (
+                      <>
+                        {/* If summary exists: show text + icon (inline) */}
+                        {communityTopSummary ? (
+                          <div>
+                            {communityTopSummary.contains_spoilers && (
+                              <div className="mb-2 inline-flex rounded-full bg-red-900/40 px-2 py-0.5 text-[11px] font-semibold text-red-200">
+                                Spoilers
+                              </div>
+                            )}
+
+                            <p className="whitespace-pre-line text-base text-black">
+                              {communityTopSummary.content}
+                              <span className="inline-flex align-baseline ml-2">
+                                <MangaChapterSummary
+                                  chapterId={chapter.id}
+                                  onTopSummary={setCommunityTopSummary}
+                                  mode="icon"
+                                />
+                              </span>
+                            </p>
                           </div>
+                        ) : (
+                          /* If no summary exists: show the full box */
+                          <MangaChapterSummary
+                            chapterId={chapter.id}
+                            onTopSummary={setCommunityTopSummary}
+                          />
                         )}
-
-                        <p className="whitespace-pre-line text-base text-black">
-                          {communityTopSummary.content}
-                        </p>
-                      </div>
-                    ) : null}
+                      </>
+                    )}
                   </div>
-
-                  {chapter && (
-                    <MangaChapterSummary
-                      chapterId={chapter.id}
-                      onTopSummary={setCommunityTopSummary}
-                    />
-                  )}
 
                   {/* Chapter Navigator (same spot as manga page) */}
                   <div className="mt-10 min-w-0 overflow-hidden">
