@@ -17,7 +17,7 @@ type Props = {
     | React.ReactNode
     | ((args: { profile: Profile }) => React.ReactNode);
 
-    activeTab?: "posts" | "anime" | "journal" | "library" | "watchlist";
+    activeTab?: "anime" | "watchlist" | "posts" | "journal" | "library" | "activity";
     maxWidthClassName?: string;
 };
 

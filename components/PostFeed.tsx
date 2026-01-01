@@ -431,8 +431,8 @@ export default function PostFeed({
                   typeof row.episode_number === "number"
                     ? row.episode_number
                     : row.episode_number !== null
-                    ? Number(row.episode_number)
-                    : null,
+                      ? Number(row.episode_number)
+                      : null,
               };
             });
             setEpisodeMetaById(epMap);
@@ -499,8 +499,8 @@ export default function PostFeed({
                   typeof row.chapter_number === "number"
                     ? row.chapter_number
                     : row.chapter_number !== null
-                    ? Number(row.chapter_number)
-                    : null,
+                      ? Number(row.chapter_number)
+                      : null,
               };
             });
             setChapterMetaById(chMap);
@@ -804,12 +804,12 @@ export default function PostFeed({
                   animeEpisodeId
                     ? "Talk about this episode…"
                     : animeId
-                    ? "Talk about this anime…"
-                    : mangaChapterId
-                    ? "Talk about this chapter…"
-                    : mangaId
-                    ? "Talk about this manga…"
-                    : "What's happening?"
+                      ? "Talk about this anime…"
+                      : mangaChapterId
+                        ? "Talk about this chapter…"
+                        : mangaId
+                          ? "Talk about this manga…"
+                          : "What's happening?"
                 }
                 style={{
                   width: "100%",
@@ -860,7 +860,14 @@ export default function PostFeed({
             style={{
               fontSize: TYPO.base,
               color: "#555",
-              marginTop: "1rem",
+
+              // ✅ remove the gap + default <p> margins
+              margin: 0,
+
+              // ✅ keep your box styling
+              border: "1px solid #000",
+              padding: "0.9rem 1rem",
+              background: "#fff",
             }}
           >
             No posts yet.

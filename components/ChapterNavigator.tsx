@@ -130,8 +130,8 @@ export default function ChapterNavigator({
   // ---------------------------------------
   const propTotal =
     typeof totalChapters === "number" &&
-    Number.isFinite(totalChapters) &&
-    totalChapters > 0
+      Number.isFinite(totalChapters) &&
+      totalChapters > 0
       ? Math.floor(totalChapters)
       : null;
 
@@ -1117,6 +1117,7 @@ export default function ChapterNavigator({
                 <Link
                   key={n}
                   href={`${chapterBase}/${n}`}
+                  scroll={false}
                   onClick={(e) => {
                     if (dragRef.current.blockNextClick) {
                       e.preventDefault();
