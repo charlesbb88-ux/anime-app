@@ -273,15 +273,14 @@ export default function UserProfilePage() {
 
   return (
     <main className="min-h-screen">
-      <ProfileMediaHeaderLayout
-        backdropUrl={profile.backdrop_url}
-        backdropPosX={profile.backdrop_pos_x}
-        backdropPosY={profile.backdrop_pos_y}
-        backdropZoom={profile.backdrop_zoom}
-        title={undefined}
-        username={profile.username}
-        avatarUrl={profile.avatar_url}
-        bio={profile.bio}
+<ProfileMediaHeaderLayout
+  backdropUrl={profile.backdrop_url}
+  backdropPosX={profile.backdrop_pos_x}
+  backdropPosY={profile.backdrop_pos_y}
+  backdropZoom={profile.backdrop_zoom}
+  username={profile.username}
+  avatarUrl={profile.avatar_url}
+  bio={profile.bio}
         rightPinned={
           isOwner ? (
             <Link
@@ -300,7 +299,6 @@ export default function UserProfilePage() {
       <div className="max-w-3xl mx-auto px-4 pb-8">
         {/* Posts feed */}
         <section>
-          <h2 className="text-lg font-semibold text-slate-900 mb-4">Posts by @{profile.username}</h2>
 
           {isLoadingPosts ? null : posts.length === 0 ? (
             <p className="text-sm text-slate-500">This user hasn’t posted anything yet.</p>
@@ -442,3 +440,4 @@ export default function UserProfilePage() {
     </main>
   );
 }
+(UserProfilePage as any).headerTransparent = true;
