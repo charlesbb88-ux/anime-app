@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { supabase } from "../lib/supabaseClient";
 import Cropper, { type Area } from "react-easy-crop";
+import ProfileBackdropModal from "../components/settings/ProfileBackdropModal";
 
 type Profile = {
   id: string;
@@ -50,6 +51,8 @@ const SettingsPage: NextPage = () => {
   const [savingAvatar, setSavingAvatar] = useState(false);
 
   const [activeTab, setActiveTab] = useState<TabKey>("profile");
+
+  const [openBackdropModal, setOpenBackdropModal] = useState(false);
 
   const [crop, setCrop] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -464,7 +467,15 @@ const SettingsPage: NextPage = () => {
                   </p>
                 </div>
 
-                <div className="pt-3 flex justify-end">
+                <div className="pt-3 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setOpenBackdropModal(true)}
+                    className="inline-flex items-center px-5 py-2 text-xs font-semibold rounded-full border border-slate-300 bg-white text-slate-900 hover:bg-slate-50"
+                  >
+                    Edit backdrop
+                  </button>
+
                   <button
                     type="button"
                     onClick={saveProfile}
@@ -676,6 +687,13 @@ const SettingsPage: NextPage = () => {
           </div>
         </section>
       </div>
+      <ProfileBackdropModal
+        open={openBackdropModal}
+        onClose={() => setOpenBackdropModal(false)}
+        userId={profile.id}
+        username={profile.username}
+        avatarUrl={profile.avatar_url}
+      />
     </main>
   );
 };

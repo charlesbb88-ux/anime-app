@@ -10,12 +10,21 @@ import { openAuthModal } from "../lib/openAuthModal";
 import CommentRow from "../components/CommentRow";
 import ReviewPostRow from "../components/ReviewPostRow";
 
+import { useUserPosts } from "../lib/hooks/useUserPosts";
+import ProfileMediaHeaderLayout from "@/components/layouts/ProfileMediaHeaderLayout";
+
 type Profile = {
   id: string;
   username: string;
   avatar_url: string | null;
   bio: string | null;
   created_at: string;
+
+  // ✅ NEW: backdrop data (must match your DB column names)
+  backdrop_url: string | null;
+  backdrop_pos_x: number | null;
+  backdrop_pos_y: number | null;
+  backdrop_zoom: number | null;
 };
 
 type Post = {
@@ -33,34 +42,6 @@ type Post = {
   review_id: string | null;
 };
 
-type LikeRow = { post_id: string; user_id: string };
-type CommentMeta = { post_id: string; parent_comment_id: string | null };
-
-type AnimeMeta = {
-  slug: string | null;
-  titleEnglish: string | null;
-  title: string | null;
-  imageUrl: string | null;
-};
-type EpisodeMeta = { episodeNumber: number | null };
-
-type MangaMeta = {
-  slug: string | null;
-  titleEnglish: string | null;
-  title: string | null;
-  imageUrl: string | null;
-};
-type ChapterMeta = { chapterNumber: number | null };
-
-type ReviewRow = {
-  id: string;
-  rating: number | null;
-  content: string | null;
-  contains_spoilers: boolean | null;
-  created_at: string | null;
-  author_liked: boolean | null;
-};
-
 function getFirstQueryParam(param: string | string[] | undefined) {
   if (typeof param === "string") return param;
   if (Array.isArray(param)) return param[0] ?? "";
@@ -76,32 +57,7 @@ export default function UserProfilePage() {
   const [notFound, setNotFound] = useState(false);
 
   const [currentUser, setCurrentUser] = useState<any | null>(null);
-
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [isLoadingPosts, setIsLoadingPosts] = useState(false);
-
-  const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
-  const [replyCounts, setReplyCounts] = useState<Record<string, number>>({});
-  const [likedByMe, setLikedByMe] = useState<Record<string, boolean>>({});
-
   const [openMenuPostId, setOpenMenuPostId] = useState<string | null>(null);
-
-  const [reviewsByPostId, setReviewsByPostId] = useState<Record<string, ReviewRow>>(
-    {}
-  );
-
-  const [animeMetaById, setAnimeMetaById] = useState<Record<string, AnimeMeta>>(
-    {}
-  );
-  const [episodeMetaById, setEpisodeMetaById] = useState<Record<string, EpisodeMeta>>(
-    {}
-  );
-  const [mangaMetaById, setMangaMetaById] = useState<Record<string, MangaMeta>>(
-    {}
-  );
-  const [chapterMetaById, setChapterMetaById] = useState<Record<string, ChapterMeta>>(
-    {}
-  );
 
   const normalizedUsername = useMemo(() => {
     return (rawUsername?.trim?.() ?? "").trim();
@@ -130,6 +86,22 @@ export default function UserProfilePage() {
     if (!profile?.id) return false;
     return currentUser.id === profile.id;
   }, [currentUser?.id, profile?.id]);
+
+  const {
+    posts,
+    setPosts,
+    isLoadingPosts,
+    likeCounts,
+    setLikeCounts,
+    replyCounts,
+    likedByMe,
+    setLikedByMe,
+    reviewsByPostId,
+    animeMetaById,
+    episodeMetaById,
+    mangaMetaById,
+    chapterMetaById,
+  } = useUserPosts(profile?.id ?? null, currentUser?.id ?? null);
 
   // -------------------------------
   // Auth
@@ -168,7 +140,7 @@ export default function UserProfilePage() {
 
       const { data: rows, error } = await supabase
         .from("profiles")
-        .select("id, username, avatar_url, bio, created_at")
+        .select("id, username, avatar_url, bio, created_at, backdrop_url, backdrop_pos_x, backdrop_pos_y, backdrop_zoom")
         .eq("username", unameLower)
         .limit(1);
 
@@ -178,7 +150,6 @@ export default function UserProfilePage() {
 
       if (error || !row) {
         setProfile(null);
-        setPosts([]);
         setNotFound(true);
         setLoadingProfile(false);
         return;
@@ -194,253 +165,6 @@ export default function UserProfilePage() {
       cancelled = true;
     };
   }, [unameLower]);
-
-  // -------------------------------
-  // Load posts + meta
-  // -------------------------------
-  useEffect(() => {
-    if (!profile) return;
-    const profileId = profile.id;
-
-    let cancelled = false;
-
-    async function loadUserPosts() {
-      setIsLoadingPosts(true);
-
-      try {
-        const { data: postRows, error: postsError } = await supabase
-          .from("posts")
-          .select(
-            "id, content, created_at, user_id, anime_id, anime_episode_id, manga_id, manga_chapter_id, review_id"
-          )
-          .eq("user_id", profileId)
-          .order("created_at", { ascending: false })
-          .limit(50);
-
-        if (cancelled) return;
-
-        if (postsError) {
-          setPosts([]);
-          setLikeCounts({});
-          setReplyCounts({});
-          setLikedByMe({});
-          setReviewsByPostId({});
-          setAnimeMetaById({});
-          setEpisodeMetaById({});
-          setMangaMetaById({});
-          setChapterMetaById({});
-          return;
-        }
-
-        const postList = (postRows || []) as Post[];
-        setPosts(postList);
-
-        if (postList.length === 0) {
-          setLikeCounts({});
-          setReplyCounts({});
-          setLikedByMe({});
-          setReviewsByPostId({});
-          setAnimeMetaById({});
-          setEpisodeMetaById({});
-          setMangaMetaById({});
-          setChapterMetaById({});
-          return;
-        }
-
-        const postIds = postList.map((p) => p.id);
-
-        const [{ data: likesData }, { data: commentsData }] = await Promise.all([
-          supabase.from("likes").select("post_id, user_id").in("post_id", postIds),
-          supabase
-            .from("comments")
-            .select("post_id, parent_comment_id")
-            .in("post_id", postIds),
-        ]);
-
-        if (cancelled) return;
-
-        const likeMap: Record<string, number> = {};
-        (likesData || []).forEach((l: LikeRow) => {
-          likeMap[l.post_id] = (likeMap[l.post_id] || 0) + 1;
-        });
-        setLikeCounts(likeMap);
-
-        const replyMap: Record<string, number> = {};
-        (commentsData || []).forEach((c: CommentMeta) => {
-          if (c.parent_comment_id === null) {
-            replyMap[c.post_id] = (replyMap[c.post_id] || 0) + 1;
-          }
-        });
-        setReplyCounts(replyMap);
-
-        if (currentUser?.id) {
-          const { data: mineLikes } = await supabase
-            .from("likes")
-            .select("post_id")
-            .eq("user_id", currentUser.id)
-            .in("post_id", postIds);
-
-          if (!cancelled) {
-            const mine: Record<string, boolean> = {};
-            (mineLikes || []).forEach((r: any) => {
-              if (r?.post_id) mine[r.post_id] = true;
-            });
-            setLikedByMe(mine);
-          }
-        } else {
-          setLikedByMe({});
-        }
-
-        const pairs = postList
-          .filter((p) => !!p.review_id)
-          .map((p) => ({ postId: p.id, reviewId: p.review_id as string }));
-
-        if (pairs.length === 0) {
-          setReviewsByPostId({});
-        } else {
-          const uniqueReviewIds = Array.from(new Set(pairs.map((x) => x.reviewId)));
-
-          const { data: reviewRows } = await supabase
-            .from("reviews")
-            .select("id, rating, content, contains_spoilers, created_at, author_liked")
-            .in("id", uniqueReviewIds);
-
-          if (!cancelled) {
-            const byId: Record<string, ReviewRow> = {};
-            (reviewRows || []).forEach((r: any) => {
-              if (!r?.id) return;
-              byId[r.id] = {
-                id: r.id,
-                rating: r.rating ?? null,
-                content: r.content ?? null,
-                contains_spoilers: r.contains_spoilers ?? null,
-                created_at: r.created_at ?? null,
-                author_liked: r.author_liked ?? null,
-              };
-            });
-
-            const byPost: Record<string, ReviewRow> = {};
-            pairs.forEach(({ postId, reviewId }) => {
-              const found = byId[reviewId];
-              if (found) byPost[postId] = found;
-            });
-
-            setReviewsByPostId(byPost);
-          }
-        }
-
-        const uniqueAnimeIds = Array.from(
-          new Set(postList.map((p) => p.anime_id).filter((id): id is string => !!id))
-        );
-        const uniqueEpisodeIds = Array.from(
-          new Set(
-            postList
-              .map((p) => p.anime_episode_id)
-              .filter((id): id is string => !!id)
-          )
-        );
-        const uniqueMangaIds = Array.from(
-          new Set(postList.map((p) => p.manga_id).filter((id): id is string => !!id))
-        );
-        const uniqueChapterIds = Array.from(
-          new Set(
-            postList
-              .map((p) => p.manga_chapter_id)
-              .filter((id): id is string => !!id)
-          )
-        );
-
-        const [animeRes, episodeRes, mangaRes, chapterRes] = await Promise.all([
-          uniqueAnimeIds.length
-            ? supabase
-                .from("anime")
-                .select("id, slug, title, title_english, image_url")
-                .in("id", uniqueAnimeIds)
-            : Promise.resolve({ data: [] as any[] }),
-          uniqueEpisodeIds.length
-            ? supabase
-                .from("anime_episodes")
-                .select("id, episode_number")
-                .in("id", uniqueEpisodeIds)
-            : Promise.resolve({ data: [] as any[] }),
-          uniqueMangaIds.length
-            ? supabase
-                .from("manga")
-                .select("id, slug, title, title_english, image_url")
-                .in("id", uniqueMangaIds)
-            : Promise.resolve({ data: [] as any[] }),
-          uniqueChapterIds.length
-            ? supabase
-                .from("manga_chapters")
-                .select("id, chapter_number")
-                .in("id", uniqueChapterIds)
-            : Promise.resolve({ data: [] as any[] }),
-        ]);
-
-        if (cancelled) return;
-
-        const aMap: Record<string, AnimeMeta> = {};
-        (animeRes.data || []).forEach((row: any) => {
-          if (!row?.id) return;
-          aMap[row.id] = {
-            slug: row.slug ?? null,
-            titleEnglish: row.title_english ?? null,
-            title: row.title ?? null,
-            imageUrl: row.image_url ?? null,
-          };
-        });
-        setAnimeMetaById(aMap);
-
-        const eMap: Record<string, EpisodeMeta> = {};
-        (episodeRes.data || []).forEach((row: any) => {
-          if (!row?.id) return;
-          eMap[row.id] = {
-            episodeNumber:
-              typeof row.episode_number === "number"
-                ? row.episode_number
-                : row.episode_number !== null
-                ? Number(row.episode_number)
-                : null,
-          };
-        });
-        setEpisodeMetaById(eMap);
-
-        const mMap: Record<string, MangaMeta> = {};
-        (mangaRes.data || []).forEach((row: any) => {
-          if (!row?.id) return;
-          mMap[row.id] = {
-            slug: row.slug ?? null,
-            titleEnglish: row.title_english ?? null,
-            title: row.title ?? null,
-            imageUrl: row.image_url ?? null,
-          };
-        });
-        setMangaMetaById(mMap);
-
-        const cMap: Record<string, ChapterMeta> = {};
-        (chapterRes.data || []).forEach((row: any) => {
-          if (!row?.id) return;
-          cMap[row.id] = {
-            chapterNumber:
-              typeof row.chapter_number === "number"
-                ? row.chapter_number
-                : row.chapter_number !== null
-                ? Number(row.chapter_number)
-                : null,
-          };
-        });
-        setChapterMetaById(cMap);
-      } finally {
-        if (!cancelled) setIsLoadingPosts(false);
-      }
-    }
-
-    loadUserPosts();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [profile, currentUser?.id]);
 
   useEffect(() => {
     if (!openMenuPostId) return;
@@ -471,12 +195,7 @@ export default function UserProfilePage() {
     const alreadyLiked = !!likedByMe[postId];
 
     if (alreadyLiked) {
-      const { error } = await supabase
-        .from("likes")
-        .delete()
-        .eq("post_id", postId)
-        .eq("user_id", currentUser.id);
-
+      const { error } = await supabase.from("likes").delete().eq("post_id", postId).eq("user_id", currentUser.id);
       if (error) return;
 
       setLikedByMe((prev) => ({ ...prev, [postId]: false }));
@@ -485,18 +204,11 @@ export default function UserProfilePage() {
         [postId]: Math.max(0, (prev[postId] || 1) - 1),
       }));
     } else {
-      const { error } = await supabase.from("likes").insert({
-        post_id: postId,
-        user_id: currentUser.id,
-      });
-
+      const { error } = await supabase.from("likes").insert({ post_id: postId, user_id: currentUser.id });
       if (error) return;
 
       setLikedByMe((prev) => ({ ...prev, [postId]: true }));
-      setLikeCounts((prev) => ({
-        ...prev,
-        [postId]: (prev[postId] || 0) + 1,
-      }));
+      setLikeCounts((prev) => ({ ...prev, [postId]: (prev[postId] || 0) + 1 }));
     }
   }
 
@@ -515,17 +227,10 @@ export default function UserProfilePage() {
     const trimmed = next.trim();
     if (!trimmed) return;
 
-    const { error } = await supabase
-      .from("posts")
-      .update({ content: trimmed })
-      .eq("id", post.id)
-      .eq("user_id", currentUser.id);
-
+    const { error } = await supabase.from("posts").update({ content: trimmed }).eq("id", post.id).eq("user_id", currentUser.id);
     if (error) return;
 
-    setPosts((prev) =>
-      prev.map((p) => (p.id === post.id ? { ...p, content: trimmed } : p))
-    );
+    setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, content: trimmed } : p)));
     setOpenMenuPostId(null);
   }
 
@@ -536,12 +241,7 @@ export default function UserProfilePage() {
     const ok = window.confirm("Delete this post?");
     if (!ok) return;
 
-    const { error } = await supabase
-      .from("posts")
-      .delete()
-      .eq("id", post.id)
-      .eq("user_id", currentUser.id);
-
+    const { error } = await supabase.from("posts").delete().eq("id", post.id).eq("user_id", currentUser.id);
     if (error) return;
 
     setPosts((prev) => prev.filter((p) => p.id !== post.id));
@@ -562,8 +262,7 @@ export default function UserProfilePage() {
         <div className="bg-white shadow-sm rounded-xl px-6 py-5">
           <p className="text-lg font-semibold text-slate-800 mb-2">User not found</p>
           <p className="text-sm text-slate-500">
-            We couldn’t find a profile for{" "}
-            <span className="font-mono">@{normalizedUsername}</span>.
+            We couldn’t find a profile for <span className="font-mono">@{normalizedUsername}</span>.
           </p>
         </div>
       </main>
@@ -574,113 +273,34 @@ export default function UserProfilePage() {
 
   return (
     <main className="min-h-screen">
-      <div className="max-w-3xl mx-auto px-4 py-8">
-        <header className="mb-6 border-b border-slate-200 pb-5">
-          <div className="flex items-start gap-4">
-            <div className="w-16 h-16 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden">
-              {profile.avatar_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={profile.avatar_url}
-                  alt={profile.username}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <span className="text-xl font-semibold text-slate-700">
-                  {avatarInitial}
-                </span>
-              )}
-            </div>
-
-            <div className="flex-1">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h1 className="text-3xl font-bold text-slate-900">
-                    @{profile.username}
-                  </h1>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Joined{" "}
-                    {new Date(profile.created_at).toLocaleDateString(undefined, {
-                      year: "numeric",
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </p>
-                </div>
-
-                {isOwner && (
-                  <Link
-                    href="/settings"
-                    className="px-3 py-1.5 text-sm rounded-full border border-slate-300 text-slate-700 hover:text-slate-900 hover:border-slate-400 transition"
-                  >
-                    Edit profile
-                  </Link>
-                )}
-              </div>
-
-              {profile.bio && (
-                <p className="mt-3 text-sm text-slate-800 whitespace-pre-line">
-                  {profile.bio}
-                </p>
-              )}
-            </div>
-          </div>
-        </header>
-
-        {/* Tabs */}
-        <nav className="mb-6 border-b border-slate-200">
-          <div className="flex gap-6 text-sm font-medium">
+      <ProfileMediaHeaderLayout
+        backdropUrl={profile.backdrop_url}
+        backdropPosX={profile.backdrop_pos_x}
+        backdropPosY={profile.backdrop_pos_y}
+        backdropZoom={profile.backdrop_zoom}
+        title={undefined}
+        username={profile.username}
+        avatarUrl={profile.avatar_url}
+        bio={profile.bio}
+        rightPinned={
+          isOwner ? (
             <Link
-              href={baseProfilePath}
-              className={`pb-3 ${
-                router.asPath === baseProfilePath
-                  ? "border-b-2 border-slate-900 text-slate-900"
-                  : "text-slate-500 hover:text-slate-800"
-              }`}
+              href="/settings"
+              className="px-3 py-1.5 text-sm rounded-full border border-white/30 text-white hover:border-white/60 hover:bg-white/10 transition"
             >
-              Posts
+              Edit profile
             </Link>
+          ) : null
+        }
+        reserveRightClassName="pr-[160px]"
+        activeTab="posts"
+      />
 
-            <Link
-              href={`${baseProfilePath}/anime`}
-              className={`pb-3 ${
-                router.asPath.startsWith(`${baseProfilePath}/anime`)
-                  ? "border-b-2 border-slate-900 text-slate-900"
-                  : "text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              Anime
-            </Link>
-
-            <Link
-              href={`${baseProfilePath}/journal`}
-              className={`pb-3 ${
-                router.asPath.startsWith(`${baseProfilePath}/journal`)
-                  ? "border-b-2 border-slate-900 text-slate-900"
-                  : "text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              Journal
-            </Link>
-
-            <Link
-              href={`${baseProfilePath}/library`}
-              className={`pb-3 ${
-                router.asPath.startsWith(`${baseProfilePath}/library`)
-                  ? "border-b-2 border-slate-900 text-slate-900"
-                  : "text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              My Library
-            </Link>
-          </div>
-        </nav>
-
+      {/* ✅ Everything below stays your normal feed width */}
+      <div className="max-w-3xl mx-auto px-4 pb-8">
         {/* Posts feed */}
         <section>
-          <h2 className="text-lg font-semibold text-slate-900 mb-4">
-            Posts by @{profile.username}
-          </h2>
+          <h2 className="text-lg font-semibold text-slate-900 mb-4">Posts by @{profile.username}</h2>
 
           {isLoadingPosts ? null : posts.length === 0 ? (
             <p className="text-sm text-slate-500">This user hasn’t posted anything yet.</p>
@@ -704,8 +324,7 @@ export default function UserProfilePage() {
                   const meta = animeMetaById[p.anime_id];
                   if (meta) {
                     const english = meta.titleEnglish?.trim();
-                    originLabel =
-                      english && english.length > 0 ? english : meta.title || undefined;
+                    originLabel = english && english.length > 0 ? english : meta.title || undefined;
 
                     if (meta.slug) originHref = `/anime/${meta.slug}`;
                     posterUrl = meta.imageUrl ?? null;
@@ -714,9 +333,7 @@ export default function UserProfilePage() {
                       const epMeta = episodeMetaById[p.anime_episode_id];
                       if (epMeta && epMeta.episodeNumber != null) {
                         episodeLabel = `Ep ${epMeta.episodeNumber}`;
-                        if (meta.slug) {
-                          episodeHref = `/anime/${meta.slug}/episode/${epMeta.episodeNumber}`;
-                        }
+                        if (meta.slug) episodeHref = `/anime/${meta.slug}/episode/${epMeta.episodeNumber}`;
                       }
                     }
                   }
@@ -726,8 +343,7 @@ export default function UserProfilePage() {
                   const meta = mangaMetaById[p.manga_id];
                   if (meta) {
                     const english = meta.titleEnglish?.trim();
-                    originLabel =
-                      english && english.length > 0 ? english : meta.title || undefined;
+                    originLabel = english && english.length > 0 ? english : meta.title || undefined;
 
                     if (meta.slug) originHref = `/manga/${meta.slug}`;
                     posterUrl = meta.imageUrl ?? null;
@@ -736,9 +352,7 @@ export default function UserProfilePage() {
                       const chMeta = chapterMetaById[p.manga_chapter_id];
                       if (chMeta && chMeta.chapterNumber != null) {
                         episodeLabel = `Ch ${chMeta.chapterNumber}`;
-                        if (meta.slug) {
-                          episodeHref = `/manga/${meta.slug}/chapter/${chMeta.chapterNumber}`;
-                        }
+                        if (meta.slug) episodeHref = `/manga/${meta.slug}/chapter/${chMeta.chapterNumber}`;
                       }
                     }
                   }
