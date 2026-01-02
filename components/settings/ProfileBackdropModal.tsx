@@ -294,10 +294,21 @@ export default function ProfileBackdropModal({
         return { xPct, yPct };
     }
 
+    // ✅ live preview values (always reflects current editor)
+    const livePreview = useMemo(() => {
+        if (!pickedUrl) return null;
+        const { xPct, yPct } = panToPctForDb(); // uses current panPx + zoom
+        return {
+            url: pickedUrl,
+            x: xPct,
+            y: yPct,
+            zoom: clamp(zoom, 1, 3),
+        };
+    }, [pickedUrl, panPx.x, panPx.y, zoom, editorBox.w, editorBox.h, imgSize?.w, imgSize?.h]);
+
     async function saveBackdropToDb() {
         setErr(null);
 
-        if (!applied) return setErr("Click Apply first.");
         if (!pickedFile) return setErr("Upload an image first.");
         if (!userId) return setErr("Missing user id.");
 
@@ -321,11 +332,13 @@ export default function ProfileBackdropModal({
             const { data: publicData } = supabase.storage.from(BUCKET).getPublicUrl(uploadData.path);
             const publicUrl = publicData.publicUrl;
 
+            const { xPct, yPct } = panToPctForDb();
+
             const updates = {
                 backdrop_url: publicUrl,
-                backdrop_pos_x: applied.x,
-                backdrop_pos_y: applied.y,
-                backdrop_zoom: applied.zoom,
+                backdrop_pos_x: xPct,
+                backdrop_pos_y: yPct,
+                backdrop_zoom: clamp(zoom, 1, 3),
             };
 
             const { error: dbErr } = await supabase.from("profiles").update(updates).eq("id", userId);
@@ -480,7 +493,7 @@ export default function ProfileBackdropModal({
 
                                 <button
                                     type="button"
-                                    disabled={!applied || saving}
+                                    disabled={!pickedUrl || saving}
                                     onClick={saveBackdropToDb}
                                     className="ml-auto inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-full bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60"
                                 >
@@ -521,14 +534,14 @@ export default function ProfileBackdropModal({
                                     <div className="relative">
                                         {/* Backdrop area */}
                                         <div className="relative w-full overflow-hidden bg-black" style={{ height: 150 }}>
-                                            {applied?.url ? (
+                                            {livePreview?.url ? (
                                                 <div
                                                     className="absolute inset-0"
                                                     style={{
-                                                        backgroundImage: `url(${applied.url})`,
+                                                        backgroundImage: `url(${livePreview.url})`,
                                                         backgroundRepeat: "no-repeat",
-                                                        backgroundPosition: `${applied.x}% ${applied.y}%`,
-                                                        backgroundSize: `${applied.zoom * 100}%`,
+                                                        backgroundPosition: `${livePreview.x}% ${livePreview.y}%`,
+                                                        backgroundSize: `${livePreview.zoom * 100}%`,
                                                     }}
                                                 />
                                             ) : (
