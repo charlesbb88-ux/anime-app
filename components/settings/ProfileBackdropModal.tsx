@@ -287,10 +287,10 @@ export default function ProfileBackdropModal({
         });
 
         const xPct =
-            rangeX <= 0 ? DEFAULT_X : clamp(((panPx.x + maxPanX) / (2 * maxPanX)) * 100, 0, 100);
-        const yPct =
-            rangeY <= 0 ? DEFAULT_Y : clamp(((panPx.y + maxPanY) / (2 * maxPanY)) * 100, 0, 100);
+            rangeX <= 0 ? DEFAULT_X : clamp(((-panPx.x + maxPanX) / (2 * maxPanX)) * 100, 0, 100);
 
+        const yPct =
+            rangeY <= 0 ? DEFAULT_Y : clamp(((-panPx.y + maxPanY) / (2 * maxPanY)) * 100, 0, 100);
         return { xPct, yPct };
     }
 
