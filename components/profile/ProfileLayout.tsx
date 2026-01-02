@@ -107,7 +107,7 @@ export default function ProfileLayout({
 
     return (
         <main className="min-h-screen">
-            <div className={`${maxWidthClassName} mx-auto px-4 py-8`}>
+            <div className={`${maxWidthClassName} mx-auto px-4 py-7`}>
                 <ProfileTopNav
                     username={profile.username}
                     avatarUrl={profile.avatar_url}

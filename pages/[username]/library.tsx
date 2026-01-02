@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../../lib/supabaseClient";
 import ProfileLayout from "../../components/profile/ProfileLayout";
+import ReviewIcon from "@/components/icons/ReviewIcon";
 
 type AnimeCard = {
   id: string;
@@ -45,7 +46,12 @@ type LibraryItem = {
 
   stars: number | null;
   liked: boolean;
+
   reviewed: boolean;
+  reviewPostId: string | null; // ✅ if reviewed, link to /posts/[id]
+
+  // ✅ watched/read timestamp (from user_marks.created_at)
+  markedAt: string | null;
 };
 
 function clamp(n: number, min: number, max: number) {
@@ -99,9 +105,7 @@ function LibraryBody({ profileId }: { profileId: string }) {
       try {
         const { data: markRows, error: marksError } = await supabase
           .from("user_marks")
-          .select(
-            "id, user_id, kind, anime_id, manga_id, stars, created_at, anime_episode_id, manga_chapter_id"
-          )
+          .select("id, user_id, kind, anime_id, manga_id, stars, created_at, anime_episode_id, manga_chapter_id")
           .eq("user_id", profileId)
           .in("kind", ["watched", "read", "liked", "rating"]);
 
@@ -114,18 +118,36 @@ function LibraryBody({ profileId }: { profileId: string }) {
 
         const marks = (markRows || []) as MarkRow[];
 
+        // watched/read IDs
         const watchedAnimeIds = new Set<string>();
         const readMangaIds = new Set<string>();
 
+        // ✅ watched/read timestamps (keep latest if multiple)
+        const watchedAtAnime: Record<string, string> = {};
+        const readAtManga: Record<string, string> = {};
+
         for (const mk of marks) {
           const k = (mk.kind || "").toLowerCase();
+          const ts = mk.created_at ? String(mk.created_at) : null;
 
-          if (mk.anime_id && k === "watched") watchedAnimeIds.add(String(mk.anime_id));
+          if (mk.anime_id && k === "watched") {
+            const id = String(mk.anime_id);
+            watchedAnimeIds.add(id);
+            if (ts && (!watchedAtAnime[id] || ts > watchedAtAnime[id])) watchedAtAnime[id] = ts;
+          }
 
-          if (mk.manga_id && k === "read") readMangaIds.add(String(mk.manga_id));
+          if (mk.manga_id && k === "read") {
+            const id = String(mk.manga_id);
+            readMangaIds.add(id);
+            if (ts && (!readAtManga[id] || ts > readAtManga[id])) readAtManga[id] = ts;
+          }
 
           // fallback: if you used watched for manga
-          if (mk.manga_id && k === "watched") readMangaIds.add(String(mk.manga_id));
+          if (mk.manga_id && k === "watched") {
+            const id = String(mk.manga_id);
+            readMangaIds.add(id);
+            if (ts && (!readAtManga[id] || ts > readAtManga[id])) readAtManga[id] = ts;
+          }
         }
 
         const animeIds = Array.from(watchedAnimeIds);
@@ -154,16 +176,10 @@ function LibraryBody({ profileId }: { profileId: string }) {
 
         const [animeRes, mangaRes] = await Promise.all([
           animeIds.length
-            ? supabase
-                .from("anime")
-                .select("id, slug, title, title_english, image_url")
-                .in("id", animeIds)
+            ? supabase.from("anime").select("id, slug, title, title_english, image_url").in("id", animeIds)
             : Promise.resolve({ data: [] as any[] }),
           mangaIds.length
-            ? supabase
-                .from("manga")
-                .select("id, slug, title, title_english, image_url")
-                .in("id", mangaIds)
+            ? supabase.from("manga").select("id, slug, title, title_english, image_url").in("id", mangaIds)
             : Promise.resolve({ data: [] as any[] }),
         ]);
 
@@ -193,43 +209,73 @@ function LibraryBody({ profileId }: { profileId: string }) {
           };
         });
 
+        // ---------------- REVIEWS -> POSTS ----------------
+
         const reviewedAnime = new Set<string>();
         const reviewedManga = new Set<string>();
+
+        const reviewIdByAnimeId: Record<string, string> = {};
+        const reviewIdByMangaId: Record<string, string> = {};
+
+        let reviewIdToPostId: Record<string, string> = {};
 
         try {
           const [revAnimeRes, revMangaRes] = await Promise.all([
             animeIds.length
-              ? supabase
-                  .from("reviews")
-                  .select("id, anime_id")
-                  .eq("user_id", profileId)
-                  .in("anime_id", animeIds)
+              ? supabase.from("reviews").select("id, anime_id").eq("user_id", profileId).in("anime_id", animeIds)
               : Promise.resolve({ data: [] as any[] }),
             mangaIds.length
-              ? supabase
-                  .from("reviews")
-                  .select("id, manga_id")
-                  .eq("user_id", profileId)
-                  .in("manga_id", mangaIds)
+              ? supabase.from("reviews").select("id, manga_id").eq("user_id", profileId).in("manga_id", mangaIds)
               : Promise.resolve({ data: [] as any[] }),
           ]);
 
           (revAnimeRes.data || []).forEach((r: any) => {
-            if (r?.anime_id) reviewedAnime.add(String(r.anime_id));
+            if (!r?.id || !r?.anime_id) return;
+            const aid = String(r.anime_id);
+            reviewedAnime.add(aid);
+            reviewIdByAnimeId[aid] = String(r.id);
           });
+
           (revMangaRes.data || []).forEach((r: any) => {
-            if (r?.manga_id) reviewedManga.add(String(r.manga_id));
+            if (!r?.id || !r?.manga_id) return;
+            const mid = String(r.manga_id);
+            reviewedManga.add(mid);
+            reviewIdByMangaId[mid] = String(r.id);
           });
+
+          const reviewIds = Array.from(
+            new Set([...Object.values(reviewIdByAnimeId), ...Object.values(reviewIdByMangaId)])
+          );
+
+          if (reviewIds.length) {
+            const postsRes = await supabase
+              .from("posts")
+              .select("id, review_id")
+              .eq("user_id", profileId)
+              .in("review_id", reviewIds.slice(0, 1000));
+
+            if (postsRes.data) {
+              for (const p of postsRes.data as any[]) {
+                if (!p?.id || !p?.review_id) continue;
+                reviewIdToPostId[String(p.review_id)] = String(p.id);
+              }
+            }
+          }
         } catch {
           // ignore if schema differs
         }
+
+        // ---------------- BUILD ITEMS ----------------
 
         const combined: LibraryItem[] = [];
 
         for (const id of animeIds) {
           const meta = animeById[id];
           if (!meta) continue;
+
           const title = (meta.title_english || meta.title || "").trim() || "Untitled";
+          const reviewId = reviewIdByAnimeId[id];
+          const postId = reviewId ? reviewIdToPostId[reviewId] : undefined;
 
           combined.push({
             kind: "anime",
@@ -240,13 +286,18 @@ function LibraryBody({ profileId }: { profileId: string }) {
             stars: ratingAnime[id] ?? null,
             liked: likedAnime.has(id),
             reviewed: reviewedAnime.has(id),
+            reviewPostId: postId ?? null,
+            markedAt: watchedAtAnime[id] ?? null,
           });
         }
 
         for (const id of mangaIds) {
           const meta = mangaById[id];
           if (!meta) continue;
+
           const title = (meta.title_english || meta.title || "").trim() || "Untitled";
+          const reviewId = reviewIdByMangaId[id];
+          const postId = reviewId ? reviewIdToPostId[reviewId] : undefined;
 
           combined.push({
             kind: "manga",
@@ -257,17 +308,21 @@ function LibraryBody({ profileId }: { profileId: string }) {
             stars: ratingManga[id] ?? null,
             liked: likedManga.has(id),
             reviewed: reviewedManga.has(id),
+            reviewPostId: postId ?? null,
+            markedAt: readAtManga[id] ?? null,
           });
         }
 
+        // ✅ Sort by most recently watched/read (newest first)
+        // created_at is ISO-ish, so string compare works fine. Missing dates go last.
         combined.sort((a, b) => {
-          const ar = a.stars ?? -1;
-          const br = b.stars ?? -1;
-          if (br !== ar) return br - ar;
+          const at = a.markedAt ?? "";
+          const bt = b.markedAt ?? "";
+          if (bt !== at) return bt.localeCompare(at);
           return a.title.toLowerCase().localeCompare(b.title.toLowerCase());
         });
 
-        setItems(combined);
+        if (!cancelled) setItems(combined);
       } finally {
         if (!cancelled) setLoadingLibrary(false);
       }
@@ -284,9 +339,7 @@ function LibraryBody({ profileId }: { profileId: string }) {
     <>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold tracking-wide text-slate-900 uppercase">
-            Watched / Read
-          </h2>
+          <h2 className="text-sm font-semibold tracking-wide text-slate-900 uppercase">Watched / Read</h2>
           <span className="text-sm text-slate-500">{items.length}</span>
         </div>
 
@@ -294,9 +347,7 @@ function LibraryBody({ profileId }: { profileId: string }) {
       </div>
 
       {loadingLibrary ? (
-        <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-600">
-          Loading library…
-        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-600">Loading library…</div>
       ) : items.length === 0 ? (
         <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-600">
           Nothing in this library yet.
@@ -304,38 +355,43 @@ function LibraryBody({ profileId }: { profileId: string }) {
       ) : (
         <div className="grid [grid-template-columns:repeat(auto-fill,minmax(100px,1fr))] gap-x-2 gap-y-4">
           {items.map((it) => {
-            const href = it.slug ? (it.kind === "anime" ? `/anime/${it.slug}` : `/manga/${it.slug}`) : "#";
+            const href = itemHref(it);
 
             return (
-              <Link key={`${it.kind}:${it.id}`} href={href} title={it.title} className="group block">
-                <div className="relative w-full aspect-[2/3] overflow-visible">
-                  <div className="relative w-full h-full overflow-hidden rounded-[4px] bg-slate-200 border border-black group-hover:border-slate-400 transition">
-                    {it.posterUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={it.posterUrl} alt={it.title} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <span className="text-[10px] text-slate-500">No poster</span>
-                      </div>
-                    )}
+              <div key={`${it.kind}:${it.id}`} className="block">
+                {/* ✅ only the poster is the media link */}
+                <Link href={href} title={it.title} className="block">
+                  {/* ✅ HOVER TRIGGER IS ONLY THIS POSTER BOX (NOT THE STARS ROW) */}
+                  <div className="group relative w-full aspect-[2/3] overflow-visible">
+                    <div className="relative w-full h-full overflow-hidden rounded-[4px] bg-slate-200 border-2 border-black group-hover:border-slate-400 transition">
+                      {it.posterUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={it.posterUrl} alt={it.title} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <span className="text-[10px] text-slate-500">No poster</span>
+                        </div>
+                      )}
+
+                      {it.posterUrl ? (
+                        <div className="pointer-events-none absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors" />
+                      ) : null}
+                    </div>
 
                     {it.posterUrl ? (
-                      <div className="pointer-events-none absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors" />
-                    ) : null}
-                  </div>
-
-                  {it.posterUrl ? (
-                    <div className="pointer-events-none absolute inset-0 z-50 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="flex-none w-[220px] aspect-[2/3] overflow-hidden rounded-[6px] border border-slate-200/80 shadow-2xl bg-slate-200">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={it.posterUrl} alt={it.title} className="w-full h-full object-cover" />
+                      <div className="pointer-events-none absolute inset-0 z-50 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="flex-none w-[220px] aspect-[2/3] overflow-hidden rounded-[6px] ring-5 ring-black shadow-2xl bg-slate-200">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={it.posterUrl} alt={it.title} className="w-full h-full object-cover" />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ) : null}
-                </div>
+                    ) : null}
+                  </div>
+                </Link>
 
+                {/* ✅ not inside .group, so hovering here does NOTHING to the preview */}
                 <div className="mt-0 flex items-center justify-between">
                   <div className="min-h-[12px] leading-none">
                     {(() => {
@@ -368,13 +424,19 @@ function LibraryBody({ profileId }: { profileId: string }) {
 
                   <div className="flex items-center gap-1.5">
                     {it.reviewed ? (
-                      <span className="text-[11px] text-slate-600" aria-label="Reviewed" title="Reviewed">
-                        ✍
-                      </span>
+                      it.reviewPostId ? (
+                        <Link href={`/posts/${it.reviewPostId}`} className="text-slate-600 hover:text-slate-900">
+                          <ReviewIcon size={12} />
+                        </Link>
+                      ) : (
+                        <span className="text-[11px] text-slate-600" aria-label="Reviewed" title="Reviewed">
+                          ✍
+                        </span>
+                      )
                     ) : null}
                   </div>
                 </div>
-              </Link>
+              </div>
             );
           })}
         </div>

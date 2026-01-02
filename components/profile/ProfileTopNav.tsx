@@ -28,90 +28,96 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
   const baseProfilePath = `/${username}`;
 
   function tabClass(isActive: boolean) {
-    return `pb-2 ${
+    return `pb-.5 ${
       isActive
-        ? "border-b-2 border-slate-900 text-slate-900"
-        : "text-slate-500 hover:text-slate-800"
+        ? "border-b-2 border-black text-black"
+        : "text-slate-500 hover:text-black"
     }`;
   }
 
-  function isPathActive(path: string) {
-    return router.asPath === path || router.asPath.startsWith(`${path}/`);
-  }
+  const currentTab = useMemo(() => {
+    // if parent explicitly sets activeTab, trust it
+    if (activeTab) return activeTab;
+
+    const path = router.asPath.split("?")[0].split("#")[0];
+
+    if (path === baseProfilePath) return "posts";
+
+    if (path.startsWith(baseProfilePath + "/")) {
+      const seg = path.slice((baseProfilePath + "/").length).split("/")[0];
+
+      if (
+        seg === "bookmarks" ||
+        seg === "watchlist" ||
+        seg === "activity" ||
+        seg === "journal" ||
+        seg === "library"
+      ) {
+        return seg;
+      }
+    }
+
+    return "posts";
+  }, [activeTab, router.asPath, baseProfilePath]);
 
   return (
-    <div className="mb-6 border-b border-slate-200 pb-4">
-      <div className="flex items-center justify-between gap-6">
+    <div className="mb-6 border-b border-black pb-4">
+      <div className="flex items-start justify-between gap-6">
         {/* Left: avatar + username */}
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+          <div className="w-10 h-10 rounded-full bg-black ring-1 ring-black flex items-center justify-center overflow-hidden shrink-0">
             {avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={avatarUrl} alt={username} className="w-full h-full object-cover" />
             ) : (
-              <span className="text-sm font-semibold text-slate-700">
-                {avatarInitial}
-              </span>
+              <span className="text-sm font-semibold text-slate-200">{avatarInitial}</span>
             )}
           </div>
 
           <div className="min-w-0">
-            <div className="text-base font-semibold text-slate-900 truncate">
+            <div className="text-base font-semibold text-slate-900 truncate mt-4">
               @{username}
             </div>
           </div>
         </div>
 
         {/* Right: tabs */}
-        <nav className="flex gap-6 text-sm font-medium shrink-0">
-          <Link
-            href={baseProfilePath}
-            className={tabClass(activeTab ? activeTab === "posts" : isPathActive(baseProfilePath))}
-          >
+        <nav className="flex gap-6 text-sm font-medium shrink-0 mt-4">
+          <Link href={baseProfilePath} className={tabClass(currentTab === "posts")}>
             Posts
           </Link>
 
           <Link
             href={`${baseProfilePath}/bookmarks`}
-            className={tabClass(
-              activeTab ? activeTab === "bookmarks" : isPathActive(`${baseProfilePath}/bookmarks`)
-            )}
+            className={tabClass(currentTab === "bookmarks")}
           >
             Bookmarks
           </Link>
 
           <Link
             href={`${baseProfilePath}/watchlist`}
-            className={tabClass(
-              activeTab ? activeTab === "watchlist" : isPathActive(`${baseProfilePath}/watchlist`)
-            )}
+            className={tabClass(currentTab === "watchlist")}
           >
             Watchlist
           </Link>
 
           <Link
             href={`${baseProfilePath}/activity`}
-            className={tabClass(
-              activeTab ? activeTab === "activity" : isPathActive(`${baseProfilePath}/activity`)
-            )}
+            className={tabClass(currentTab === "activity")}
           >
             Activity
           </Link>
 
           <Link
             href={`${baseProfilePath}/journal`}
-            className={tabClass(
-              activeTab ? activeTab === "journal" : isPathActive(`${baseProfilePath}/journal`)
-            )}
+            className={tabClass(currentTab === "journal")}
           >
             Journal
           </Link>
 
           <Link
             href={`${baseProfilePath}/library`}
-            className={tabClass(
-              activeTab ? activeTab === "library" : isPathActive(`${baseProfilePath}/library`)
-            )}
+            className={tabClass(currentTab === "library")}
           >
             My Library
           </Link>
@@ -119,9 +125,7 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
       </div>
 
       {bio ? (
-        <p className="mt-3 text-sm text-slate-800 whitespace-pre-line">
-          {bio}
-        </p>
+        <p className="mt-3 text-sm text-slate-800 whitespace-pre-line">{bio}</p>
       ) : null}
     </div>
   );
