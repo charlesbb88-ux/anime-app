@@ -30,44 +30,74 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
 
   const [stageW, setStageW] = useState(900);
 
-  // target vs rendered (spring animation)
-  const [targetPos, setTargetPos] = useState(0); // 0..(n-1)
-  const [renderPos, setRenderPos] = useState(0); // published for layout
+  // interaction + spring
+  const [targetPos, setTargetPos] = useState(0);
+  const [renderPos, setRenderPos] = useState(0);
 
   const renderPosRef = useRef(0);
   const velRef = useRef(0);
 
-  // dragging state
   const [dragging, setDragging] = useState(false);
+  const draggingRef = useRef(false);
   const dragStartXRef = useRef(0);
   const dragStartPosRef = useRef(0);
 
-  // wheel momentum helper
   const wheelVelRef = useRef(0);
   const wheelRAFRef = useRef<number | null>(null);
+
+  // ✅ hover morph
+  const [hovering, setHovering] = useState(false);
+  const hoverRef = useRef(false);
+  const [hoverBlend, setHoverBlend] = useState(0); // 0=overview, 1=hover-decks
+  const hoverBlendRef = useRef(0);
+
+  // ✅ NEW: lock hover ONLY after user interacts (ONE-WAY; only refresh unlocks)
+  const [hoverLocked, setHoverLocked] = useState(false);
+  const hoverLockedRef = useRef(false);
+
+  function lockHover() {
+    if (hoverLockedRef.current) return;
+    hoverLockedRef.current = true;
+    setHoverLocked(true);
+
+    // force hover mode on immediately
+    hoverRef.current = true;
+    setHovering(true);
+  }
 
   // constants
   const CARD_W = 92;
   const CARD_H = 132;
 
-  // ✅ this is the key fix: we need extra "gutter" because stacks fan outward
-  // If stacks push left/right by STACK_MAX_X, we must keep them inside the container.
+  // hover deck layout
   const STACK_MAX_X = 150;
   const STACK_K = 22;
 
-  const GUTTER = STACK_MAX_X + 22; // keep outward stacks from getting clipped
+  const GUTTER = STACK_MAX_X + 22;
   const EDGE_PAD = GUTTER;
 
   const WINDOW_COUNT = 7;
 
+  // overview layout (non-hover)
+  const OVERVIEW_PAD = 18;
+  const OVERVIEW_MIN_STEP = 6;
+  const OVERVIEW_MAX_STEP = 26;
+
   // interaction feel
   const DRAG_SENSITIVITY_PX = 120;
-  const WHEEL_SENSITIVITY_PX = 160;
 
-  // spring tuning
+  // wheel tuning
+  const WHEEL_SENSITIVITY_PX = 520;
+  const WHEEL_TICK_MAX = 0.55;
+
+  // spring
   const SPRING_K = 0.18;
-  const SPRING_D = 0.78;
+  const SPRING_D = 0.74;
+  const MAX_VEL = 0.55;
+  const SNAP_EPS = 0.002;
+  const VEL_EPS = 0.002;
 
+  const DRAG_FOLLOW = 0.42;
   const SNAP_ON_RELEASE = true;
 
   const maxPos = Math.max(0, items.length - 1);
@@ -85,6 +115,26 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
     return () => ro.disconnect();
   }, []);
 
+  // hoverBlend animator
+  useEffect(() => {
+    let raf = 0;
+
+    const tick = () => {
+      const t = hoverRef.current ? 1 : 0;
+      const x = hoverBlendRef.current;
+
+      const next = x + (t - x) * 0.18;
+
+      hoverBlendRef.current = next;
+      setHoverBlend(next);
+
+      raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
   // spring toward targetPos
   useEffect(() => {
     let raf = 0;
@@ -92,15 +142,26 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
     const tick = () => {
       const x = renderPosRef.current;
       const v = velRef.current;
+
       const t = targetPos;
 
-      const dx = t - x;
-      const nextV = (v + dx * SPRING_K) * SPRING_D;
-      const nextX = clamp(x + nextV, 0, maxPos);
+      const effectiveTarget = draggingRef.current ? lerp(x, t, DRAG_FOLLOW) : t;
+
+      const dx = effectiveTarget - x;
+
+      let nextV = (v + dx * SPRING_K) * SPRING_D;
+      nextV = clamp(nextV, -MAX_VEL, MAX_VEL);
+
+      let nextX = x + nextV;
+      nextX = clamp(nextX, 0, maxPos);
+
+      if (Math.abs(effectiveTarget - nextX) < SNAP_EPS && Math.abs(nextV) < VEL_EPS) {
+        nextX = effectiveTarget;
+        nextV = 0;
+      }
 
       velRef.current = nextV;
       renderPosRef.current = nextX;
-
       setRenderPos(nextX);
 
       raf = requestAnimationFrame(tick);
@@ -110,13 +171,12 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
     return () => cancelAnimationFrame(raf);
   }, [targetPos, maxPos]);
 
-  const band = useMemo(() => {
+  const deckBand = useMemo(() => {
     const innerW = stageW - EDGE_PAD * 2;
 
     const leftX = EDGE_PAD;
     const rightX = EDGE_PAD + innerW - CARD_W;
 
-    // ✅ spread now lives safely between gutters
     const midStart = leftX + 18;
     const midEnd = rightX - 18;
 
@@ -127,22 +187,41 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
     const step = steps === 1 ? 0 : (safeMidEnd - safeMidStart) / (steps - 1);
 
     return { leftX, rightX, midStart: safeMidStart, midEnd: safeMidEnd, step };
-  }, [stageW, EDGE_PAD, WINDOW_COUNT]);
+  }, [stageW, EDGE_PAD]);
 
-  // ✅ continuous blending between adjacent layouts
+  const overviewBand = useMemo(() => {
+    const leftX = OVERVIEW_PAD;
+    const rightX = Math.max(leftX, stageW - OVERVIEW_PAD - CARD_W);
+    const innerW = Math.max(1, rightX - leftX);
+
+    const n = Math.max(1, items.length);
+    const rawStep = n <= 1 ? 0 : innerW / (n - 1);
+
+    const step = clamp(rawStep, OVERVIEW_MIN_STEP, OVERVIEW_MAX_STEP);
+
+    const stripW = (n - 1) * step + CARD_W;
+    const maxStart = stageW - OVERVIEW_PAD - stripW;
+    const startX = clamp(leftX, leftX, Math.max(leftX, leftX + Math.max(0, maxStart)));
+
+    return { startX, step };
+  }, [stageW, items.length]);
+
+  // deck mode indices (reversed window so the big stack starts on the LEFT)
   const baseIndex = Math.floor(renderPos);
   const frac = clamp(renderPos - baseIndex, 0, 1);
 
-  const spreadStart0 = clamp(baseIndex, 0, Math.max(0, items.length - WINDOW_COUNT));
-  const spreadStart1 = clamp(baseIndex + 1, 0, Math.max(0, items.length - WINDOW_COUNT));
+  const maxStart = Math.max(0, items.length - WINDOW_COUNT);
+
+  const spreadStart0 = clamp(maxStart - baseIndex, 0, maxStart);
+  const spreadStart1 = clamp(maxStart - (baseIndex + 1), 0, maxStart);
 
   const spreadEnd0 = spreadStart0 + WINDOW_COUNT - 1;
   const spreadEnd1 = spreadStart1 + WINDOW_COUNT - 1;
 
-  function layoutForIndex(i: number, spreadStart: number, spreadEnd: number) {
-    const y = 18; // fixed (no slope)
+  function layoutDeck(i: number, spreadStart: number, spreadEnd: number) {
+    const y = 18;
 
-    let x = band.leftX;
+    let x = deckBand.leftX;
     let opacity = 1;
     let scale = 1;
     let z = 1;
@@ -152,28 +231,51 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
     const after = i > spreadEnd;
 
     if (before) {
-      const depth = spreadStart - i; // 1..N
+      const leftCount = spreadStart; // how many cards are in the left stack
+      const depth = spreadStart - i; // 1..leftCount
       const ox = stackOffset(depth, STACK_MAX_X, STACK_K);
 
-      // ✅ LEFT stack fans OUTWARD (to the left) but stays inside gutter
-      x = band.leftX - ox;
+      // ✅ keep the *back* of the left stack anchored
+      let extraShift = 0;
+      if (leftCount > 1) {
+        const fullW = stackOffset(maxStart, STACK_MAX_X, STACK_K); // reference (~STACK_MAX_X)
+        const curW = stackOffset(leftCount, STACK_MAX_X, STACK_K);
+        const delta = curW - fullW; // <= 0 (negative = shift left)
+        const t = (depth - 1) / (leftCount - 1); // 0..1
+        extraShift = delta * t;
+      }
+
+      x = deckBand.leftX - ox + extraShift;
 
       opacity = clamp(1 - Math.log1p(depth) * 0.12, 0.18, 1);
       scale = clamp(1 - Math.log1p(depth) * 0.02, 0.92, 1);
       z = 10_000 - depth;
     } else if (after) {
-      const depth = i - spreadEnd; // 1..N
+      const rightCount = Math.max(0, items.length - (spreadEnd + 1)); // how many cards are in the right stack
+      const depth = i - spreadEnd; // 1..rightCount
       const ox = stackOffset(depth, STACK_MAX_X, STACK_K);
 
-      // ✅ RIGHT stack fans OUTWARD (to the right) but stays inside gutter
-      x = band.rightX + ox;
+      // ✅ NEW: keep the *back* of the right stack anchored (mirror of left)
+      // We do this WITHOUT moving the "front" (depth=1) card:
+      // - When rightCount is smaller, the stack width is smaller.
+      // - We add an extra right-shift that ramps from 0 at depth=1 to full shift at depth=rightCount.
+      let extraShift = 0;
+      if (rightCount > 1) {
+        const fullW = stackOffset(maxStart, STACK_MAX_X, STACK_K); // same reference as left
+        const curW = stackOffset(rightCount, STACK_MAX_X, STACK_K);
+        const delta = fullW - curW; // >= 0 (positive = shift right)
+        const t = (depth - 1) / (rightCount - 1); // 0..1
+        extraShift = delta * t;
+      }
+
+      x = deckBand.rightX + ox + extraShift;
 
       opacity = clamp(1 - Math.log1p(depth) * 0.12, 0.18, 1);
       scale = clamp(1 - Math.log1p(depth) * 0.02, 0.92, 1);
       z = 10_000 - depth;
     } else if (inSpread) {
-      const slot = i - spreadStart; // 0..WINDOW_COUNT-1
-      x = band.midStart + slot * band.step;
+      const slot = i - spreadStart;
+      x = deckBand.midStart + slot * deckBand.step;
 
       opacity = 1;
       scale = 1;
@@ -183,22 +285,47 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
     return { x, y, opacity, scale, z };
   }
 
+  function layoutOverview(i: number) {
+    const y = 18;
+    const x = Math.round(overviewBand.startX + i * overviewBand.step);
+
+    const opacity = 1;
+    const scale = 1;
+
+    const z = 20_000 + i;
+
+    return { x, y, opacity, scale, z };
+  }
+
   function beginDrag(clientX: number) {
     if (!items.length) return;
+
+    // ✅ any interaction locks hover (only refresh unlocks)
+    lockHover();
+
+    draggingRef.current = true;
     setDragging(true);
+
     dragStartXRef.current = clientX;
     dragStartPosRef.current = targetPos;
+
+    velRef.current *= 0.35;
   }
 
   function moveDrag(clientX: number) {
-    if (!dragging) return;
+    if (!draggingRef.current) return;
+
     const dx = clientX - dragStartXRef.current;
-    const next = dragStartPosRef.current - dx / DRAG_SENSITIVITY_PX;
+
+    const next = dragStartPosRef.current + dx / DRAG_SENSITIVITY_PX;
+
     setTargetPos(clamp(next, 0, maxPos));
   }
 
   function endDrag() {
-    if (!dragging) return;
+    if (!draggingRef.current) return;
+
+    draggingRef.current = false;
     setDragging(false);
 
     if (SNAP_ON_RELEASE) {
@@ -215,23 +342,30 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
     if (Math.abs(dx) > Math.abs(e.deltaY) || e.shiftKey) {
       e.preventDefault();
 
-      wheelVelRef.current += dx / WHEEL_SENSITIVITY_PX;
+      // ✅ wheel interaction also locks hover
+      lockHover();
+
+      const impulse = clamp(dx / WHEEL_SENSITIVITY_PX, -WHEEL_TICK_MAX, WHEEL_TICK_MAX);
+      wheelVelRef.current += impulse;
 
       if (wheelRAFRef.current == null) {
         const step = () => {
-          wheelVelRef.current *= 0.84;
+          wheelVelRef.current *= 0.86;
 
           if (Math.abs(wheelVelRef.current) < 0.001) {
             wheelVelRef.current = 0;
             wheelRAFRef.current = null;
 
-            if (SNAP_ON_RELEASE) {
+            if (!draggingRef.current && SNAP_ON_RELEASE) {
               setTargetPos((p) => clamp(Math.round(p), 0, maxPos));
             }
             return;
           }
 
-          setTargetPos((p) => clamp(p + wheelVelRef.current, 0, maxPos));
+          if (!draggingRef.current) {
+            setTargetPos((p) => clamp(p + wheelVelRef.current, 0, maxPos));
+          }
+
           wheelRAFRef.current = requestAnimationFrame(step);
         };
 
@@ -273,44 +407,97 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
           onMouseDown={(e) => beginDrag(e.clientX)}
           onMouseMove={(e) => moveDrag(e.clientX)}
           onMouseUp={endDrag}
-          onMouseLeave={endDrag}
-          onTouchStart={(e) => beginDrag(e.touches[0]?.clientX ?? 0)}
+          onMouseLeave={() => {
+            endDrag();
+
+            // ✅ only drop hover if NOT locked
+            if (!hoverLockedRef.current) {
+              hoverRef.current = false;
+              setHovering(false);
+            }
+          }}
+          onMouseEnter={() => {
+            hoverRef.current = true;
+            setHovering(true);
+          }}
+          onFocus={() => {
+            hoverRef.current = true;
+            setHovering(true);
+          }}
+          onBlur={() => {
+            // ✅ only drop hover if NOT locked
+            if (!hoverLockedRef.current) {
+              hoverRef.current = false;
+              setHovering(false);
+            }
+          }}
+          onTouchStart={(e) => {
+            lockHover();
+            beginDrag(e.touches[0]?.clientX ?? 0);
+          }}
           onTouchMove={(e) => moveDrag(e.touches[0]?.clientX ?? 0)}
           onTouchEnd={endDrag}
           onWheel={onWheel}
         >
-          {/* stack panels */}
-          <div className="pointer-events-none absolute left-0 top-0 bottom-0 w-[200px] bg-gradient-to-r from-slate-100/70 to-transparent z-10" />
-          <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-[200px] bg-gradient-to-l from-slate-100/70 to-transparent z-10" />
+          {/* ✅ Only show the “deck mood” overlays when hovered (or morphing) */}
+          {hoverBlend > 0.02 ? (
+            <>
+              <div
+                className="pointer-events-none absolute left-0 top-0 bottom-0 w-[200px] bg-gradient-to-r from-slate-100/70 to-transparent z-10"
+                style={{ opacity: hoverBlend }}
+              />
+              <div
+                className="pointer-events-none absolute right-0 top-0 bottom-0 w-[200px] bg-gradient-to-l from-slate-100/70 to-transparent z-10"
+                style={{ opacity: hoverBlend }}
+              />
 
-          {/* fades */}
-          <div className="pointer-events-none absolute left-0 top-0 bottom-0 w-10 bg-gradient-to-r from-white to-transparent z-20" />
-          <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-10 bg-gradient-to-l from-white to-transparent z-20" />
+              <div
+                className="pointer-events-none absolute left-0 top-0 bottom-0 w-10 bg-gradient-to-r from-white to-transparent z-20"
+                style={{ opacity: hoverBlend }}
+              />
+              <div
+                className="pointer-events-none absolute right-0 top-0 bottom-0 w-10 bg-gradient-to-l from-white to-transparent z-20"
+                style={{ opacity: hoverBlend }}
+              />
 
-          {/* counters */}
-          {leftCount > 0 ? (
-            <div className="absolute left-3 top-3 z-30 rounded-md border border-black bg-white px-2 py-1 shadow-sm">
-              <span className="text-[11px] font-semibold text-slate-900">{leftCount} left</span>
-            </div>
-          ) : null}
-          {rightCount > 0 ? (
-            <div className="absolute right-3 top-3 z-30 rounded-md border border-black bg-white px-2 py-1 shadow-sm">
-              <span className="text-[11px] font-semibold text-slate-900">{rightCount} right</span>
-            </div>
+              {leftCount > 0 ? (
+                <div
+                  className="absolute left-3 top-3 z-30 rounded-md border border-black bg-white px-2 py-1 shadow-sm"
+                  style={{ opacity: hoverBlend }}
+                >
+                  <span className="text-[11px] font-semibold text-slate-900">{leftCount} left</span>
+                </div>
+              ) : null}
+              {rightCount > 0 ? (
+                <div
+                  className="absolute right-3 top-3 z-30 rounded-md border border-black bg-white px-2 py-1 shadow-sm"
+                  style={{ opacity: hoverBlend }}
+                >
+                  <span className="text-[11px] font-semibold text-slate-900">{rightCount} right</span>
+                </div>
+              ) : null}
+            </>
           ) : null}
 
           {/* cards */}
           <div className="absolute inset-0">
             {items.map((it, i) => {
-              const a = layoutForIndex(i, spreadStart0, spreadEnd0);
-              const b = layoutForIndex(i, spreadStart1, spreadEnd1);
+              const o = layoutOverview(i);
 
-              const x = lerp(a.x, b.x, frac);
-              const y = a.y;
-              const opacity = lerp(a.opacity, b.opacity, frac);
-              const scale = lerp(a.scale, b.scale, frac);
+              const a = layoutDeck(i, spreadStart0, spreadEnd0);
+              const b = layoutDeck(i, spreadStart1, spreadEnd1);
 
-              const z = Math.round(lerp(a.z, b.z, frac));
+              const hx = lerp(a.x, b.x, frac);
+              const hy = a.y;
+              const hopacity = lerp(a.opacity, b.opacity, frac);
+              const hscale = lerp(a.scale, b.scale, frac);
+              const hz = Math.round(lerp(a.z, b.z, frac));
+
+              const x = lerp(o.x, hx, hoverBlend);
+              const y = lerp(o.y, hy, hoverBlend);
+              const opacity = lerp(o.opacity, hopacity, hoverBlend);
+              const scale = lerp(o.scale, hscale, hoverBlend);
+              const z = Math.round(lerp(o.z, hz, hoverBlend));
 
               const tone = toneFor(it.kind);
 
@@ -323,7 +510,7 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
                     height: CARD_H,
                     zIndex: z,
                     opacity,
-                    transform: `translate3d(${Math.round(x)}px, ${y}px, 0) scale(${scale})`,
+                    transform: `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0) scale(${scale})`,
                     willChange: "transform, opacity",
                   }}
                 >
