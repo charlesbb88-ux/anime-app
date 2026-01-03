@@ -1,5 +1,4 @@
-"use client";
-
+// components/profile/ProfileTopNav.tsx
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useMemo } from "react";
@@ -14,7 +13,8 @@ type Props = {
     | "watchlist"
     | "activity"
     | "journal"
-    | "library";
+    | "library"
+    | "completions";
 };
 
 export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: Props) {
@@ -29,14 +29,11 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
 
   function tabClass(isActive: boolean) {
     return `pb-.5 ${
-      isActive
-        ? "border-b-2 border-black text-black"
-        : "text-slate-500 hover:text-black"
+      isActive ? "border-b-2 border-black text-black" : "text-slate-500 hover:text-black"
     }`;
   }
 
   const currentTab = useMemo(() => {
-    // if parent explicitly sets activeTab, trust it
     if (activeTab) return activeTab;
 
     const path = router.asPath.split("?")[0].split("#")[0];
@@ -51,7 +48,8 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
         seg === "watchlist" ||
         seg === "activity" ||
         seg === "journal" ||
-        seg === "library"
+        seg === "library" ||
+        seg === "completions"
       ) {
         return seg;
       }
@@ -121,12 +119,17 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
           >
             My Library
           </Link>
+
+          <Link
+            href={`${baseProfilePath}/completions`}
+            className={tabClass(currentTab === "completions")}
+          >
+            Completions
+          </Link>
         </nav>
       </div>
 
-      {bio ? (
-        <p className="mt-3 text-sm text-slate-800 whitespace-pre-line">{bio}</p>
-      ) : null}
+      {bio ? <p className="mt-3 text-sm text-slate-800 whitespace-pre-line">{bio}</p> : null}
     </div>
   );
 }
