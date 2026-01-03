@@ -21,7 +21,6 @@ function makeMixedPlaceholders(animeCount: number, mangaCount: number) {
     kind: "manga",
   }));
 
-  // Interleave so it feels “mixed” (anime/manga alternating-ish)
   const out: CompletionItem[] = [];
   const max = Math.max(anime.length, manga.length);
 
@@ -33,8 +32,23 @@ function makeMixedPlaceholders(animeCount: number, mangaCount: number) {
   return out;
 }
 
+function chunk<T>(arr: T[], size: number) {
+  if (size <= 0) return [arr];
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    out.push(arr.slice(i, i + size));
+  }
+  return out;
+}
+
 export default function CompletionsPageShell() {
-  const items = useMemo(() => makeMixedPlaceholders(34, 28), []);
+  // ✅ later this becomes your real query result; chunking stays the same
+  const allItems = useMemo(() => makeMixedPlaceholders(100, 100), []);
+
+  // ✅ how many posters per row
+  const ROW_LIMIT = 40;
+
+  const rows = useMemo(() => chunk(allItems, ROW_LIMIT), [allItems]);
 
   return (
     <div className="space-y-5">
@@ -43,9 +57,18 @@ export default function CompletionsPageShell() {
         <p className="mt-2 text-sm text-slate-700">
           Placeholder layout for your logged anime + manga (mixed together). Next step will be wiring real data.
         </p>
+        <p className="mt-2 text-xs text-slate-600">
+          Showing {allItems.length} total • {ROW_LIMIT} per row • {rows.length} rows
+        </p>
       </div>
 
-      <CompletionsCarouselRow title="All logged (anime + manga)" items={items} />
+      {rows.map((items, idx) => (
+        <CompletionsCarouselRow
+          key={`completions-row-${idx}`}
+          title={idx === 0 ? "All logged (anime + manga)" : `All logged (continued ${idx + 1})`}
+          items={items}
+        />
+      ))}
     </div>
   );
 }

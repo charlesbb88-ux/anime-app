@@ -45,13 +45,13 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
   const wheelVelRef = useRef(0);
   const wheelRAFRef = useRef<number | null>(null);
 
-  // ✅ hover morph
+  // hover morph
   const [hovering, setHovering] = useState(false);
   const hoverRef = useRef(false);
   const [hoverBlend, setHoverBlend] = useState(0); // 0=overview, 1=hover-decks
   const hoverBlendRef = useRef(0);
 
-  // ✅ NEW: lock hover ONLY after user interacts (ONE-WAY; only refresh unlocks)
+  // lock hover ONLY after user interacts (ONE-WAY; only refresh unlocks)
   const [hoverLocked, setHoverLocked] = useState(false);
   const hoverLockedRef = useRef(false);
 
@@ -231,17 +231,16 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
     const after = i > spreadEnd;
 
     if (before) {
-      const leftCount = spreadStart; // how many cards are in the left stack
-      const depth = spreadStart - i; // 1..leftCount
+      const leftCount = spreadStart;
+      const depth = spreadStart - i;
       const ox = stackOffset(depth, STACK_MAX_X, STACK_K);
 
-      // ✅ keep the *back* of the left stack anchored
       let extraShift = 0;
       if (leftCount > 1) {
-        const fullW = stackOffset(maxStart, STACK_MAX_X, STACK_K); // reference (~STACK_MAX_X)
+        const fullW = stackOffset(maxStart, STACK_MAX_X, STACK_K);
         const curW = stackOffset(leftCount, STACK_MAX_X, STACK_K);
-        const delta = curW - fullW; // <= 0 (negative = shift left)
-        const t = (depth - 1) / (leftCount - 1); // 0..1
+        const delta = curW - fullW;
+        const t = (depth - 1) / (leftCount - 1);
         extraShift = delta * t;
       }
 
@@ -251,20 +250,16 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
       scale = clamp(1 - Math.log1p(depth) * 0.02, 0.92, 1);
       z = 10_000 - depth;
     } else if (after) {
-      const rightCount = Math.max(0, items.length - (spreadEnd + 1)); // how many cards are in the right stack
-      const depth = i - spreadEnd; // 1..rightCount
+      const rightCount = Math.max(0, items.length - (spreadEnd + 1));
+      const depth = i - spreadEnd;
       const ox = stackOffset(depth, STACK_MAX_X, STACK_K);
 
-      // ✅ NEW: keep the *back* of the right stack anchored (mirror of left)
-      // We do this WITHOUT moving the "front" (depth=1) card:
-      // - When rightCount is smaller, the stack width is smaller.
-      // - We add an extra right-shift that ramps from 0 at depth=1 to full shift at depth=rightCount.
       let extraShift = 0;
       if (rightCount > 1) {
-        const fullW = stackOffset(maxStart, STACK_MAX_X, STACK_K); // same reference as left
+        const fullW = stackOffset(maxStart, STACK_MAX_X, STACK_K);
         const curW = stackOffset(rightCount, STACK_MAX_X, STACK_K);
-        const delta = fullW - curW; // >= 0 (positive = shift right)
-        const t = (depth - 1) / (rightCount - 1); // 0..1
+        const delta = fullW - curW;
+        const t = (depth - 1) / (rightCount - 1);
         extraShift = delta * t;
       }
 
@@ -289,18 +284,12 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
     const y = 18;
     const x = Math.round(overviewBand.startX + i * overviewBand.step);
 
-    const opacity = 1;
-    const scale = 1;
-
-    const z = 20_000 + i;
-
-    return { x, y, opacity, scale, z };
+    return { x, y, opacity: 1, scale: 1, z: 20_000 + i };
   }
 
   function beginDrag(clientX: number) {
     if (!items.length) return;
 
-    // ✅ any interaction locks hover (only refresh unlocks)
     lockHover();
 
     draggingRef.current = true;
@@ -316,7 +305,6 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
     if (!draggingRef.current) return;
 
     const dx = clientX - dragStartXRef.current;
-
     const next = dragStartPosRef.current + dx / DRAG_SENSITIVITY_PX;
 
     setTargetPos(clamp(next, 0, maxPos));
@@ -342,7 +330,6 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
     if (Math.abs(dx) > Math.abs(e.deltaY) || e.shiftKey) {
       e.preventDefault();
 
-      // ✅ wheel interaction also locks hover
       lockHover();
 
       const impulse = clamp(dx / WHEEL_SENSITIVITY_PX, -WHEEL_TICK_MAX, WHEEL_TICK_MAX);
@@ -384,22 +371,25 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
   }
 
   return (
-    <section className="bg-white rounded-xl border border-black px-5 py-5">
-      <div className="flex items-center justify-between gap-4">
+    // ✅ no card/pill wrapper — let ProfileLayout’s container define width
+    <section className="w-full">
+      {/* header stays, but no background/border/padding */}
+      <div className="flex items-end justify-between gap-4">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
           <p className="text-xs text-slate-600 mt-1">Drag or horizontal scroll</p>
         </div>
-
         <div className="text-xs text-slate-700 shrink-0">{items.length} items</div>
       </div>
 
-      <div className="mt-4">
+      {/* stage should span full width */}
+      <div className="mt-3">
         <div
           ref={stageRef}
           className={[
-            "relative",
-            "rounded-xl border border-black bg-white overflow-hidden",
+            "relative w-full",
+            // ✅ no inner card border/bg — posters sit on page background
+            "overflow-hidden",
             "h-[172px]",
             "select-none",
             "cursor-grab active:cursor-grabbing",
@@ -409,8 +399,6 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
           onMouseUp={endDrag}
           onMouseLeave={() => {
             endDrag();
-
-            // ✅ only drop hover if NOT locked
             if (!hoverLockedRef.current) {
               hoverRef.current = false;
               setHovering(false);
@@ -425,7 +413,6 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
             setHovering(true);
           }}
           onBlur={() => {
-            // ✅ only drop hover if NOT locked
             if (!hoverLockedRef.current) {
               hoverRef.current = false;
               setHovering(false);
@@ -438,42 +425,36 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
           onTouchMove={(e) => moveDrag(e.touches[0]?.clientX ?? 0)}
           onTouchEnd={endDrag}
           onWheel={onWheel}
+          tabIndex={0}
+          role="group"
+          aria-label={`${title} carousel`}
         >
-          {/* ✅ Only show the “deck mood” overlays when hovered (or morphing) */}
+          {/* deck mood overlays (still fine) */}
           {hoverBlend > 0.02 ? (
             <>
               <div
-                className="pointer-events-none absolute left-0 top-0 bottom-0 w-[200px] bg-gradient-to-r from-slate-100/70 to-transparent z-10"
+                className="pointer-events-none absolute left-0 top-0 bottom-0 w-[200px] bg-gradient-to-r from-white/60 to-transparent z-10"
                 style={{ opacity: hoverBlend }}
               />
               <div
-                className="pointer-events-none absolute right-0 top-0 bottom-0 w-[200px] bg-gradient-to-l from-slate-100/70 to-transparent z-10"
-                style={{ opacity: hoverBlend }}
-              />
-
-              <div
-                className="pointer-events-none absolute left-0 top-0 bottom-0 w-10 bg-gradient-to-r from-white to-transparent z-20"
-                style={{ opacity: hoverBlend }}
-              />
-              <div
-                className="pointer-events-none absolute right-0 top-0 bottom-0 w-10 bg-gradient-to-l from-white to-transparent z-20"
+                className="pointer-events-none absolute right-0 top-0 bottom-0 w-[200px] bg-gradient-to-l from-white/60 to-transparent z-10"
                 style={{ opacity: hoverBlend }}
               />
 
               {leftCount > 0 ? (
                 <div
-                  className="absolute left-3 top-3 z-30 rounded-md border border-black bg-white px-2 py-1 shadow-sm"
+                  className="absolute left-0 top-0 z-30 px-2 py-1"
                   style={{ opacity: hoverBlend }}
                 >
-                  <span className="text-[11px] font-semibold text-slate-900">{leftCount} left</span>
+                  <span className="text-[11px] font-semibold text-slate-800">{leftCount} left</span>
                 </div>
               ) : null}
               {rightCount > 0 ? (
                 <div
-                  className="absolute right-3 top-3 z-30 rounded-md border border-black bg-white px-2 py-1 shadow-sm"
+                  className="absolute right-0 top-0 z-30 px-2 py-1"
                   style={{ opacity: hoverBlend }}
                 >
-                  <span className="text-[11px] font-semibold text-slate-900">{rightCount} right</span>
+                  <span className="text-[11px] font-semibold text-slate-800">{rightCount} right</span>
                 </div>
               ) : null}
             </>
@@ -534,9 +515,7 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
                     </div>
 
                     <div className="absolute left-0 right-0 bottom-0 p-2 bg-white/92 border-t border-black">
-                      <div className="text-[10px] font-semibold text-slate-900 truncate">
-                        {it.title}
-                      </div>
+                      <div className="text-[10px] font-semibold text-slate-900 truncate">{it.title}</div>
                     </div>
                   </div>
                 </div>
@@ -544,6 +523,7 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
             })}
           </div>
 
+          {/* subtle baseline, but NOT a box */}
           <div className="pointer-events-none absolute left-0 right-0 bottom-6 h-px bg-black/10" />
         </div>
       </div>
