@@ -190,14 +190,14 @@ function StarVisual({
 }) {
   return (
     <span className={["relative inline-block leading-none", disabled ? "opacity-60" : ""].join(" ")}>
-      <span className="text-white/25" style={{ fontSize: 16 }}>
+      <span className="relative -top-[3px] text-zinc-700" style={{ fontSize: 25 }}>
         ★
       </span>
 
       {filledPercent > 0 && (
         <span
-          className="pointer-events-none absolute left-0 top-0 overflow-hidden text-yellow-300"
-          style={{ width: `${filledPercent}%`, fontSize: 16 }}
+          className="pointer-events-none absolute left-0 -top-[3px] overflow-hidden text-amber-300"
+          style={{ width: `${filledPercent}%`, fontSize: 25 }}
         >
           ★
         </span>
@@ -231,7 +231,7 @@ function StarRating({
         const filled = computeStarFillPercent(steps, starIndex);
 
         return (
-          <div key={starIndex} className="relative h-4 w-4">
+          <div key={starIndex} className="relative h-6 w-6">
             <StarVisual filledPercent={filled} disabled={disabled} />
 
             <button
@@ -577,9 +577,10 @@ function JournalBody({ profileId }: { profileId: string }) {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
+      {/* Table */}
+      <div className="overflow-hidden rounded-md border border-zinc-800/70 bg-black">
         {/* header row */}
-        <div className="grid grid-cols-[84px_1fr_90px_140px_70px_70px] gap-0 border-b border-white/10 px-4 py-3 text-xs text-white/60">
+        <div className="grid grid-cols-[56px_1fr_90px_140px_70px_70px] gap-0 border-b border-zinc-400 bg-zinc-950/40 px-4 py-3 text-xs text-zinc-400">
           <div>DAY</div>
           <div>TITLE</div>
           <div className="text-center">YEAR</div>
@@ -589,14 +590,14 @@ function JournalBody({ profileId }: { profileId: string }) {
         </div>
 
         {loading ? (
-          <div className="px-4 py-8 text-sm text-white/70">Loading…</div>
+          <div className="px-4 py-8 text-sm text-zinc-300">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="px-4 py-8 text-sm text-white/70">No journal entries (or they’re private).</div>
+          <div className="px-4 py-8 text-sm text-zinc-300">No journal entries (or they’re private).</div>
         ) : (
           <div>
             {groups.map((g) => (
-              <div key={g.key} className="border-b border-white/10 last:border-b-0">
-                <div className="px-4 py-3 text-xs font-semibold tracking-wide text-white/60">{g.label}</div>
+              <div key={g.key} className="border-b border-zinc-400 last:border-b-0">
+                <div className="px-4 py-3 text-xs font-semibold tracking-wide text-zinc-300">{g.label}</div>
 
                 {g.items.map((r) => {
                   const d = new Date(r.logged_at);
@@ -607,11 +608,12 @@ function JournalBody({ profileId }: { profileId: string }) {
                   return (
                     <div
                       key={`${r.kind}:${r.log_id}`}
-                      className="grid grid-cols-[84px_1fr_90px_140px_70px_70px] items-center gap-0 border-t border-white/5 px-4 py-3 text-sm text-white/90 hover:bg-white/5"
+                      className="grid grid-cols-[56px_1fr_90px_140px_70px_70px] items-center gap-0 border-t border-zinc-400 px-4 py-3 text-sm text-zinc-100 hover:bg-zinc-900/40"
                     >
-                      {/* day */}
-                      <div className="flex items-center gap-3 text-white/70">
-                        <div className="w-10 text-2xl font-semibold leading-none text-white/60">{day}</div>
+                      <div className="flex items-center justify-end pr-5">
+                        <div className="w-[2ch] text-right tabular-nums text-3xl font-semibold leading-none text-zinc-400">
+                          {day}
+                        </div>
                       </div>
 
                       {/* title cell */}
@@ -621,35 +623,40 @@ function JournalBody({ profileId }: { profileId: string }) {
                           <img
                             src={display.posterUrl}
                             alt=""
-                            className="h-[42px] w-[28px] shrink-0 rounded object-cover"
+                            className="h-[84px] w-[56px] shrink-0 rounded object-cover ring-1 ring-zinc-800/70"
                             loading="lazy"
                           />
                         ) : (
-                          <div className="h-[42px] w-[28px] rounded bg-white/10" />
+                          <div className="h-[42px] w-[28px] rounded bg-zinc-900 ring-1 ring-zinc-800/70" />
                         )}
 
                         <div className="min-w-0">
                           <div className="flex items-baseline gap-2">
                             {display.href ? (
-                              <Link href={display.href} className="truncate font-semibold text-white hover:underline">
+                              <Link
+                                href={display.href}
+                                className="truncate text-xl font-bold text-zinc-100 hover:text-white hover:underline"
+                              >
                                 {display.title}
                               </Link>
                             ) : (
-                              <div className="truncate font-semibold text-white">{display.title}</div>
+                              <div className="truncate font-semibold text-zinc-100">{display.title}</div>
                             )}
                           </div>
 
-                          {display.subtitle ? <div className="truncate text-xs text-white/55">{display.subtitle}</div> : null}
+                          {display.subtitle ? (
+                            <div className="truncate text-lg font-bold text-white">{display.subtitle}</div>
+                          ) : null}
                         </div>
                       </div>
 
                       {/* year */}
-                      <div className="text-center text-xs text-white/55">
-                        {typeof display.year === "number" ? display.year : "—"}
+                      <div className="flex items-center justify-center text-lg text-zinc-400 leading-none">
+                        {typeof display.year === "number" ? display.year : null}
                       </div>
 
                       {/* rating */}
-                      <div className="text-center">
+                      <div className="flex items-center justify-center">
                         <StarRating
                           value={r.rating == null ? null : Math.round(Number(r.rating))}
                           disabled={isBusy}
@@ -658,35 +665,35 @@ function JournalBody({ profileId }: { profileId: string }) {
                       </div>
 
                       {/* like */}
-                      <div className="text-center">
+                      <div className="flex items-center justify-center">
                         <button
                           type="button"
                           disabled={isBusy}
                           onClick={() => onToggleLike(r)}
-                          className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/10 disabled:opacity-50"
+                          className="inline-flex items-center justify-center rounded-md p-1 hover:bg-zinc-900/60 disabled:opacity-50"
                           title="Like"
                         >
                           <Heart
-                            className={`h-4 w-4 ${r.liked ? "text-red-400" : "text-white/35"}`}
+                            className={`h-5 w-5 ${r.liked ? "text-rose-400" : "text-zinc-600"}`}
                             fill={r.liked ? "currentColor" : "none"}
                           />
                         </button>
                       </div>
 
                       {/* review column */}
-                      <div className="text-center">
+                      <div className="flex items-center justify-center">
                         {r.review_id ? (
                           <button
                             type="button"
                             onClick={() => openReviewEditor(r)}
-                            className="inline-flex items-center justify-center rounded-md p-1 hover:bg-white/10"
+                            className="inline-flex items-center justify-center rounded-md p-1 hover:bg-zinc-900/60"
                             title="Edit review"
                           >
-                            <MessageSquare className="h-4 w-4 text-white/80" />
+                            <MessageSquare className="h-5 w-5 text-zinc-200" />
                           </button>
                         ) : (
                           <div className="inline-flex items-center justify-center p-1" title="No review">
-                            <MessageSquare className="h-4 w-4 text-white/20" />
+                            <MessageSquare className="h-5 w-5 text-zinc-700" />
                           </div>
                         )}
                       </div>
@@ -698,7 +705,7 @@ function JournalBody({ profileId }: { profileId: string }) {
 
             <div className="px-4 py-4">
               <button
-                className="w-full rounded-lg border border-white/10 bg-white/5 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-50"
+                className="w-full rounded-lg border border-zinc-800/70 bg-zinc-950/40 py-2 text-sm text-zinc-200 hover:bg-zinc-900/50 disabled:opacity-50"
                 onClick={loadMore}
                 disabled={loadingMore || !cursor}
               >
@@ -711,17 +718,17 @@ function JournalBody({ profileId }: { profileId: string }) {
 
       {/* Review Modal */}
       {reviewModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-          <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 shadow-xl">
-            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4">
+          <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-zinc-800/70 bg-zinc-950 shadow-xl">
+            <div className="flex items-center justify-between border-b border-zinc-800/70 px-5 py-4">
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-white">Review — {reviewModal.title}</div>
-                <div className="text-xs text-white/50">This review is tied to this specific log entry.</div>
+                <div className="truncate text-sm font-semibold text-zinc-100">Review — {reviewModal.title}</div>
+                <div className="text-xs text-zinc-400">This review is tied to this specific log entry.</div>
               </div>
 
               <button
                 type="button"
-                className="rounded-md px-2 py-1 text-sm text-white/70 hover:bg-white/10"
+                className="rounded-md px-2 py-1 text-sm text-zinc-300 hover:bg-zinc-900/60"
                 onClick={() => setReviewModal(newModalState())}
                 disabled={reviewModal.saving}
               >
@@ -738,9 +745,9 @@ function JournalBody({ profileId }: { profileId: string }) {
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="sm:col-span-1">
-                  <div className="mb-1 text-xs text-white/60">Visibility</div>
+                  <div className="mb-1 text-xs text-zinc-400">Visibility</div>
                   <select
-                    className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+                    className="w-full rounded-md border border-zinc-800/70 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-100"
                     value={reviewModal.visibility}
                     onChange={(e) => setReviewModal((m) => ({ ...m, visibility: e.target.value as any }))}
                     disabled={reviewModal.saving}
@@ -752,8 +759,8 @@ function JournalBody({ profileId }: { profileId: string }) {
                 </div>
 
                 <div className="sm:col-span-1">
-                  <div className="mb-1 text-xs text-white/60">Spoilers</div>
-                  <label className="flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
+                  <div className="mb-1 text-xs text-zinc-400">Spoilers</div>
+                  <label className="flex items-center gap-2 rounded-md border border-zinc-800/70 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-200">
                     <input
                       type="checkbox"
                       checked={reviewModal.containsSpoilers}
@@ -765,8 +772,8 @@ function JournalBody({ profileId }: { profileId: string }) {
                 </div>
 
                 <div className="sm:col-span-1">
-                  <div className="mb-1 text-xs text-white/60">Rating</div>
-                  <div className="rounded-md border border-white/10 bg-white/5 px-2 py-2">
+                  <div className="mb-1 text-xs text-zinc-400">Rating</div>
+                  <div className="rounded-md border border-zinc-800/70 bg-zinc-950/40 px-2 py-2">
                     <StarRating
                       value={reviewModal.rating}
                       disabled={reviewModal.saving}
@@ -777,8 +784,8 @@ function JournalBody({ profileId }: { profileId: string }) {
               </div>
 
               <div>
-                <div className="mb-1 text-xs text-white/60">Author liked</div>
-                <label className="flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
+                <div className="mb-1 text-xs text-zinc-400">Author liked</div>
+                <label className="flex items-center gap-2 rounded-md border border-zinc-800/70 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-200">
                   <input
                     type="checkbox"
                     checked={reviewModal.authorLiked}
@@ -790,22 +797,22 @@ function JournalBody({ profileId }: { profileId: string }) {
               </div>
 
               <div>
-                <div className="mb-1 text-xs text-white/60">Review</div>
+                <div className="mb-1 text-xs text-zinc-400">Review</div>
                 <textarea
-                  className="min-h-[180px] w-full resize-y rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/30"
+                  className="min-h-[180px] w-full resize-y rounded-md border border-zinc-800/70 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600"
                   placeholder="Write your review…"
                   value={reviewModal.content}
                   onChange={(e) => setReviewModal((m) => ({ ...m, content: e.target.value }))}
                   disabled={reviewModal.saving}
                 />
-                <div className="mt-1 text-xs text-white/40">Review text is required (your DB schema enforces this).</div>
+                <div className="mt-1 text-xs text-zinc-500">Review text is required (your DB schema enforces this).</div>
               </div>
             </div>
 
-            <div className="flex items-center justify-between border-t border-white/10 px-5 py-4">
+            <div className="flex items-center justify-between border-t border-zinc-800/70 px-5 py-4">
               <button
                 type="button"
-                className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-50"
+                className="rounded-md border border-zinc-800/70 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-900/50 disabled:opacity-50"
                 onClick={() => setReviewModal(newModalState())}
                 disabled={reviewModal.saving}
               >
@@ -814,7 +821,7 @@ function JournalBody({ profileId }: { profileId: string }) {
 
               <button
                 type="button"
-                className="rounded-md bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-white/90 disabled:opacity-50"
+                className="rounded-md bg-zinc-100 px-4 py-2 text-sm font-semibold text-black hover:bg-white disabled:opacity-50"
                 onClick={saveReviewFromModal}
                 disabled={reviewModal.saving}
               >
