@@ -5,10 +5,10 @@ type Item = {
   id: string;
   title: string;
   kind: "anime" | "manga";
+  image_url?: string | null;
 };
 
 type Props = {
-  title: string;
   items: Item[];
 };
 
@@ -25,7 +25,7 @@ function stackOffset(depth: number, max: number, k: number) {
   return max * (1 - Math.exp(-depth / k));
 }
 
-export default function CompletionsCarouselRow({ title, items }: Props) {
+export default function CompletionsCarouselRow({ items }: Props) {
   const stageRef = useRef<HTMLDivElement | null>(null);
 
   const [stageW, setStageW] = useState(900);
@@ -219,7 +219,7 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
   const spreadEnd1 = spreadStart1 + WINDOW_COUNT - 1;
 
   function layoutDeck(i: number, spreadStart: number, spreadEnd: number) {
-    const y = 18;
+    const y = 1;
 
     let x = deckBand.leftX;
     let opacity = 1;
@@ -281,7 +281,7 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
   }
 
   function layoutOverview(i: number) {
-    const y = 18;
+    const y = 1;
     const x = Math.round(overviewBand.startX + i * overviewBand.step);
 
     return { x, y, opacity: 1, scale: 1, z: 20_000 + i };
@@ -361,9 +361,6 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
     }
   }
 
-  const leftCount = spreadStart0;
-  const rightCount = Math.max(0, items.length - (spreadEnd0 + 1));
-
   function toneFor(kind: Item["kind"]) {
     return kind === "manga"
       ? "from-slate-950 via-slate-800 to-slate-700"
@@ -371,26 +368,14 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
   }
 
   return (
-    // ✅ no card/pill wrapper — let ProfileLayout’s container define width
     <section className="w-full">
-      {/* header stays, but no background/border/padding */}
-      <div className="flex items-end justify-between gap-4">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
-          <p className="text-xs text-slate-600 mt-1">Drag or horizontal scroll</p>
-        </div>
-        <div className="text-xs text-slate-700 shrink-0">{items.length} items</div>
-      </div>
-
-      {/* stage should span full width */}
-      <div className="mt-3">
+      <div className="mt-1">
         <div
           ref={stageRef}
           className={[
             "relative w-full",
-            // ✅ no inner card border/bg — posters sit on page background
-            "overflow-hidden",
-            "h-[172px]",
+            "overflow-visible",
+            "h-[160px]",
             "select-none",
             "cursor-grab active:cursor-grabbing",
           ].join(" ")}
@@ -427,40 +412,8 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
           onWheel={onWheel}
           tabIndex={0}
           role="group"
-          aria-label={`${title} carousel`}
+          aria-label="Completions carousel"
         >
-          {/* deck mood overlays (still fine) */}
-          {hoverBlend > 0.02 ? (
-            <>
-              <div
-                className="pointer-events-none absolute left-0 top-0 bottom-0 w-[200px] bg-gradient-to-r from-white/60 to-transparent z-10"
-                style={{ opacity: hoverBlend }}
-              />
-              <div
-                className="pointer-events-none absolute right-0 top-0 bottom-0 w-[200px] bg-gradient-to-l from-white/60 to-transparent z-10"
-                style={{ opacity: hoverBlend }}
-              />
-
-              {leftCount > 0 ? (
-                <div
-                  className="absolute left-0 top-0 z-30 px-2 py-1"
-                  style={{ opacity: hoverBlend }}
-                >
-                  <span className="text-[11px] font-semibold text-slate-800">{leftCount} left</span>
-                </div>
-              ) : null}
-              {rightCount > 0 ? (
-                <div
-                  className="absolute right-0 top-0 z-30 px-2 py-1"
-                  style={{ opacity: hoverBlend }}
-                >
-                  <span className="text-[11px] font-semibold text-slate-800">{rightCount} right</span>
-                </div>
-              ) : null}
-            </>
-          ) : null}
-
-          {/* cards */}
           <div className="absolute inset-0">
             {items.map((it, i) => {
               const o = layoutOverview(i);
@@ -505,6 +458,18 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
                       tone,
                     ].join(" ")}
                   >
+                    {/* ✅ POSTER (new) */}
+                    {it.image_url ? (
+                      <img
+                        src={it.image_url}
+                        alt={it.title}
+                        className="absolute inset-0 h-full w-full object-cover"
+                        draggable={false}
+                        loading="lazy"
+                      />
+                    ) : null}
+
+                    {/* existing overlays */}
                     <div className="absolute inset-0 opacity-[0.10] bg-[linear-gradient(135deg,transparent_0%,white_18%,transparent_40%,white_68%,transparent_100%)]" />
                     <div className="absolute inset-0 opacity-[0.08] bg-[radial-gradient(circle_at_25%_18%,white,transparent_45%),radial-gradient(circle_at_80%_35%,white,transparent_35%)]" />
 
@@ -522,9 +487,6 @@ export default function CompletionsCarouselRow({ title, items }: Props) {
               );
             })}
           </div>
-
-          {/* subtle baseline, but NOT a box */}
-          <div className="pointer-events-none absolute left-0 right-0 bottom-6 h-px bg-black/10" />
         </div>
       </div>
     </section>
