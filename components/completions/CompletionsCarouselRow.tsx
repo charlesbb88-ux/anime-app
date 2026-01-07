@@ -472,16 +472,6 @@ export default function CompletionsCarouselRow({ items }: Props) {
                     {/* existing overlays */}
                     <div className="absolute inset-0 opacity-[0.10] bg-[linear-gradient(135deg,transparent_0%,white_18%,transparent_40%,white_68%,transparent_100%)]" />
                     <div className="absolute inset-0 opacity-[0.08] bg-[radial-gradient(circle_at_25%_18%,white,transparent_45%),radial-gradient(circle_at_80%_35%,white,transparent_35%)]" />
-
-                    <div className="absolute top-2 right-2 rounded-md border border-black bg-white px-2 py-0.5">
-                      <span className="text-[10px] font-semibold text-slate-900">
-                        {it.kind === "anime" ? "ANIME" : "MANGA"}
-                      </span>
-                    </div>
-
-                    <div className="absolute left-0 right-0 bottom-0 p-2 bg-white/92 border-t border-black">
-                      <div className="text-[10px] font-semibold text-slate-900 truncate">{it.title}</div>
-                    </div>
                   </div>
                 </div>
               );
