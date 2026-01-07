@@ -3,6 +3,8 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import CompletionsCarouselRow from "./CompletionsCarouselRow";
+import CompletionsCarouselRowLarge from "./CompletionsCarouselRowLarge";
+import CompletionsCarouselRowExtraLarge from "./CompletionsCarouselRowExtraLarge";
 import { fetchUserCompletions, type CompletionItem } from "@/lib/completions";
 
 type Props = {
@@ -16,12 +18,19 @@ function chunk<T>(arr: T[], size: number) {
   return out;
 }
 
+type PosterSize = "small" | "large" | "xlarge";
+
 export default function CompletionsPageShell({ userId }: Props) {
   const [items, setItems] = useState<CompletionItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // how many posters per row
-  const ROW_LIMIT = 40;
+  // 3-state size toggle
+  const [posterSize, setPosterSize] = useState<PosterSize>("small");
+
+  const ROW_LIMIT =
+    posterSize === "small" ? 40 :
+      posterSize === "large" ? 30 :
+        15; // xl
 
   useEffect(() => {
     let cancelled = false;
@@ -44,10 +53,44 @@ export default function CompletionsPageShell({ userId }: Props) {
     };
   }, [userId]);
 
-  const rows = useMemo(() => chunk(items, ROW_LIMIT), [items]);
+const rows = useMemo(
+  () => chunk(items, ROW_LIMIT),
+  [items, ROW_LIMIT]
+);
+
+  const RowComp =
+    posterSize === "small"
+      ? CompletionsCarouselRow
+      : posterSize === "large"
+        ? CompletionsCarouselRowLarge
+        : CompletionsCarouselRowExtraLarge;
+
+  function nextPosterSizeLabel(size: PosterSize) {
+    if (size === "small") return "Bigger posters";
+    if (size === "large") return "Extra big posters";
+    return "Smaller posters";
+  }
+
+  function cyclePosterSize() {
+    setPosterSize((s) => {
+      if (s === "small") return "large";
+      if (s === "large") return "xlarge";
+      return "small";
+    });
+  }
 
   return (
     <div className="space-y-0">
+      <div className="flex items-center justify-end pb-2">
+        <button
+          type="button"
+          onClick={cyclePosterSize}
+          className="rounded-md border border-black bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 shadow-[0_1px_0_rgba(0,0,0,0.20)] hover:bg-slate-50 active:translate-y-[1px]"
+        >
+          {nextPosterSizeLabel(posterSize)}
+        </button>
+      </div>
+
       {loading ? (
         <div className="py-6 text-sm text-slate-600">Loading…</div>
       ) : items.length === 0 ? (
@@ -55,7 +98,7 @@ export default function CompletionsPageShell({ userId }: Props) {
       ) : null}
 
       {rows.map((rowItems, idx) => (
-        <CompletionsCarouselRow key={`completions-row-${idx}`} items={rowItems} />
+        <RowComp key={`completions-row-${idx}`} items={rowItems as any} />
       ))}
     </div>
   );
