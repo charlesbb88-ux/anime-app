@@ -1,4 +1,3 @@
-// components/completions/CompletionsCarouselRow.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 type Item = {
@@ -10,6 +9,7 @@ type Item = {
 
 type Props = {
   items: Item[];
+  onSelect?: (item: Item) => void; // ✅ new
 };
 
 function clamp(n: number, min: number, max: number) {
@@ -25,7 +25,7 @@ function stackOffset(depth: number, max: number, k: number) {
   return max * (1 - Math.exp(-depth / k));
 }
 
-export default function CompletionsCarouselRow({ items }: Props) {
+export default function CompletionsCarouselRow({ items, onSelect }: Props) {
   const stageRef = useRef<HTMLDivElement | null>(null);
 
   const [stageW, setStageW] = useState(900);
@@ -63,6 +63,31 @@ export default function CompletionsCarouselRow({ items }: Props) {
     // force hover mode on immediately
     hoverRef.current = true;
     setHovering(true);
+  }
+
+  // ✅ click vs drag detection (minimal + doesn't break drag)
+  const pressXRef = useRef(0);
+  const pressYRef = useRef(0);
+  const movedRef = useRef(false);
+  const CLICK_SLOP_PX = 6;
+
+  function notePress(clientX: number, clientY: number) {
+    pressXRef.current = clientX;
+    pressYRef.current = clientY;
+    movedRef.current = false;
+  }
+
+  function noteMove(clientX: number, clientY: number) {
+    const dx = clientX - pressXRef.current;
+    const dy = clientY - pressYRef.current;
+    if (Math.abs(dx) > CLICK_SLOP_PX || Math.abs(dy) > CLICK_SLOP_PX) {
+      movedRef.current = true;
+    }
+  }
+
+  function maybeClick(it: Item) {
+    if (movedRef.current) return; // it was a drag
+    onSelect?.(it); // it was a click/tap
   }
 
   // constants
@@ -379,8 +404,14 @@ export default function CompletionsCarouselRow({ items }: Props) {
             "select-none",
             "cursor-grab active:cursor-grabbing",
           ].join(" ")}
-          onMouseDown={(e) => beginDrag(e.clientX)}
-          onMouseMove={(e) => moveDrag(e.clientX)}
+          onMouseDown={(e) => {
+            notePress(e.clientX, e.clientY); // ✅ new
+            beginDrag(e.clientX);
+          }}
+          onMouseMove={(e) => {
+            noteMove(e.clientX, e.clientY); // ✅ new
+            moveDrag(e.clientX);
+          }}
           onMouseUp={endDrag}
           onMouseLeave={() => {
             endDrag();
@@ -405,9 +436,15 @@ export default function CompletionsCarouselRow({ items }: Props) {
           }}
           onTouchStart={(e) => {
             lockHover();
-            beginDrag(e.touches[0]?.clientX ?? 0);
+            const t = e.touches[0];
+            notePress(t?.clientX ?? 0, t?.clientY ?? 0); // ✅ new
+            beginDrag(t?.clientX ?? 0);
           }}
-          onTouchMove={(e) => moveDrag(e.touches[0]?.clientX ?? 0)}
+          onTouchMove={(e) => {
+            const t = e.touches[0];
+            noteMove(t?.clientX ?? 0, t?.clientY ?? 0); // ✅ new
+            moveDrag(t?.clientX ?? 0);
+          }}
           onTouchEnd={endDrag}
           onWheel={onWheel}
           tabIndex={0}
@@ -447,6 +484,8 @@ export default function CompletionsCarouselRow({ items }: Props) {
                     transform: `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0) scale(${scale})`,
                     willChange: "transform, opacity",
                   }}
+                  // ✅ new: only fires if it wasn't a drag
+                  onClick={() => maybeClick(it)}
                 >
                   <div
                     className={[
@@ -458,7 +497,7 @@ export default function CompletionsCarouselRow({ items }: Props) {
                       tone,
                     ].join(" ")}
                   >
-                    {/* ✅ POSTER (new) */}
+                    {/* POSTER */}
                     {it.image_url ? (
                       <img
                         src={it.image_url}

@@ -1,4 +1,3 @@
-// components/completions/CompletionsCarouselRowLarge.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 type Item = {
@@ -10,6 +9,7 @@ type Item = {
 
 type Props = {
   items: Item[];
+  onSelect?: (item: Item) => void; // ✅ new
 };
 
 function clamp(n: number, min: number, max: number) {
@@ -25,7 +25,7 @@ function stackOffset(depth: number, max: number, k: number) {
   return max * (1 - Math.exp(-depth / k));
 }
 
-export default function CompletionsCarouselRowLarge({ items }: Props) {
+export default function CompletionsCarouselRowLarge({ items, onSelect }: Props) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [stageW, setStageW] = useState(900);
 
@@ -63,46 +63,59 @@ export default function CompletionsCarouselRowLarge({ items }: Props) {
     setHovering(true);
   }
 
+  // ✅ click vs drag detection (minimal)
+  const pressXRef = useRef(0);
+  const pressYRef = useRef(0);
+  const movedRef = useRef(false);
+  const CLICK_SLOP_PX = 6;
+
+  function notePress(clientX: number, clientY: number) {
+    pressXRef.current = clientX;
+    pressYRef.current = clientY;
+    movedRef.current = false;
+  }
+
+  function noteMove(clientX: number, clientY: number) {
+    const dx = clientX - pressXRef.current;
+    const dy = clientY - pressYRef.current;
+    if (Math.abs(dx) > CLICK_SLOP_PX || Math.abs(dy) > CLICK_SLOP_PX) {
+      movedRef.current = true;
+    }
+  }
+
+  function maybeClick(it: Item) {
+    if (movedRef.current) return;
+    onSelect?.(it);
+  }
+
   // =========
   // LARGE CONSTANTS
   // =========
-  // keep large posters as you set them
   const CARD_W = 132;
   const CARD_H = 190;
   const STAGE_H = 230;
 
-  // stack feel
   const STACK_MAX_X = 150;
   const STACK_K = 22;
 
-  // keep same structure as small (pad based on stack)
   const GUTTER = STACK_MAX_X + 22;
   const EDGE_PAD = GUTTER;
 
-  // IMPORTANT: we will *try* to show this many in the spread,
-  // but we will auto-reduce it if it can't fit with a real gap.
   const WINDOW_TARGET = 7;
 
-  // deck inset (same as small)
   const DECK_INSET = 18;
 
-  // ✅ THIS is the key: enforce real spacing between middle cards in hover mode
-  // small hover "looks like" ~12-16px of air; set a hard minimum for large.
-  const SPREAD_GAP = 14; // px of visible space between cards in spread
+  const SPREAD_GAP = 14;
 
-  // overview layout (non-hover) (you can leave these as-is)
   const OVERVIEW_PAD = 18;
   const OVERVIEW_MIN_STEP = 8;
   const OVERVIEW_MAX_STEP = 26;
 
-  // interaction feel
   const DRAG_SENSITIVITY_PX = 120;
 
-  // wheel tuning
   const WHEEL_SENSITIVITY_PX = 520;
   const WHEEL_TICK_MAX = 0.55;
 
-  // spring
   const SPRING_K = 0.18;
   const SPRING_D = 0.74;
   const MAX_VEL = 0.55;
@@ -181,8 +194,6 @@ export default function CompletionsCarouselRowLarge({ items }: Props) {
     return () => cancelAnimationFrame(raf);
   }, [targetPos, maxPos]);
 
-  // ✅ deck band now computes an ACTUAL window count that fits with a minimum gap,
-  // and guarantees step >= CARD_W + SPREAD_GAP.
   const deckBand = useMemo(() => {
     const innerW = stageW - EDGE_PAD * 2;
 
@@ -199,14 +210,11 @@ export default function CompletionsCarouselRowLarge({ items }: Props) {
 
     const minStep = CARD_W + SPREAD_GAP;
 
-    // how many cards can we fit with minStep?
-    // span = (steps-1)*step, so steps <= floor(span/minStep)+1
     const maxStepsThatFit = Math.max(2, Math.floor(span / minStep) + 1);
 
     const steps = clamp(WINDOW_TARGET, 2, maxStepsThatFit);
     const rawStep = steps === 1 ? 0 : span / (steps - 1);
 
-    // enforce minimum gap (prevents the “pushed together” look)
     const step = Math.max(rawStep, minStep);
 
     return {
@@ -215,7 +223,7 @@ export default function CompletionsCarouselRowLarge({ items }: Props) {
       midStart: safeMidStart,
       midEnd: safeMidEnd,
       step,
-      steps, // <= use this as WINDOW_COUNT effectively
+      steps,
     };
   }, [stageW, EDGE_PAD, CARD_W, DECK_INSET, SPREAD_GAP]);
 
@@ -302,7 +310,6 @@ export default function CompletionsCarouselRowLarge({ items }: Props) {
     } else if (inSpread) {
       const slot = i - spreadStart;
 
-      // ✅ spread uses enforced step (guaranteed >= CARD_W + SPREAD_GAP)
       x = deckBand.midStart + slot * deckBand.step;
 
       opacity = 1;
@@ -411,8 +418,14 @@ export default function CompletionsCarouselRowLarge({ items }: Props) {
             "cursor-grab active:cursor-grabbing",
           ].join(" ")}
           style={{ height: STAGE_H }}
-          onMouseDown={(e) => beginDrag(e.clientX)}
-          onMouseMove={(e) => moveDrag(e.clientX)}
+          onMouseDown={(e) => {
+            notePress(e.clientX, e.clientY); // ✅ new
+            beginDrag(e.clientX);
+          }}
+          onMouseMove={(e) => {
+            noteMove(e.clientX, e.clientY); // ✅ new
+            moveDrag(e.clientX);
+          }}
           onMouseUp={endDrag}
           onMouseLeave={() => {
             endDrag();
@@ -437,9 +450,15 @@ export default function CompletionsCarouselRowLarge({ items }: Props) {
           }}
           onTouchStart={(e) => {
             lockHover();
-            beginDrag(e.touches[0]?.clientX ?? 0);
+            const t = e.touches[0];
+            notePress(t?.clientX ?? 0, t?.clientY ?? 0); // ✅ new
+            beginDrag(t?.clientX ?? 0);
           }}
-          onTouchMove={(e) => moveDrag(e.touches[0]?.clientX ?? 0)}
+          onTouchMove={(e) => {
+            const t = e.touches[0];
+            noteMove(t?.clientX ?? 0, t?.clientY ?? 0); // ✅ new
+            moveDrag(t?.clientX ?? 0);
+          }}
           onTouchEnd={endDrag}
           onWheel={onWheel}
           tabIndex={0}
@@ -479,6 +498,7 @@ export default function CompletionsCarouselRowLarge({ items }: Props) {
                     transform: `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0) scale(${scale})`,
                     willChange: "transform, opacity",
                   }}
+                  onClick={() => maybeClick(it)} // ✅ new
                 >
                   <div
                     className={[

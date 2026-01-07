@@ -1,4 +1,3 @@
-// components/completions/CompletionsPageShell.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -6,6 +5,7 @@ import CompletionsCarouselRow from "./CompletionsCarouselRow";
 import CompletionsCarouselRowLarge from "./CompletionsCarouselRowLarge";
 import CompletionsCarouselRowExtraLarge from "./CompletionsCarouselRowExtraLarge";
 import { fetchUserCompletions, type CompletionItem } from "@/lib/completions";
+import CompletionDetailsModal, { type CompletionDetails } from "./CompletionDetailsModal";
 
 type Props = {
   userId: string;
@@ -26,6 +26,10 @@ export default function CompletionsPageShell({ userId }: Props) {
 
   // 3-state size toggle
   const [posterSize, setPosterSize] = useState<PosterSize>("small");
+
+  // modal state
+  const [selected, setSelected] = useState<CompletionDetails | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
   const ROW_LIMIT =
     posterSize === "small" ? 40 :
@@ -53,10 +57,10 @@ export default function CompletionsPageShell({ userId }: Props) {
     };
   }, [userId]);
 
-const rows = useMemo(
-  () => chunk(items, ROW_LIMIT),
-  [items, ROW_LIMIT]
-);
+  const rows = useMemo(
+    () => chunk(items, ROW_LIMIT),
+    [items, ROW_LIMIT]
+  );
 
   const RowComp =
     posterSize === "small"
@@ -79,6 +83,27 @@ const rows = useMemo(
     });
   }
 
+  function openDetails(it: any) {
+    // For now: we map your item shape into what the modal needs.
+    // Next step: we will wire real progress values here.
+    const mapped: CompletionDetails = {
+      id: it.id,
+      title: it.title,
+      kind: it.kind,
+      image_url: it.image_url ?? null,
+      progress_current: it.progress_current ?? 3, // TEMP placeholder
+      progress_total: it.progress_total ?? 12, // TEMP placeholder
+    };
+
+    setSelected(mapped);
+    setModalOpen(true);
+  }
+
+  function closeDetails() {
+    setModalOpen(false);
+    setSelected(null);
+  }
+
   return (
     <div className="space-y-0">
       <div className="flex items-center justify-end pb-2">
@@ -98,8 +123,14 @@ const rows = useMemo(
       ) : null}
 
       {rows.map((rowItems, idx) => (
-        <RowComp key={`completions-row-${idx}`} items={rowItems as any} />
+        <RowComp
+          key={`completions-row-${idx}`}
+          items={rowItems as any}
+          onSelect={openDetails}
+        />
       ))}
+
+      <CompletionDetailsModal open={modalOpen} item={selected} onClose={closeDetails} />
     </div>
   );
 }
