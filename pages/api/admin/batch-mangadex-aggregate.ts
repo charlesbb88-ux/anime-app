@@ -25,40 +25,37 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
         requireAdmin(req);
 
-        const limit = Math.max(1, Math.min(50, Number(req.query.limit || 25)));
+        // You can raise this safely; 100 is a good default for draining fast.
+        const limit = Math.max(1, Math.min(200, Number(req.query.limit || 100)));
 
         /**
-         * ✅ IMPORTANT:
-         * PostgREST can't do OR filters on nested join fields like manga.total_chapters.
-         * So we fetch a page and filter in JS.
+         * ✅ Key change:
+         * Pick from manga WHERE totals are missing,
+         * and INNER JOIN manga_external_ids to get the mangadex id.
+         *
+         * This guarantees we keep finding remaining work until the whole DB is done.
          */
-        const pickSize = Math.max(200, limit * 10); // pull extra so we can filter client-side
-
         const { data: rows, error: pickErr } = await supabaseAdmin
-            .from("manga_external_ids")
+            .from("manga")
             .select(
                 `
-        manga_id,
-        external_id,
-        manga:manga_id (
-          total_chapters,
-          total_volumes
+        id,
+        total_chapters,
+        total_volumes,
+        manga_external_ids!inner (
+          external_id,
+          source
         )
       `
             )
-            .eq("source", "mangadex")
-            .order("manga_id", { ascending: true })
-            .limit(pickSize);
+            .or("total_chapters.is.null,total_volumes.is.null")
+            .eq("manga_external_ids.source", "mangadex")
+            .order("id", { ascending: true })
+            .limit(limit);
 
         if (pickErr) throw pickErr;
 
-        // Keep only rows where totals are missing
-        const candidates = (rows || []).filter((r: any) => {
-            const m = r.manga;
-            return !m || m.total_chapters == null || m.total_volumes == null;
-        });
-
-        const work = candidates.slice(0, limit);
+        const work = rows || [];
 
         let processed = 0;
         const updated: Array<{
@@ -69,9 +66,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }> = [];
         const errors: Array<{ manga_id: string; external_id: string; error: string }> = [];
 
-        for (const r of work) {
-            const mangaId = String((r as any).manga_id || "");
-            const mdId = String((r as any).external_id || "").trim();
+        for (const r of work as any[]) {
+            const mangaId = String(r?.id || "");
+            const mdRow = Array.isArray(r?.manga_external_ids) ? r.manga_external_ids[0] : r?.manga_external_ids;
+            const mdId = String(mdRow?.external_id || "").trim();
+
             if (!mangaId || !mdId) continue;
 
             try {
@@ -134,7 +133,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
                 if (updErr) throw updErr;
 
-                // ✅ create missing chapter rows 1..totalChapters
+                // ✅ create missing chapter rows
                 if (totalChapters && totalChapters > 0) {
                     const { error: syncErr } = await supabaseAdmin.rpc("sync_manga_chapter_rows", {
                         p_manga_id: mangaId,
@@ -160,8 +159,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         return res.status(200).json({
             ok: true,
-            picked: rows?.length || 0,
-            eligible: candidates.length,
+            picked: work.length,
             processed,
             updatedCount: updated.length,
             errorCount: errors.length,
@@ -169,6 +167,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             errors: errors.slice(0, 10),
         });
     } catch (e: any) {
-        return res.status(500).json({ error: e?.message || "Unknown error" });
+        const msg = String(e?.message || "Unknown error");
+        if (msg === "Unauthorized") return res.status(401).json({ error: "Unauthorized" });
+        return res.status(500).json({ error: msg });
     }
 }
