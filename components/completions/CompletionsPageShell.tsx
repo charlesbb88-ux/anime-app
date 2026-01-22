@@ -71,22 +71,22 @@ export default function CompletionsPageShell({ userId }: Props) {
     setPosterSize((s) => (s === "small" ? "large" : s === "large" ? "xlarge" : "small"));
   }
 
-function openDetails(it: CompletionItem) {
-  // If slug is missing, don't open a broken modal.
-  // (Optional: you could still open it but disable the Link.)
-  if (!it.slug) return;
+  function openDetails(it: CompletionItem) {
+    // If slug is missing, don't open a broken modal.
+    // (Optional: you could still open it but disable the Link.)
+    if (!it.slug) return;
 
-  const mapped: CompletionDetails = {
-    id: it.id,
-    slug: it.slug, // ✅ add this
-    title: it.title,
-    kind: it.kind,
-    image_url: it.image_url ?? null,
-  };
+    const mapped: CompletionDetails = {
+      id: it.id,
+      slug: it.slug, // ✅ add this
+      title: it.title,
+      kind: it.kind,
+      image_url: it.image_url ?? null,
+    };
 
-  setSelected(mapped);
-  setModalOpen(true);
-}
+    setSelected(mapped);
+    setModalOpen(true);
+  }
 
   function closeDetails() {
     setModalOpen(false);
@@ -115,7 +115,7 @@ function openDetails(it: CompletionItem) {
         <RowComp
           key={`completions-row-${idx}`}
           items={rowItems}
-          onSelect={openDetails}
+          onSelect={(it) => openDetails(it as CompletionItem)}
         />
       ))}
 
