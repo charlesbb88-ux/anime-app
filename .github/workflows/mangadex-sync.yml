@@ -1,0 +1,16 @@
+name: MangaDex Delta Sync
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  delta-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call delta sync endpoint
+        run: |
+          curl -sS -X GET "${{ secrets.SITE_URL }}/api/admin/mangadex-delta-sync?max_pages=5&hard_cap=500" \
+            -H "x-admin-secret: ${{ secrets.ADMIN_SECRET }}" \
+            -H "accept: application/json"
