@@ -5,6 +5,9 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import ProfileLayout from "@/components/profile/ProfileLayout";
 
+import { buildChapterNavGroups } from "@/lib/chapterNavigation";
+import type { NavGroup } from "@/lib/chapterNavigation";
+
 type AnimeCard = {
   id: string;
   slug: string | null;
@@ -19,6 +22,7 @@ type MangaCard = {
   title: string | null;
   title_english: string | null;
   image_url: string | null;
+  total_chapters: number | null;
 };
 
 type MarkRow = {
@@ -36,19 +40,57 @@ type MarkRow = {
   created_at: string | null;
 };
 
-type WatchlistItem = {
-  kind: "anime" | "manga";
+type MangaChapterMeta = {
   id: string;
+  manga_id: string | null;
+  chapter_number: number | null;
+};
+
+type AnimeEpisodeMeta = {
+  id: string;
+  anime_id: string | null;
+  episode_number: number | null;
+};
+
+type CoverRow = {
+  manga_id: string;
+  volume: string | null;
+  locale: string | null;
+  cached_url: string | null;
+  is_main: boolean | null;
+};
+
+type VolumeMapRow = {
+  manga_id: string;
+  mapping: Record<string, string[]> | null;
+};
+
+type WatchlistItem = {
+  kind: "anime" | "manga" | "anime_episode" | "manga_chapter";
+
+  // what the user watchlisted (series id OR episode/chapter id)
+  id: string;
+
+  // parent series id (used for poster + badges)
+  parentId: string;
+
+  // series slug (used to route)
   slug: string | null;
+
   posterUrl: string | null;
   title: string;
 
+  // used for sorting
   addedAt: string | null;
 
   // optional badges (same look as library)
   stars: number | null; // 0..5 (converted)
   liked: boolean;
   reviewed: boolean;
+
+  // routing for chapter/episode
+  chapterNumber: number | null;
+  episodeNumber: number | null;
 };
 
 function clamp(n: number, min: number, max: number) {
@@ -70,15 +112,97 @@ function normalizeStars(raw: unknown): number | null {
   return roundToHalf(clamp(scaled, 0, 5));
 }
 
-function renderStars(stars: number) {
-  const s = clamp(stars, 0, 5);
-  const full = Math.floor(s);
-  const half = s % 1 !== 0;
+/** ===== Cover picking logic (same behavior as your chapter page) ===== */
 
-  let out = "";
-  for (let i = 0; i < full; i++) out += "★";
-  if (half) out += "½";
-  return out;
+function normVol(v: any): string | null {
+  const s0 = String(v ?? "").trim();
+  if (!s0) return null;
+  if (s0.toLowerCase() === "none") return null;
+
+  if (/^\d+(\.\d+)?$/.test(s0)) {
+    const n = Number(s0);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return String(Math.trunc(n));
+  }
+
+  const m = s0.match(/(\d+)/);
+  if (m?.[1]) {
+    const n = Number(m[1]);
+    if (Number.isFinite(n) && n > 0) return String(Math.trunc(n));
+  }
+
+  return s0;
+}
+
+function pickBestCoverUrl(rows: CoverRow[]): string | null {
+  const usable = (rows || []).filter((r) => r?.cached_url);
+  if (!usable.length) return null;
+
+  const mains = usable.filter((r) => r.is_main);
+  const pool = mains.length ? mains : usable;
+
+  const pref = ["en", "ja"];
+  for (const p of pref) {
+    const hit = pool.find((r) => (r.locale || "").toLowerCase() === p && r.cached_url);
+    if (hit?.cached_url) return hit.cached_url;
+  }
+
+  return pool[0].cached_url ?? null;
+}
+
+/**
+ * Build a per-manga lookup: chapterNumber -> best cover URL
+ * Uses your same "carry forward last volume cover" behavior.
+ */
+function buildChapterCoverLookup(args: {
+  volumeMap: Record<string, string[]> | null;
+  covers: CoverRow[];
+  totalChapters: number | null;
+}): Record<number, string | null> {
+  const { volumeMap, covers, totalChapters } = args;
+
+  if (!volumeMap) return {};
+
+  // group covers by volume -> best url
+  const byVol: Record<string, CoverRow[]> = {};
+  for (const r of covers) {
+    const v = normVol(r.volume);
+    if (!v) continue;
+    if (!byVol[v]) byVol[v] = [];
+    byVol[v].push(r);
+  }
+
+  const coverUrlByVolume: Record<string, string | null> = {};
+  for (const v of Object.keys(byVol)) {
+    coverUrlByVolume[v] = pickBestCoverUrl(byVol[v]);
+  }
+
+  const navGroups: NavGroup[] = buildChapterNavGroups({
+    volumeMap,
+    totalChapters,
+    chunkSize: 25,
+  });
+
+  const chapterCoverByNumber: Record<number, string | null> = {};
+  let lastVolumeCover: string | null = null;
+
+  for (const g of navGroups) {
+    if (g.kind === "volume") {
+      const key = String(g.key || "");
+      const rawVol =
+        key.startsWith("vol:") ? key.slice(4) : key.startsWith("vol-") ? key.slice(4) : key;
+
+      const v = normVol(rawVol);
+      const cover = v ? coverUrlByVolume[v] ?? null : null;
+      if (cover) lastVolumeCover = cover;
+
+      for (const ch of g.chapters) chapterCoverByNumber[ch] = cover;
+    } else {
+      for (const ch of g.chapters) chapterCoverByNumber[ch] = lastVolumeCover;
+    }
+  }
+
+  return chapterCoverByNumber;
 }
 
 function WatchlistBody({ profileId }: { profileId: string }) {
@@ -96,10 +220,12 @@ function WatchlistBody({ profileId }: { profileId: string }) {
       setLoading(true);
 
       try {
-        // 1) pull watchlist marks
+        // 1) pull ALL watchlist marks (series + episode + chapter)
         const { data: watchRows, error: watchErr } = await supabase
           .from("user_marks")
-          .select("id, user_id, kind, anime_id, manga_id, anime_episode_id, manga_chapter_id, stars, created_at")
+          .select(
+            "id, user_id, kind, anime_id, manga_id, anime_episode_id, manga_chapter_id, stars, created_at"
+          )
           .eq("user_id", profileId)
           .eq("kind", "watchlist");
 
@@ -110,19 +236,39 @@ function WatchlistBody({ profileId }: { profileId: string }) {
           return;
         }
 
-        // only allow series-level watchlist, ignore episode/chapter rows
-        const watchMarks = ((watchRows || []) as MarkRow[]).filter(
-          (r) => !r.anime_episode_id && !r.manga_chapter_id
-        );
+        const watchMarks = (watchRows || []) as MarkRow[];
 
+        // parent series ids (for posters + badges + reviewed)
         const animeIds = Array.from(
-          new Set(watchMarks.map((r) => (r.anime_id ? String(r.anime_id) : null)).filter(Boolean) as string[])
-        );
-        const mangaIds = Array.from(
-          new Set(watchMarks.map((r) => (r.manga_id ? String(r.manga_id) : null)).filter(Boolean) as string[])
+          new Set(
+            watchMarks.map((r) => (r.anime_id ? String(r.anime_id) : null)).filter(Boolean) as string[]
+          )
         );
 
-        // 2) pull optional liked/rating marks for badges (not required, but keeps same “look”)
+        const mangaIds = Array.from(
+          new Set(
+            watchMarks.map((r) => (r.manga_id ? String(r.manga_id) : null)).filter(Boolean) as string[]
+          )
+        );
+
+        // episode/chapter ids (for routing/title labeling)
+        const episodeIds = Array.from(
+          new Set(
+            watchMarks
+              .map((r) => (r.anime_episode_id ? String(r.anime_episode_id) : null))
+              .filter(Boolean) as string[]
+          )
+        );
+
+        const chapterIds = Array.from(
+          new Set(
+            watchMarks
+              .map((r) => (r.manga_chapter_id ? String(r.manga_chapter_id) : null))
+              .filter(Boolean) as string[]
+          )
+        );
+
+        // 2) liked/rating marks for badges (series-level)
         const { data: badgeRows } = await supabase
           .from("user_marks")
           .select("kind, anime_id, manga_id, stars")
@@ -136,7 +282,7 @@ function WatchlistBody({ profileId }: { profileId: string }) {
         const ratingAnime: Record<string, number> = {};
         const ratingManga: Record<string, number> = {};
 
-        for (const mk of ((badgeRows || []) as any[])) {
+        for (const mk of (badgeRows || []) as any[]) {
           const k = String(mk.kind || "").toLowerCase();
 
           if (k === "liked") {
@@ -152,13 +298,16 @@ function WatchlistBody({ profileId }: { profileId: string }) {
           }
         }
 
-        // 3) pull metadata
+        // 3) pull series metadata (posters + titles + slugs + total chapters for cover picking)
         const [animeRes, mangaRes] = await Promise.all([
           animeIds.length
             ? supabase.from("anime").select("id, slug, title, title_english, image_url").in("id", animeIds)
             : Promise.resolve({ data: [] as any[] }),
           mangaIds.length
-            ? supabase.from("manga").select("id, slug, title, title_english, image_url").in("id", mangaIds)
+            ? supabase
+                .from("manga")
+                .select("id, slug, title, title_english, image_url, total_chapters")
+                .in("id", mangaIds)
             : Promise.resolve({ data: [] as any[] }),
         ]);
 
@@ -185,10 +334,16 @@ function WatchlistBody({ profileId }: { profileId: string }) {
             title: m.title ?? null,
             title_english: m.title_english ?? null,
             image_url: m.image_url ?? null,
+            total_chapters:
+              typeof m.total_chapters === "number" && Number.isFinite(m.total_chapters)
+                ? m.total_chapters
+                : m.total_chapters != null && String(m.total_chapters).trim() !== ""
+                ? Number(m.total_chapters)
+                : null,
           };
         });
 
-        // 4) optional reviewed badges
+        // 4) optional reviewed badges (series-level)
         const reviewedAnime = new Set<string>();
         const reviewedManga = new Set<string>();
 
@@ -212,50 +367,254 @@ function WatchlistBody({ profileId }: { profileId: string }) {
           // ignore if schema differs
         }
 
-        // map addedAt by id for sorting
-        const addedAtAnime: Record<string, string | null> = {};
-        const addedAtManga: Record<string, string | null> = {};
-        for (const mk of watchMarks) {
-          if (mk.anime_id) addedAtAnime[String(mk.anime_id)] = mk.created_at ?? null;
-          if (mk.manga_id) addedAtManga[String(mk.manga_id)] = mk.created_at ?? null;
+        // 5) fetch chapter/episode numbers for routing
+        // NOTE: If your table/columns differ, only change these select()s.
+        const [chapRes, epsRes] = await Promise.all([
+          chapterIds.length
+            ? supabase.from("manga_chapters").select("id, manga_id, chapter_number").in("id", chapterIds)
+            : Promise.resolve({ data: [] as any[] }),
+
+          episodeIds.length
+            ? supabase.from("anime_episodes").select("id, anime_id, episode_number").in("id", episodeIds)
+            : Promise.resolve({ data: [] as any[] }),
+        ]);
+
+        if (cancelled) return;
+
+        const chapterById: Record<string, MangaChapterMeta> = {};
+        (chapRes.data || []).forEach((c: any) => {
+          if (!c?.id) return;
+          chapterById[String(c.id)] = {
+            id: String(c.id),
+            manga_id: c.manga_id ? String(c.manga_id) : null,
+            chapter_number:
+              typeof c.chapter_number === "number" && Number.isFinite(c.chapter_number)
+                ? c.chapter_number
+                : c.chapter_number != null && String(c.chapter_number).trim() !== ""
+                ? Number(c.chapter_number)
+                : null,
+          };
+        });
+
+        const episodeById: Record<string, AnimeEpisodeMeta> = {};
+        (epsRes.data || []).forEach((e: any) => {
+          if (!e?.id) return;
+          episodeById[String(e.id)] = {
+            id: String(e.id),
+            anime_id: e.anime_id ? String(e.anime_id) : null,
+            episode_number:
+              typeof e.episode_number === "number" && Number.isFinite(e.episode_number)
+                ? e.episode_number
+                : e.episode_number != null && String(e.episode_number).trim() !== ""
+                ? Number(e.episode_number)
+                : null,
+          };
+        });
+
+        /**
+         * 6) SAME CHAPTER COVER SELECTION LOGIC
+         * For any manga that appears as a chapter watchlist item,
+         * we fetch its volume map + covers and compute chapterNumber -> cover URL.
+         */
+        const mangaIdsNeedingChapterCovers = Array.from(
+          new Set(
+            watchMarks
+              .filter((r) => r.manga_id && r.manga_chapter_id)
+              .map((r) => String(r.manga_id))
+          )
+        );
+
+        const chapterCoverLookupByMangaId: Record<string, Record<number, string | null>> = {};
+
+        if (mangaIdsNeedingChapterCovers.length) {
+          // volume map rows
+          const { data: vmRows, error: vmErr } = await supabase
+            .from("manga_volume_chapter_map")
+            .select("manga_id, mapping")
+            .in("manga_id", mangaIdsNeedingChapterCovers)
+            .eq("source", "mangadex");
+
+          if (cancelled) return;
+
+          if (!vmErr && Array.isArray(vmRows)) {
+            // covers
+            const { data: coverRows, error: coverErr } = await supabase
+              .from("manga_covers")
+              .select("manga_id, volume, locale, cached_url, is_main")
+              .in("manga_id", mangaIdsNeedingChapterCovers)
+              .not("cached_url", "is", null);
+
+            if (cancelled) return;
+
+            const coversByManga: Record<string, CoverRow[]> = {};
+            if (!coverErr && Array.isArray(coverRows)) {
+              for (const r of coverRows as any[]) {
+                const mid = r?.manga_id ? String(r.manga_id) : "";
+                if (!mid) continue;
+                if (!coversByManga[mid]) coversByManga[mid] = [];
+                coversByManga[mid].push({
+                  manga_id: mid,
+                  volume: r?.volume ?? null,
+                  locale: r?.locale ?? null,
+                  cached_url: r?.cached_url ?? null,
+                  is_main: r?.is_main ?? null,
+                });
+              }
+            }
+
+            for (const row of vmRows as any[]) {
+              const mid = row?.manga_id ? String(row.manga_id) : "";
+              if (!mid) continue;
+
+              const mapping: Record<string, string[]> | null =
+                row?.mapping && typeof row.mapping === "object" ? (row.mapping as any) : null;
+
+              const meta = mangaById[mid];
+              const totalRaw = meta?.total_chapters;
+              const total =
+                typeof totalRaw === "number" && Number.isFinite(totalRaw) && totalRaw > 0
+                  ? Math.floor(totalRaw)
+                  : null;
+
+              const lookup = buildChapterCoverLookup({
+                volumeMap: mapping,
+                covers: coversByManga[mid] || [],
+                totalChapters: total,
+              });
+
+              chapterCoverLookupByMangaId[mid] = lookup;
+            }
+          }
         }
 
+        // 7) build final items — one card per watchlist mark (series, chapter, episode)
         const combined: WatchlistItem[] = [];
 
-        for (const id of animeIds) {
-          const meta = animeById[id];
-          if (!meta) continue;
-          const title = (meta.title_english || meta.title || "").trim() || "Untitled";
+        for (const mk of watchMarks) {
+          const addedAt = mk.created_at ?? null;
 
-          combined.push({
-            kind: "anime",
-            id,
-            slug: meta.slug ?? null,
-            posterUrl: meta.image_url ?? null,
-            title,
-            addedAt: addedAtAnime[id] ?? null,
-            stars: ratingAnime[id] ?? null,
-            liked: likedAnime.has(id),
-            reviewed: reviewedAnime.has(id),
-          });
-        }
+          // ANIME EPISODE watchlist
+          if (mk.anime_episode_id) {
+            const parentId = mk.anime_id ? String(mk.anime_id) : null;
+            if (!parentId) continue;
 
-        for (const id of mangaIds) {
-          const meta = mangaById[id];
-          if (!meta) continue;
-          const title = (meta.title_english || meta.title || "").trim() || "Untitled";
+            const a = animeById[parentId];
+            if (!a) continue;
 
-          combined.push({
-            kind: "manga",
-            id,
-            slug: meta.slug ?? null,
-            posterUrl: meta.image_url ?? null,
-            title,
-            addedAt: addedAtManga[id] ?? null,
-            stars: ratingManga[id] ?? null,
-            liked: likedManga.has(id),
-            reviewed: reviewedManga.has(id),
-          });
+            const baseTitle = (a.title_english || a.title || "").trim() || "Untitled";
+            const ep = episodeById[String(mk.anime_episode_id)];
+            const epNum =
+              ep && typeof ep.episode_number === "number" && Number.isFinite(ep.episode_number)
+                ? ep.episode_number
+                : null;
+
+            combined.push({
+              kind: "anime_episode",
+              id: String(mk.anime_episode_id),
+              parentId,
+              slug: a.slug ?? null,
+              posterUrl: a.image_url ?? null,
+              title: epNum != null ? `${baseTitle} — Episode ${epNum}` : `${baseTitle} — Episode`,
+              addedAt,
+              stars: ratingAnime[parentId] ?? null,
+              liked: likedAnime.has(parentId),
+              reviewed: reviewedAnime.has(parentId),
+              chapterNumber: null,
+              episodeNumber: epNum,
+            });
+
+            continue;
+          }
+
+          // MANGA CHAPTER watchlist (WITH chapter-specific cover selection)
+          if (mk.manga_chapter_id) {
+            const parentId = mk.manga_id ? String(mk.manga_id) : null;
+            if (!parentId) continue;
+
+            const m = mangaById[parentId];
+            if (!m) continue;
+
+            const baseTitle = (m.title_english || m.title || "").trim() || "Untitled";
+
+            const ch = chapterById[String(mk.manga_chapter_id)];
+            const chNum =
+              ch && typeof ch.chapter_number === "number" && Number.isFinite(ch.chapter_number)
+                ? ch.chapter_number
+                : null;
+
+            const chapterCover =
+              chNum != null ? chapterCoverLookupByMangaId[parentId]?.[chNum] ?? null : null;
+
+            combined.push({
+              kind: "manga_chapter",
+              id: String(mk.manga_chapter_id),
+              parentId,
+              slug: m.slug ?? null,
+              // ✅ prefer the computed chapter cover; fallback to series image_url
+              posterUrl: chapterCover ?? m.image_url ?? null,
+              title: chNum != null ? `${baseTitle} — Chapter ${chNum}` : `${baseTitle} — Chapter`,
+              addedAt,
+              stars: ratingManga[parentId] ?? null,
+              liked: likedManga.has(parentId),
+              reviewed: reviewedManga.has(parentId),
+              chapterNumber: chNum,
+              episodeNumber: null,
+            });
+
+            continue;
+          }
+
+          // ANIME SERIES watchlist
+          if (mk.anime_id) {
+            const id = String(mk.anime_id);
+            const a = animeById[id];
+            if (!a) continue;
+
+            const title = (a.title_english || a.title || "").trim() || "Untitled";
+
+            combined.push({
+              kind: "anime",
+              id,
+              parentId: id,
+              slug: a.slug ?? null,
+              posterUrl: a.image_url ?? null,
+              title,
+              addedAt,
+              stars: ratingAnime[id] ?? null,
+              liked: likedAnime.has(id),
+              reviewed: reviewedAnime.has(id),
+              chapterNumber: null,
+              episodeNumber: null,
+            });
+
+            continue;
+          }
+
+          // MANGA SERIES watchlist
+          if (mk.manga_id) {
+            const id = String(mk.manga_id);
+            const m = mangaById[id];
+            if (!m) continue;
+
+            const title = (m.title_english || m.title || "").trim() || "Untitled";
+
+            combined.push({
+              kind: "manga",
+              id,
+              parentId: id,
+              slug: m.slug ?? null,
+              posterUrl: m.image_url ?? null,
+              title,
+              addedAt,
+              stars: ratingManga[id] ?? null,
+              liked: likedManga.has(id),
+              reviewed: reviewedManga.has(id),
+              chapterNumber: null,
+              episodeNumber: null,
+            });
+
+            continue;
+          }
         }
 
         // newest-added first, then title
@@ -301,7 +660,23 @@ function WatchlistBody({ profileId }: { profileId: string }) {
       ) : (
         <div className="grid [grid-template-columns:repeat(auto-fill,minmax(160px,1fr))] gap-x-2 gap-y-4">
           {items.map((it) => {
-            const href = it.slug ? (it.kind === "anime" ? `/anime/${it.slug}` : `/manga/${it.slug}`) : "#";
+            let href = "#";
+
+            // series routes
+            if (it.slug && it.kind === "anime") href = `/anime/${it.slug}`;
+            if (it.slug && it.kind === "manga") href = `/manga/${it.slug}`;
+
+            // ✅ your chapter route pattern:
+            // pages/manga/[slug]/chapter/[chapterNumber].tsx
+            if (it.slug && it.kind === "manga_chapter" && it.chapterNumber != null) {
+              href = `/manga/${it.slug}/chapter/${it.chapterNumber}`;
+            }
+
+            // NOTE: I still don't know your anime episode route pattern.
+            // Safe fallback to anime series page for now.
+            if (it.slug && it.kind === "anime_episode") {
+              href = `/anime/${it.slug}`;
+            }
 
             return (
               <Link key={`${it.kind}:${it.id}`} href={href} title={it.title} className="group block">
@@ -332,6 +707,9 @@ function WatchlistBody({ profileId }: { profileId: string }) {
                     </div>
                   ) : null}
                 </div>
+
+                {/* label under poster so chapter cards are actually distinguishable */}
+                <div className="mt-2 text-[12px] leading-snug text-slate-900 line-clamp-2">{it.title}</div>
               </Link>
             );
           })}
