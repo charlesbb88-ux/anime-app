@@ -87,6 +87,22 @@ function pickBestCoverUrl(rows: CoverRow[]): string | null {
   return pool[0].cached_url ?? null;
 }
 
+function hashStringToUint32(str: string) {
+  // fast stable hash (FNV-1a-ish)
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function pickStableRandomFromPool(pool: string[], seed: string): string | null {
+  if (!pool.length) return null;
+  const h = hashStringToUint32(seed);
+  return pool[h % pool.length] ?? null;
+}
+
 export default function ChapterNavigator({
   slug,
   totalChapters,
@@ -130,8 +146,8 @@ export default function ChapterNavigator({
   // ---------------------------------------
   const propTotal =
     typeof totalChapters === "number" &&
-      Number.isFinite(totalChapters) &&
-      totalChapters > 0
+    Number.isFinite(totalChapters) &&
+    totalChapters > 0
       ? Math.floor(totalChapters)
       : null;
 
@@ -452,8 +468,34 @@ export default function ChapterNavigator({
     return out;
   }, [coverRows]);
 
+  // ✅ pool of all cover urls (for no-volume mangas)
+  const allCoverUrls = useMemo(() => {
+    const urls = (coverRows || [])
+      .map((r) => r?.cached_url ?? null)
+      .filter((u): u is string => !!u);
+
+    return Array.from(new Set(urls));
+  }, [coverRows]);
+
   const chapterCoverByNumber = useMemo(() => {
     const out: Record<number, string | null> = {};
+
+    const hasAnyVolumeGroup = navGroups.some((g) => g.kind === "volume");
+
+    // ✅ If there are NO volumes at all, assign each chapter a stable-random cover
+    if (!hasAnyVolumeGroup) {
+      for (const g of navGroups) {
+        for (const ch of g.chapters) {
+          out[ch] = pickStableRandomFromPool(
+            allCoverUrls,
+            `${mangaId ?? "m"}|ch:${ch}`
+          );
+        }
+      }
+      return out;
+    }
+
+    // Original behavior (perfect) when volumes exist
     let lastVolumeCover: string | null = null;
 
     for (const g of navGroups) {
@@ -461,8 +503,11 @@ export default function ChapterNavigator({
         const key = String(g.key || "");
 
         // supports lib keys like: "vol:1" or "vol:05"
-        const rawVol =
-          key.startsWith("vol:") ? key.slice(4) : key.startsWith("vol-") ? key.slice(4) : key;
+        const rawVol = key.startsWith("vol:")
+          ? key.slice(4)
+          : key.startsWith("vol-")
+          ? key.slice(4)
+          : key;
 
         const v = normVol(rawVol);
         const cover = v ? coverUrlByVolume[v] ?? null : null;
@@ -475,7 +520,7 @@ export default function ChapterNavigator({
     }
 
     return out;
-  }, [navGroups, coverUrlByVolume]);
+  }, [navGroups, coverUrlByVolume, allCoverUrls, mangaId]);
 
   // skeleton while nav isn't ready
   const showNavSkeleton = !!slug && (!mangaId || !volumeMapLoaded);
@@ -652,7 +697,8 @@ export default function ChapterNavigator({
         const next = { ...prev };
         for (const n of wantedNums) {
           if (!next[n]) next[n] = { title: null };
-          if (titleByNumber[n] !== undefined) next[n] = { title: titleByNumber[n] };
+          if (titleByNumber[n] !== undefined)
+            next[n] = { title: titleByNumber[n] };
         }
         return next;
       });
@@ -817,13 +863,9 @@ export default function ChapterNavigator({
     const isFlick = Math.abs(v) >= VELOCITY_FLICK;
 
     const isTinyFlick =
-      isFlick &&
-      duration <= TINY_FLICK_MAX_MS &&
-      Math.abs(dx) <= TINY_FLICK_MAX_PX;
+      isFlick && duration <= TINY_FLICK_MAX_MS && Math.abs(dx) <= TINY_FLICK_MAX_PX;
 
-    const draggedScroll = Math.abs(
-      el.scrollLeft - dragRef.current.startScrollLeft
-    );
+    const draggedScroll = Math.abs(el.scrollLeft - dragRef.current.startScrollLeft);
     const farDrag = draggedScroll > step * 1.1;
     const isFlickAllowed = isFlick && !farDrag;
 
@@ -890,10 +932,7 @@ export default function ChapterNavigator({
         Math.abs(dxFromStart)
       );
 
-      if (
-        !dragRef.current.didDrag &&
-        Math.abs(dxFromStart) >= DRAG_THRESHOLD_PX
-      ) {
+      if (!dragRef.current.didDrag && Math.abs(dxFromStart) >= DRAG_THRESHOLD_PX) {
         dragRef.current.didDrag = true;
         setDragging(true);
       }
@@ -963,10 +1002,7 @@ export default function ChapterNavigator({
         Math.abs(dx)
       );
 
-      if (
-        !volumeDragRef.current.didDrag &&
-        Math.abs(dx) >= VOLUME_DRAG_THRESHOLD_PX
-      ) {
+      if (!volumeDragRef.current.didDrag && Math.abs(dx) >= VOLUME_DRAG_THRESHOLD_PX) {
         volumeDragRef.current.didDrag = true;
         setVolumeDragging(true);
       }
@@ -1050,15 +1086,11 @@ export default function ChapterNavigator({
               selectedVolume === null ? pillOn : pillOff,
               "min-w-[25px] cursor-pointer",
             ].join(" ")}
-            onClick={(e) =>
-              maybeBlockVolumeButtonClick(e, () => setSelectedVolume(null))
-            }
+            onClick={(e) => maybeBlockVolumeButtonClick(e, () => setSelectedVolume(null))}
           >
             <div className="flex flex-col items-center leading-tight">
               <div>All</div>
-              <div className="mt-0.5 text-[10px] font-semibold opacity-0">
-                0–0
-              </div>
+              <div className="mt-0.5 text-[10px] font-semibold opacity-0">0–0</div>
             </div>
           </button>
 
@@ -1071,9 +1103,7 @@ export default function ChapterNavigator({
                 selectedVolume === g.key ? pillOn : pillOff,
                 "min-w-[45px] cursor-pointer",
               ].join(" ")}
-              onClick={(e) =>
-                maybeBlockVolumeButtonClick(e, () => setSelectedVolume(g.key))
-              }
+              onClick={(e) => maybeBlockVolumeButtonClick(e, () => setSelectedVolume(g.key))}
             >
               <div className="flex flex-col items-center leading-tight">
                 <div>{g.labelTop}</div>
