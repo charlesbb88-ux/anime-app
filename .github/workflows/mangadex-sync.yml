@@ -1,4 +1,4 @@
-name: MangaDex Delta Sync
+name: MangaDex Delta Sync (cron enabled)
 
 on:
   schedule:
