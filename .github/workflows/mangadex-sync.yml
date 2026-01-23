@@ -2,7 +2,7 @@ name: MangaDex Delta Sync (cron enabled)
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "* * * * *"
   workflow_dispatch:
 
 jobs:
