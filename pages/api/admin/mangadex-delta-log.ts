@@ -22,6 +22,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         mangadex_updated_at,
         mangadex_id,
         manga_id,
+        action,
+        changed_fields,
+        before_row,
+        after_row,
         manga:manga_id (slug, title)
       `)
       .eq("state_id", stateId)
@@ -45,6 +49,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         mangadex_updated_at: r.mangadex_updated_at,
         mangadex_id: r.mangadex_id,
         manga_id: r.manga_id,
+        action: r.action ?? null,
+        changed_fields: r.changed_fields ?? null,
+        before_row: r.before_row ?? null,
+        after_row: r.after_row ?? null,
         slug: r.manga?.slug ?? null,
         title: r.manga?.title ?? null,
       })),
