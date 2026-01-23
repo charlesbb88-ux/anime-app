@@ -20,15 +20,6 @@ function requireAdmin(req: NextApiRequest) {
   if (secret !== process.env.ADMIN_SECRET) throw new Error("Unauthorized");
 }
 
-function getSupabaseUrl(): string | null {
-  return (
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.SUPABASE_URL ||
-    process.env.SUPABASE_PROJECT_URL ||
-    null
-  );
-}
-
 async function cacheCoverToStorage(opts: {
   slug: string;
   sourceUrls: string[];
@@ -57,29 +48,22 @@ async function cacheCoverToStorage(opts: {
     const ext = urlPath.includes(".png") ? "png" : "jpg";
     const path = `${slug}/cover.${ext}`;
 
-    const { error: upErr } = await supabaseAdmin.storage
-      .from("manga-covers")
-      .upload(path, buf, {
-        contentType,
-        upsert: true,
-        metadata: {
-          source: "mangadex",
-          image: { type: "cover", resolution: "best_available", format: ext },
-        },
-      });
+    const { error: upErr } = await supabaseAdmin.storage.from("manga-covers").upload(path, buf, {
+      contentType,
+      upsert: true,
+      metadata: {
+        source: "mangadex",
+        image: { type: "cover", resolution: "best_available", format: ext },
+      },
+    });
 
     if (upErr) throw upErr;
 
-    const { data: pub } = supabaseAdmin.storage
-      .from("manga-covers")
-      .getPublicUrl(path);
-
+    const { data: pub } = supabaseAdmin.storage.from("manga-covers").getPublicUrl(path);
     return { publicUrl: pub.publicUrl, usedSourceUrl: url };
   }
 
-  throw new Error(
-    `Failed to download cover from all candidates. Last: ${lastUrl} (status ${lastStatus})`
-  );
+  throw new Error(`Failed to download cover from all candidates. Last: ${lastUrl} (status ${lastStatus})`);
 }
 
 function parseUpdatedAt(m: any): string | null {
@@ -128,16 +112,14 @@ function pickComparableMangaRow(row: any) {
     genres: row.genres ?? null,
     cover_image_url: row.cover_image_url ?? null,
     image_url: row.image_url ?? null,
+    external_id: row.external_id ?? null, // ok if null; only for logging/diff
     source: row.source ?? null,
   };
 }
 
 function diffObjects(before: any, after: any) {
   const changes: Record<string, { from: any; to: any }> = {};
-  const keys = new Set<string>([
-    ...Object.keys(before || {}),
-    ...Object.keys(after || {}),
-  ]);
+  const keys = new Set<string>([...Object.keys(before || {}), ...Object.keys(after || {})]);
 
   for (const k of keys) {
     const bv = before?.[k];
@@ -146,55 +128,48 @@ function diffObjects(before: any, after: any) {
     const bNorm = Array.isArray(bv) ? [...bv].slice().sort() : bv;
     const aNorm = Array.isArray(av) ? [...av].slice().sort() : av;
 
-    const same =
-      JSON.stringify(bNorm ?? null) === JSON.stringify(aNorm ?? null);
-
+    const same = JSON.stringify(bNorm ?? null) === JSON.stringify(aNorm ?? null);
     if (!same) changes[k] = { from: bv ?? null, to: av ?? null };
   }
 
   return changes;
 }
 
-async function loadExistingByMangaDexId(mdId: string) {
-  // Look up existing manga_id through the link table
-  const { data: link, error: linkErr } = await supabaseAdmin
-    .from("manga_external_ids")
-    .select("manga_id, source, external_id")
-    .eq("source", "mangadex")
-    .eq("external_id", mdId)
-    .maybeSingle();
-
-  if (linkErr) throw linkErr;
-
-  let manga: any = null;
-
-  if (link?.manga_id) {
-    const { data: m, error: mErr } = await supabaseAdmin
-      .from("manga")
-      .select(
-        "id, slug, title, title_english, title_native, title_preferred, description, status, publication_year, genres, cover_image_url, image_url, source"
-      )
-      .eq("id", link.manga_id)
-      .maybeSingle();
-
-    if (mErr) throw mErr;
-    manga = m;
-  }
-
-  return { link, manga };
-}
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     requireAdmin(req);
 
-    const supabaseUrl = getSupabaseUrl();
+    const supabaseUrl =
+      process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      process.env.SUPABASE_URL ||
+      process.env.SUPABASE_PROJECT_URL ||
+      null;
 
-    // DEBUG MODE: pass ?md_id=<mangadex uuid>
+    // DEBUG MODE: pass ?md_id=<mangadex uuid> to ONLY check what the API can see
     const debugMdId = typeof req.query.md_id === "string" ? req.query.md_id : null;
 
     if (debugMdId) {
-      const { link, manga } = await loadExistingByMangaDexId(debugMdId);
+      const { data: beforeLink, error: beforeLinkErr } = await supabaseAdmin
+        .from("manga_external_ids")
+        .select("manga_id, source, external_id")
+        .eq("source", "mangadex")
+        .eq("external_id", debugMdId)
+        .maybeSingle();
+
+      if (beforeLinkErr) throw beforeLinkErr;
+
+      let beforeRaw: any = null;
+
+      if (beforeLink?.manga_id) {
+        const { data: b, error: bErr } = await supabaseAdmin
+          .from("manga")
+          .select("id, slug, title, source")
+          .eq("id", beforeLink.manga_id)
+          .maybeSingle();
+
+        if (bErr) throw bErr;
+        beforeRaw = b;
+      }
 
       return res.status(200).json({
         ok: true,
@@ -202,11 +177,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         build_stamp: BUILD_STAMP,
         supabase_url: supabaseUrl,
         md_id: debugMdId,
-        before_link: link,
-        before_manga: manga
-          ? { id: manga.id, slug: manga.slug, title: manga.title, source: manga.source }
-          : null,
-        inferred_action: manga?.id ? "update" : "insert",
+        before_link: beforeLink,
+        before_manga: beforeRaw,
+        inferred_action: beforeRaw?.id ? "update" : "insert",
       });
     }
 
@@ -233,12 +206,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let newestUpdatedAt: string | null = null;
     let newestId: string | null = null;
 
-    const touched: Array<{
-      mangadex_id: string;
-      manga_id: string;
-      updatedAt: string | null;
-      action: string;
-    }> = [];
+    const touched: Array<{ mangadex_id: string; manga_id: string; updatedAt: string | null; action: string }> = [];
 
     outer: while (pages < maxPages && processed < hardCap) {
       const { data } = await fetchRecentUpdated(pageLimit, offset);
@@ -255,12 +223,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Stop condition (cursor)
         if (cursorUpdatedAt && updatedAt) {
           if (updatedAt < cursorUpdatedAt) break outer;
-          if (updatedAt === cursorUpdatedAt && cursorLastId && mdId <= cursorLastId)
-            break outer;
+          if (updatedAt === cursorUpdatedAt && cursorLastId && mdId <= cursorLastId) break outer;
         }
 
-        // BEFORE (via link table)
-        const { manga: beforeRaw } = await loadExistingByMangaDexId(mdId);
+        // BEFORE: do we already have it? (via manga_external_ids)
+        const { data: beforeLink, error: beforeLinkErr } = await supabaseAdmin
+          .from("manga_external_ids")
+          .select("manga_id")
+          .eq("source", "mangadex")
+          .eq("external_id", mdId)
+          .maybeSingle();
+
+        if (beforeLinkErr) throw beforeLinkErr;
+
+        let beforeRaw: any = null;
+
+        if (beforeLink?.manga_id) {
+          const { data: b, error: bErr } = await supabaseAdmin
+            .from("manga")
+            .select(
+              "id, slug, title, title_english, title_native, title_preferred, description, status, publication_year, genres, cover_image_url, image_url, external_id, source"
+            )
+            .eq("id", beforeLink.manga_id)
+            .maybeSingle();
+
+          if (bErr) throw bErr;
+          beforeRaw = b;
+        }
 
         const action = beforeRaw?.id ? "update" : "insert";
         const beforeRow = pickComparableMangaRow(beforeRaw);
@@ -275,57 +264,54 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const coverUrl = coverCandidates[0] || null;
         const { authors, artists } = getCreators(m);
 
-        const mergedGenres = Array.from(new Set([...(genres || []), ...(themes || [])]))
-          .sort((a, b) => a.localeCompare(b));
+        const mergedGenres = Array.from(new Set([...(genres || []), ...(themes || [])])).sort((a, b) =>
+          a.localeCompare(b)
+        );
 
-        const base =
-          titles.title_preferred || titles.title_english || titles.title || `mangadex-${mdId}`;
+        const base = titles.title_preferred || titles.title_english || titles.title || `mangadex-${mdId}`;
         const slug = slugify(base);
 
         // Upsert
-        const { data: mangaId, error: rpcErr } = await supabaseAdmin.rpc(
-          "upsert_manga_from_mangadex",
-          {
-            p_slug: slug,
-            p_title: titles.title,
-            p_title_english: titles.title_english,
-            p_title_native: titles.title_native,
-            p_title_preferred: titles.title_preferred,
-            p_description: description,
-            p_status: status,
-            p_format: null,
-            p_source: "mangadex",
-            p_genres: mergedGenres,
-            p_publication_year: publicationYear,
-            p_total_chapters: null,
-            p_total_volumes: null,
-            p_cover_image_url: coverUrl,
-            p_external_id: mdId,
-            p_snapshot: {
-              mangadex_id: mdId,
-              attributes: (m as any).attributes,
-              relationships: (m as any).relationships,
-              normalized: {
-                ...titles,
-                status,
-                genres,
-                themes,
-                coverUrl,
-                coverCandidates,
-                authors,
-                artists,
-              },
+        const { data: mangaId, error: rpcErr } = await supabaseAdmin.rpc("upsert_manga_from_mangadex", {
+          p_slug: slug,
+          p_title: titles.title,
+          p_title_english: titles.title_english,
+          p_title_native: titles.title_native,
+          p_title_preferred: titles.title_preferred,
+          p_description: description,
+          p_status: status,
+          p_format: null,
+          p_source: "mangadex",
+          p_genres: mergedGenres,
+          p_publication_year: publicationYear,
+          p_total_chapters: null,
+          p_total_volumes: null,
+          p_cover_image_url: coverUrl,
+          p_external_id: mdId,
+          p_snapshot: {
+            mangadex_id: mdId,
+            attributes: (m as any).attributes,
+            relationships: (m as any).relationships,
+            normalized: {
+              ...titles,
+              status,
+              genres,
+              themes,
+              coverUrl,
+              coverCandidates,
+              authors,
+              artists,
             },
-          }
-        );
+          },
+        });
 
         if (rpcErr) throw rpcErr;
 
-        // AFTER: load and diff (does NOT require manga.external_id)
+        // AFTER: load and diff
         const { data: afterRaw, error: afterErr } = await supabaseAdmin
           .from("manga")
           .select(
-            "id, slug, title, title_english, title_native, title_preferred, description, status, publication_year, genres, cover_image_url, image_url, source"
+            "id, slug, title, title_english, title_native, title_preferred, description, status, publication_year, genres, cover_image_url, image_url, external_id, source"
           )
           .eq("id", mangaId)
           .maybeSingle();
@@ -336,7 +322,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const changed = diffObjects(beforeRow, afterRow);
 
         // Log touch (action + diff)
-        const { error: logErr } = await supabaseAdmin.from("mangadex_delta_log").insert({
+        await supabaseAdmin.from("mangadex_delta_log").insert({
           state_id: stateId,
           mangadex_id: mdId,
           manga_id: mangaId,
@@ -346,8 +332,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           before_row: beforeRow,
           after_row: afterRow,
         });
-
-        if (logErr) throw logErr;
 
         // Cache cover if missing
         if (coverCandidates.length > 0) {
@@ -418,7 +402,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       build_stamp: BUILD_STAMP,
       supabase_url: supabaseUrl,
       state_id: stateId,
-      cursor_before: { cursorUpdatedAt, cursorLastId },
+      cursor_before: { cursorUpdatedAt, cursorLastId: cursorLastId },
       cursor_after: processed ? { cursorUpdatedAt: newestUpdatedAt, cursorLastId: newestId } : null,
       pages,
       processed,
