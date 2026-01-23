@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/mangadex-delta-sync?token=aP7vQK9rN4F2xT8bJmE5wYdHcS6GZLkUeC3RAsqMtpWi1oBX",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}
