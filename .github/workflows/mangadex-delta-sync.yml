@@ -1,4 +1,4 @@
-name: MangaDex Delta Sync (cron enabled)
+name: MangaDex Delta Sync
 
 on:
   schedule:
@@ -9,18 +9,17 @@ jobs:
   delta-sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Call delta sync endpoint (fail loudly, handle trailing slashes)
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          base="${{ secrets.SITE_URL }}"
-          base="${base%/}"
-
-          curl -fL -sS -X GET "$base/api/admin/mangadex-delta-sync?max_pages=5&hard_cap=500" \
-            -H "x-admin-secret: ${{ secrets.ADMIN_SECRET }}" \
-            -H "accept: application/json"
       - name: Debug trigger
         run: |
           echo "event=${{ github.event_name }}"
           date -u
+
+      - name: Call delta sync endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${{ secrets.SITE_URL }}"
+          base="${base%/}"
+          curl -fL -sS -X GET "$base/api/admin/mangadex-delta-sync?max_pages=5&hard_cap=500" \
+            -H "x-admin-secret: ${{ secrets.ADMIN_SECRET }}" \
+            -H "accept: application/json"
