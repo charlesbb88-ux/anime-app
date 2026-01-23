@@ -1,10 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 
-export default function handler(req: NextApiRequest, res: NextApiResponse) {
-  res.status(200).json({
-    ok: true,
-    route: "/api/cronping",
-    method: req.method,
-    ts: new Date().toISOString(),
-  });
+export default function handler(_req: NextApiRequest, res: NextApiResponse) {
+  res.status(200).json({ ok: true, ts: new Date().toISOString() });
 }
