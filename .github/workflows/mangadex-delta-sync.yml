@@ -1,9 +1,9 @@
 name: MangaDex Delta Sync
 
 on:
-  schedule:
-    - cron: "* * * * *"
   workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
 
 jobs:
   delta-sync:
@@ -20,6 +20,7 @@ jobs:
           set -euo pipefail
           base="${{ secrets.SITE_URL }}"
           base="${base%/}"
+
           curl -fL -sS -X GET "$base/api/admin/mangadex-delta-sync?max_pages=5&hard_cap=500" \
             -H "x-admin-secret: ${{ secrets.ADMIN_SECRET }}" \
             -H "accept: application/json"
