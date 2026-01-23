@@ -2,15 +2,21 @@ name: MangaDex Delta Sync
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
   delta-sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Call delta sync endpoint
+      - name: Call delta sync endpoint (fail loudly, handle trailing slashes)
+        shell: bash
         run: |
-          curl -sS -X GET "${{ secrets.SITE_URL }}/api/admin/mangadex-delta-sync?max_pages=5&hard_cap=500" \
+          set -euo pipefail
+
+          base="${{ secrets.SITE_URL }}"
+          base="${base%/}"
+
+          curl -fL -sS -X GET "$base/api/admin/mangadex-delta-sync?max_pages=5&hard_cap=500" \
             -H "x-admin-secret: ${{ secrets.ADMIN_SECRET }}" \
             -H "accept: application/json"
