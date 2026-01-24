@@ -1,8 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/mangadex-delta-sync",
-      "schedule": "*/5 * * * *"
-    }
-  ]
-}
+{}
