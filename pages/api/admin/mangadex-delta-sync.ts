@@ -12,17 +12,7 @@ import {
   type MangaDexManga,
 } from "@/lib/mangadex";
 
-const BUILD_STAMP = "delta-sync-debug-2026-01-24-02";
-
-/**
- * What this rewrite fixes
- * - The cursor stop condition is now robust (time-based only). We do NOT do UUID tie-breaking.
- *   (Tie-breaks are not reliable with MangaDex paging and can cause processed=0 forever.)
- * - Cursor advancement uses the MAX updatedAt seen while processing, not “first item only”.
- * - Heartbeat is always updated so you can confirm the job ran.
- * - Optional: idempotent-ish logging (best effort) without requiring DB schema changes.
- * - Adds safer timeouts for MangaDex fetch to avoid “loads forever”.
- */
+const BUILD_STAMP = "delta-sync-2026-01-24-REWRITE-01";
 
 function requireAdmin(req: NextApiRequest) {
   const secret = req.headers["x-admin-secret"];
@@ -30,102 +20,16 @@ function requireAdmin(req: NextApiRequest) {
   if (secret !== process.env.ADMIN_SECRET) throw new Error("Unauthorized");
 }
 
+function parseIsoMs(ts: string | null): number | null {
+  if (!ts) return null;
+  const ms = Date.parse(ts);
+  return Number.isFinite(ms) ? ms : null;
+}
+
 function stripTrailingSlash(s: string) {
   return String(s || "").replace(/\/+$/, "");
 }
 
-function parseUpdatedAt(m: any): string | null {
-  const v = m?.attributes?.updatedAt || m?.attributes?.updated_at || null;
-  return typeof v === "string" ? v : null;
-}
-
-function safeTitleFromMd(m: any): string | null {
-  const t = m?.attributes?.title;
-  if (!t || typeof t !== "object") return null;
-  return (t.en as string) || (Object.values(t)[0] as string) || null;
-}
-
-async function fetchWithTimeout(url: string, ms: number, headers?: Record<string, string>) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-  try {
-    return await fetch(url, { headers, signal: controller.signal, cache: "no-store" as any });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function fetchRecentUpdated(limit: number, offset: number) {
-  const url = new URL("https://api.mangadex.org/manga");
-  url.searchParams.set("limit", String(limit));
-  url.searchParams.set("offset", String(offset));
-  url.searchParams.set("order[updatedAt]", "desc");
-  url.searchParams.append("includes[]", "cover_art");
-  url.searchParams.append("includes[]", "author");
-  url.searchParams.append("includes[]", "artist");
-
-  const r = await fetchWithTimeout(url.toString(), 20_000, { "User-Agent": "your-app-delta-sync" });
-
-  if (!r.ok) {
-    const txt = await r.text().catch(() => "");
-    throw new Error(`MangaDex list failed: ${r.status} ${txt}`.slice(0, 500));
-  }
-
-  const j = await r.json();
-  const data = (j?.data || []) as MangaDexManga[];
-  const total = typeof j?.total === "number" ? j.total : null;
-  return { data, total };
-}
-
-async function cacheCoverToStorage(opts: {
-  slug: string;
-  sourceUrls: string[];
-}): Promise<{ publicUrl: string; usedSourceUrl: string }> {
-  const { slug, sourceUrls } = opts;
-
-  let lastStatus: number | null = null;
-  let lastUrl: string | null = null;
-
-  for (const url of sourceUrls) {
-    lastUrl = url;
-
-    const imgRes = await fetchWithTimeout(url, 20_000, {
-      "User-Agent": "your-app-cover-cacher",
-    });
-
-    if (!imgRes.ok) {
-      lastStatus = imgRes.status;
-      continue;
-    }
-
-    const contentType = imgRes.headers.get("content-type") || "image/jpeg";
-    const buf = Buffer.from(await imgRes.arrayBuffer());
-
-    const urlPath = new URL(url).pathname.toLowerCase();
-    const ext = urlPath.includes(".png") ? "png" : "jpg";
-    const path = `${slug}/cover.${ext}`;
-
-    const { error: upErr } = await supabaseAdmin.storage.from("manga-covers").upload(path, buf, {
-      contentType,
-      upsert: true,
-      metadata: {
-        source: "mangadex",
-        image: { type: "cover", resolution: "best_available", format: ext },
-      },
-    });
-
-    if (upErr) throw upErr;
-
-    const { data: pub } = supabaseAdmin.storage.from("manga-covers").getPublicUrl(path);
-    return { publicUrl: pub.publicUrl, usedSourceUrl: url };
-  }
-
-  throw new Error(
-    `Failed to download cover from all candidates. Last: ${lastUrl} (status ${lastStatus})`
-  );
-}
-
-// Keep this small: only fields you want to diff in the dashboard.
 function pickComparableMangaRow(row: any) {
   if (!row) return null;
   return {
@@ -164,37 +68,104 @@ function diffObjects(before: any, after: any) {
   return changes;
 }
 
-// Best-effort dedupe without requiring schema changes.
-// If you add a unique constraint later, switch this to upsert.
-async function insertDeltaLogOnce(payload: any) {
-  // If your table is large, you can delete this check. It’s only here to reduce dupes
-  // when updatedAt ties cause reprocessing.
-  const state_id = payload.state_id;
-  const mangadex_id = payload.mangadex_id;
-  const mangadex_updated_at = payload.mangadex_updated_at ?? null;
+async function fetchRecentMangaUpdated(limit: number, offset: number) {
+  const url = new URL("https://api.mangadex.org/manga");
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("offset", String(offset));
+  url.searchParams.set("order[updatedAt]", "desc");
+  url.searchParams.append("includes[]", "cover_art");
+  url.searchParams.append("includes[]", "author");
+  url.searchParams.append("includes[]", "artist");
 
-  if (state_id && mangadex_id && mangadex_updated_at) {
-    const { data: existing, error: existErr } = await supabaseAdmin
-      .from("mangadex_delta_log")
-      .select("id")
-      .eq("state_id", state_id)
-      .eq("mangadex_id", mangadex_id)
-      .eq("mangadex_updated_at", mangadex_updated_at)
-      .limit(1);
+  const r = await fetch(url.toString(), { headers: { "User-Agent": "your-app-delta-sync" } });
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    throw new Error(`MangaDex /manga failed: ${r.status} ${txt}`.slice(0, 500));
+  }
+  const j = await r.json();
+  const data = (j?.data || []) as MangaDexManga[];
+  return { data };
+}
 
-    if (!existErr && existing && existing.length > 0) {
-      return { skipped: true };
+async function fetchRecentChapterUpdated(limit: number, offset: number) {
+  // This is the “homepage vibe”: chapter activity.
+  const url = new URL("https://api.mangadex.org/chapter");
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("offset", String(offset));
+  url.searchParams.set("order[updatedAt]", "desc");
+  url.searchParams.append("includes[]", "manga");
+
+  const r = await fetch(url.toString(), { headers: { "User-Agent": "your-app-delta-sync" } });
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    throw new Error(`MangaDex /chapter failed: ${r.status} ${txt}`.slice(0, 500));
+  }
+  const j = await r.json();
+  const data = (j?.data || []) as any[];
+  return { data };
+}
+
+function mdUpdatedAtFromManga(m: any): string | null {
+  const v = m?.attributes?.updatedAt || m?.attributes?.updated_at || null;
+  return typeof v === "string" ? v : null;
+}
+
+function mdUpdatedAtFromChapter(c: any): string | null {
+  const v = c?.attributes?.updatedAt || c?.attributes?.updated_at || null;
+  return typeof v === "string" ? v : null;
+}
+
+function chapterMangaId(c: any): string | null {
+  const rels = c?.relationships;
+  if (!Array.isArray(rels)) return null;
+  const m = rels.find((r: any) => r?.type === "manga");
+  return typeof m?.id === "string" ? m.id : null;
+}
+
+async function cacheCoverToStorage(opts: {
+  slug: string;
+  sourceUrls: string[];
+}): Promise<{ publicUrl: string; usedSourceUrl: string }> {
+  const { slug, sourceUrls } = opts;
+
+  let lastStatus: number | null = null;
+  let lastUrl: string | null = null;
+
+  for (const url of sourceUrls) {
+    lastUrl = url;
+
+    const imgRes = await fetch(url, { headers: { "User-Agent": "your-app-cover-cacher" } });
+    if (!imgRes.ok) {
+      lastStatus = imgRes.status;
+      continue;
     }
+
+    const contentType = imgRes.headers.get("content-type") || "image/jpeg";
+    const buf = Buffer.from(await imgRes.arrayBuffer());
+
+    const urlPath = new URL(url).pathname.toLowerCase();
+    const ext = urlPath.includes(".png") ? "png" : "jpg";
+    const path = `${slug}/cover.${ext}`;
+
+    const { error: upErr } = await supabaseAdmin.storage.from("manga-covers").upload(path, buf, {
+      contentType,
+      upsert: true,
+      metadata: {
+        source: "mangadex",
+        image: { type: "cover", resolution: "best_available", format: ext },
+      },
+    });
+
+    if (upErr) throw upErr;
+
+    const { data: pub } = supabaseAdmin.storage.from("manga-covers").getPublicUrl(path);
+    return { publicUrl: pub.publicUrl, usedSourceUrl: url };
   }
 
-  const { error: insErr } = await supabaseAdmin.from("mangadex_delta_log").insert(payload);
-  if (insErr) throw insErr;
-  return { skipped: false };
+  throw new Error(`Failed to download cover from candidates. Last: ${lastUrl} (status ${lastStatus})`);
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  res.setHeader("cache-control", "no-store");
-
   try {
     requireAdmin(req);
 
@@ -204,53 +175,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       process.env.SUPABASE_PROJECT_URL ||
       null;
 
-    // Controls
-    const stateId = String(req.query.state_id || "titles_delta");
+    const mode = String(req.query.mode || "manga"); // "manga" | "chapter"
+    const peek = String(req.query.peek || "") === "1";
+    const force = String(req.query.force || "") === "1";
+
+    // default state_ids so you can keep separate cursors
+    const stateId = String(
+      req.query.state_id ||
+        (mode === "chapter" ? "chapters_delta" : "titles_delta")
+    );
+
     const maxPages = Math.max(1, Math.min(50, Number(req.query.max_pages || 5)));
     const hardCap = Math.max(1, Math.min(5000, Number(req.query.hard_cap || 500)));
 
-    // Debug helpers
-    const peek = String(req.query.peek || "") === "1"; // show what MangaDex returns
-    const force = String(req.query.force || "") === "1"; // ignore cursor stop (TEST ONLY)
-    const debugMdId = typeof req.query.md_id === "string" ? req.query.md_id : null;
-
-    // DEBUG MODE: check if a specific md id exists already
-    if (debugMdId) {
-      const { data: beforeLink, error: beforeLinkErr } = await supabaseAdmin
-        .from("manga_external_ids")
-        .select("manga_id, source, external_id")
-        .eq("source", "mangadex")
-        .eq("external_id", debugMdId)
-        .maybeSingle();
-
-      if (beforeLinkErr) throw beforeLinkErr;
-
-      let beforeRaw: any = null;
-
-      if (beforeLink?.manga_id) {
-        const { data: b, error: bErr } = await supabaseAdmin
-          .from("manga")
-          .select("id, slug, title, source")
-          .eq("id", beforeLink.manga_id)
-          .maybeSingle();
-
-        if (bErr) throw bErr;
-        beforeRaw = b;
-      }
-
-      return res.status(200).json({
-        ok: true,
-        mode: "debug_md_id",
-        build_stamp: BUILD_STAMP,
-        supabase_url: supabaseUrl,
-        md_id: debugMdId,
-        before_link: beforeLink,
-        before_manga: beforeRaw,
-        inferred_action: beforeRaw?.id ? "update" : "insert",
-      });
-    }
-
-    // Load crawl state
     const { data: st, error: stErr } = await supabaseAdmin
       .from("mangadex_crawl_state")
       .select("*")
@@ -258,86 +195,138 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .maybeSingle();
 
     if (stErr) throw stErr;
+    if (!st) {
+      throw new Error(
+        `mangadex_crawl_state row not found for id="${stateId}". Create it (same schema as titles_delta).`
+      );
+    }
 
     const pageLimit = st?.page_limit ?? 100;
+
     const cursorUpdatedAt: string | null = st?.cursor_updated_at ?? null;
     const cursorLastId: string | null = st?.cursor_last_id ?? null;
+    const cursorMs = parseIsoMs(cursorUpdatedAt);
 
-    // PEEK MODE: show the top results MangaDex returns for /manga updatedAt
     if (peek) {
-      const { data } = await fetchRecentUpdated(10, 0);
+      if (mode === "chapter") {
+        const { data } = await fetchRecentChapterUpdated(10, 0);
+        const peekRows = data.map((c: any) => ({
+          id: c?.id ?? null,
+          updatedAt: mdUpdatedAtFromChapter(c),
+          mangaId: chapterMangaId(c),
+        }));
 
+        return res.status(200).json({
+          ok: true,
+          mode: "peek_chapter",
+          build_stamp: BUILD_STAMP,
+          supabase_url: supabaseUrl,
+          state_id: stateId,
+          cursor_before: { cursorUpdatedAt, cursorLastId },
+          peek: peekRows,
+          note:
+            "This is MangaDex /chapter order[updatedAt]=desc. This matches the homepage-style activity.",
+        });
+      }
+
+      const { data } = await fetchRecentMangaUpdated(10, 0);
       const peekRows = data.map((m: any) => ({
         id: m?.id ?? null,
-        updatedAt: parseUpdatedAt(m),
-        title: safeTitleFromMd(m),
+        updatedAt: mdUpdatedAtFromManga(m),
+        title:
+          m?.attributes?.title?.en ||
+          (m?.attributes?.title ? Object.values(m.attributes.title)[0] : null) ||
+          null,
       }));
 
       return res.status(200).json({
         ok: true,
-        mode: "peek",
+        mode: "peek_manga",
         build_stamp: BUILD_STAMP,
         supabase_url: supabaseUrl,
         state_id: stateId,
         cursor_before: { cursorUpdatedAt, cursorLastId },
         peek: peekRows,
         note:
-          "This is MangaDex /manga order[updatedAt]=desc. If these updatedAt values are not newer than cursorUpdatedAt, processed will be 0. This endpoint is for manga metadata updates, not chapter feed.",
+          "This is MangaDex /manga order[updatedAt]=desc (manga metadata). NOT the same as homepage recent chapter updates.",
       });
     }
 
-    let processed = 0;
+    let processedRecords = 0; // how many feed records we advanced through (manga or chapter)
+    let refreshedManga = 0; // how many manga we actually upserted
     let pages = 0;
     let offset = 0;
 
-    // Cursor advance uses MAX updatedAt seen while we actually process items
-    let maxSeenUpdatedAt: string | null = cursorUpdatedAt;
-    let newestIdForInfo: string | null = null;
+    let newestUpdatedAt: string | null = null;
+    let newestId: string | null = null;
 
-    const touched: Array<{
-      mangadex_id: string;
-      manga_id: string;
-      updatedAt: string | null;
-      action: string;
-      logged: boolean;
-    }> = [];
+    // In chapter mode, many chapters can point to the same manga.
+    // We still advance the cursor based on chapter feed, but only refresh each manga once per run.
+    const refreshedThisRun = new Set<string>();
 
-    outer: while (pages < maxPages && processed < hardCap) {
-      const { data } = await fetchRecentUpdated(pageLimit, offset);
+    const sample: any[] = [];
+
+    outer: while (pages < maxPages && processedRecords < hardCap) {
+      const feed =
+        mode === "chapter"
+          ? await fetchRecentChapterUpdated(pageLimit, offset)
+          : await fetchRecentMangaUpdated(pageLimit, offset);
+
+      const data = feed.data as any[];
       pages += 1;
 
       if (!data.length) break;
 
-      for (const m of data) {
-        if (processed >= hardCap) break outer;
+      for (const item of data) {
+        if (processedRecords >= hardCap) break outer;
 
-        const mdId = (m as any)?.id as string;
-        const updatedAt = parseUpdatedAt(m);
+        const feedId: string = String(item?.id || "");
+        const updatedAt: string | null =
+          mode === "chapter" ? mdUpdatedAtFromChapter(item) : mdUpdatedAtFromManga(item);
 
-        // Stop condition (cursor) — robust version:
-        // ONLY time-based. No UUID tie-breaking.
-        if (!force && cursorUpdatedAt && updatedAt) {
-          if (updatedAt < cursorUpdatedAt) break outer;
+        const updatedMs = parseIsoMs(updatedAt);
+
+        // cursor stop (numeric time compare; tie-break by id)
+        if (!force && cursorMs != null && updatedMs != null) {
+          if (updatedMs < cursorMs) break outer;
+          if (updatedMs === cursorMs && cursorLastId && feedId <= cursorLastId) break outer;
         }
 
-        // If updatedAt is null, we still allow processing in force mode only
-        if (!updatedAt && !force) {
-          // If MangaDex returns null updatedAt (rare), skip to avoid weird cursor behavior
+        // record newest cursor from the first valid record we see (feed is desc)
+        if (!newestUpdatedAt && updatedAt) {
+          newestUpdatedAt = updatedAt;
+          newestId = feedId;
+        }
+
+        processedRecords += 1;
+
+        // Determine which manga to refresh
+        const mdMangaId =
+          mode === "chapter" ? chapterMangaId(item) : feedId;
+
+        if (!mdMangaId) {
+          sample.push({ feed_id: feedId, updatedAt, skipped: "no_manga_id" });
           continue;
         }
 
-        // BEFORE: do we already have it? (via manga_external_ids)
+        // only refresh each manga once per run (especially in chapter mode)
+        if (refreshedThisRun.has(mdMangaId)) {
+          sample.push({ feed_id: feedId, updatedAt, manga: mdMangaId, skipped: "already_refreshed_this_run" });
+          continue;
+        }
+        refreshedThisRun.add(mdMangaId);
+
+        // BEFORE: existing link -> existing manga row
         const { data: beforeLink, error: beforeLinkErr } = await supabaseAdmin
           .from("manga_external_ids")
           .select("manga_id")
           .eq("source", "mangadex")
-          .eq("external_id", mdId)
+          .eq("external_id", mdMangaId)
           .maybeSingle();
 
         if (beforeLinkErr) throw beforeLinkErr;
 
         let beforeRaw: any = null;
-
         if (beforeLink?.manga_id) {
           const { data: b, error: bErr } = await supabaseAdmin
             .from("manga")
@@ -349,6 +338,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
           if (bErr) throw bErr;
           beforeRaw = b;
+        }
+
+        // Fetch full manga for upsert (in chapter mode we must fetch /manga/{id})
+        let m: any = item;
+        if (mode === "chapter") {
+          const url = new URL(`https://api.mangadex.org/manga/${mdMangaId}`);
+          url.searchParams.append("includes[]", "cover_art");
+          url.searchParams.append("includes[]", "author");
+          url.searchParams.append("includes[]", "artist");
+
+          const r = await fetch(url.toString(), { headers: { "User-Agent": "your-app-delta-sync" } });
+          if (!r.ok) {
+            const txt = await r.text().catch(() => "");
+            throw new Error(`MangaDex /manga/${mdMangaId} failed: ${r.status} ${txt}`.slice(0, 500));
+          }
+          const j = await r.json();
+          m = j?.data;
         }
 
         const action = beforeRaw?.id ? "update" : "insert";
@@ -369,7 +375,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         );
 
         const baseTitle =
-          titles.title_preferred || titles.title_english || titles.title || `mangadex-${mdId}`;
+          titles.title_preferred || titles.title_english || titles.title || `mangadex-${mdMangaId}`;
         const slug = slugify(baseTitle);
 
         // Upsert
@@ -388,9 +394,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           p_total_chapters: null,
           p_total_volumes: null,
           p_cover_image_url: coverUrl,
-          p_external_id: mdId,
+          p_external_id: mdMangaId,
           p_snapshot: {
-            mangadex_id: mdId,
+            mangadex_id: mdMangaId,
             attributes: (m as any).attributes,
             relationships: (m as any).relationships,
             normalized: {
@@ -407,8 +413,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
 
         if (rpcErr) throw rpcErr;
+        refreshedManga += 1;
 
-        // AFTER: load and diff
+        // AFTER: diff + log
         const { data: afterRaw, error: afterErr } = await supabaseAdmin
           .from("manga")
           .select(
@@ -422,17 +429,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const afterRow = pickComparableMangaRow(afterRaw);
         const changed = diffObjects(beforeRow, afterRow);
 
-        // Log (best effort dedupe)
-        const logResult = await insertDeltaLogOnce({
+        // Add a “trigger” hint into changed_fields without changing schema
+        const changedWithTrigger =
+          mode === "chapter"
+            ? { __trigger: { mode: "chapter", feed_id: feedId, feed_updatedAt: updatedAt }, ...changed }
+            : changed;
+
+        const { error: logErr } = await supabaseAdmin.from("mangadex_delta_log").insert({
           state_id: stateId,
-          mangadex_id: mdId,
+          mangadex_id: mdMangaId,
           manga_id: mangaId,
           mangadex_updated_at: updatedAt,
           action,
-          changed_fields: changed,
+          changed_fields: changedWithTrigger,
           before_row: beforeRow,
           after_row: afterRow,
         });
+
+        if (logErr) throw logErr;
 
         // Cache cover if missing
         if (coverCandidates.length > 0) {
@@ -445,10 +459,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
             const { error: updErr } = await supabaseAdmin
               .from("manga")
-              .update({
-                cover_image_url: cached.publicUrl,
-                image_url: cached.publicUrl,
-              })
+              .update({ cover_image_url: cached.publicUrl, image_url: cached.publicUrl })
               .eq("id", mangaId);
 
             if (updErr) throw updErr;
@@ -459,60 +470,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const { error: jobErr } = await supabaseAdmin
           .from("manga_art_jobs")
           .upsert(
-            {
-              manga_id: mangaId,
-              status: "pending",
-              updated_at: new Date().toISOString(),
-            },
+            { manga_id: mangaId, status: "pending", updated_at: new Date().toISOString() },
             { onConflict: "manga_id" }
           );
-
         if (jobErr) throw jobErr;
 
-        // Track max updatedAt seen for cursor advancement
-        if (updatedAt && (!maxSeenUpdatedAt || updatedAt > maxSeenUpdatedAt)) {
-          maxSeenUpdatedAt = updatedAt;
-          newestIdForInfo = mdId;
+        if (sample.length < 25) {
+          sample.push({ feed_id: feedId, updatedAt, manga: mdMangaId, manga_id: mangaId, action });
         }
-
-        processed += 1;
-        touched.push({
-          mangadex_id: mdId,
-          manga_id: mangaId,
-          updatedAt,
-          action,
-          logged: !logResult.skipped,
-        });
       }
 
       offset += pageLimit;
     }
 
-    // Always update heartbeat so you can tell the job ran,
-    // even when processed=0 (this is what your "last checked" shows).
+    // heartbeat always
     const { error: hbErr } = await supabaseAdmin
       .from("mangadex_crawl_state")
-      .update({
-        updated_at: new Date().toISOString(),
-        page_limit: pageLimit,
-      })
+      .update({ updated_at: new Date().toISOString(), page_limit: pageLimit, mode })
       .eq("id", stateId);
-
     if (hbErr) throw hbErr;
 
-    // Advance cursor if we processed anything and saw a newer timestamp
-    if (processed > 0 && maxSeenUpdatedAt && (!cursorUpdatedAt || maxSeenUpdatedAt > cursorUpdatedAt)) {
+    // update cursor if we moved through anything
+    if (processedRecords > 0 && newestUpdatedAt) {
       const { error: updStateErr } = await supabaseAdmin
         .from("mangadex_crawl_state")
         .update({
-          cursor_updated_at: maxSeenUpdatedAt,
-          // keep for info/debug only; we do NOT rely on it for stopping anymore
-          cursor_last_id: newestIdForInfo,
+          cursor_updated_at: newestUpdatedAt,
+          cursor_last_id: newestId,
           cursor_offset: 0,
-          processed_count: (st?.processed_count ?? 0) + processed,
-          mode: "updatedat",
-          page_limit: pageLimit,
+          processed_count: (st?.processed_count ?? 0) + processedRecords,
           updated_at: new Date().toISOString(),
+          mode,
+          page_limit: pageLimit,
         })
         .eq("id", stateId);
 
@@ -523,18 +512,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ok: true,
       build_stamp: BUILD_STAMP,
       supabase_url: supabaseUrl,
+      mode,
       state_id: stateId,
       cursor_before: { cursorUpdatedAt, cursorLastId },
-      cursor_after:
-        processed > 0
-          ? { cursorUpdatedAt: maxSeenUpdatedAt, cursorLastId: newestIdForInfo }
-          : null,
+      cursor_after: processedRecords > 0 ? { cursorUpdatedAt: newestUpdatedAt, cursorLastId: newestId } : null,
       pages,
-      processed,
+      processed: processedRecords,
+      refreshed_manga: refreshedManga,
       forced: force,
-      sample: touched.slice(0, 25),
+      sample,
       note:
-        "This tracks MangaDex manga metadata updatedAt. It will not match MangaDex homepage 'recent updates' (often chapter activity). Use ?peek=1 to compare cursor vs newest.",
+        mode === "manga"
+          ? "This tracks MangaDex /manga updatedAt (metadata). Use mode=chapter if you want homepage-style chapter activity."
+          : "This tracks MangaDex /chapter updatedAt and refreshes the parent manga so your dashboard shows constant activity.",
     });
   } catch (e: any) {
     return res.status(500).json({ error: e?.message || "Unknown error" });
