@@ -3,8 +3,6 @@ import type { NextApiRequest, NextApiResponse } from "next";
 
 const CRON_TOKEN = process.env.CRON_TOKEN || "";
 const ADMIN_SECRET = process.env.ADMIN_SECRET || "";
-
-// Prefer SITE_URL for server-side calls (set in Vercel env vars)
 const SITE_URL = process.env.SITE_URL || process.env.NEXT_PUBLIC_SITE_URL || "";
 
 // Hard timeout so this endpoint can NEVER “load forever”
@@ -15,32 +13,25 @@ function stripTrailingSlash(s: string) {
 }
 
 function getToken(req: NextApiRequest) {
-  // header token first (best), then query token (works with simple cron services)
   const headerToken = String(req.headers["x-cron-token"] || "");
   const queryToken = String(req.query.token || "");
   return headerToken || queryToken;
 }
 
-// Only forward safe, expected query params to admin endpoint
 function pickQuery(req: NextApiRequest) {
-  const out: Record<string, string> = {};
+  // Only allow known params to be forwarded
+  const mode = typeof req.query.mode === "string" ? req.query.mode : undefined;
+  const state_id = typeof req.query.state_id === "string" ? req.query.state_id : undefined;
 
-  const allow = [
-    "mode",
-    "state_id",
-    "max_pages",
-    "hard_cap",
-    "force",
-    "peek",
-    "md_id",
-  ] as const;
+  const max_pages = typeof req.query.max_pages === "string" ? req.query.max_pages : undefined;
+  const hard_cap = typeof req.query.hard_cap === "string" ? req.query.hard_cap : undefined;
 
-  for (const k of allow) {
-    const v = req.query[k];
-    if (typeof v === "string" && v.length) out[k] = v;
-  }
+  const peek = typeof req.query.peek === "string" ? req.query.peek : undefined;
+  const force = typeof req.query.force === "string" ? req.query.force : undefined;
 
-  return out;
+  const md_id = typeof req.query.md_id === "string" ? req.query.md_id : undefined;
+
+  return { mode, state_id, max_pages, hard_cap, peek, force, md_id };
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -58,19 +49,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const base = stripTrailingSlash(SITE_URL);
 
-    const qs = new URLSearchParams(pickQuery(req));
+    const q = pickQuery(req);
 
     // defaults if not provided
-    if (!qs.get("max_pages")) qs.set("max_pages", "5");
-    if (!qs.get("hard_cap")) qs.set("hard_cap", "500");
+    const mode = q.mode || "manga";
+    const stateId = q.state_id || (mode === "chapter" ? "chapters_delta" : "titles_delta");
+    const maxPages = q.max_pages || "5";
+    const hardCap = q.hard_cap || "500";
 
-    const url = `${base}/api/admin/mangadex-delta-sync?${qs.toString()}`;
+    const url = new URL(`${base}/api/admin/mangadex-delta-sync`);
+    url.searchParams.set("mode", mode);
+    url.searchParams.set("state_id", stateId);
+    url.searchParams.set("max_pages", maxPages);
+    url.searchParams.set("hard_cap", hardCap);
+
+    if (q.peek != null) url.searchParams.set("peek", q.peek);
+    if (q.force != null) url.searchParams.set("force", q.force);
+    if (q.md_id != null) url.searchParams.set("md_id", q.md_id);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
     try {
-      const r = await fetch(url, {
+      const r = await fetch(url.toString(), {
         method: "GET",
         headers: {
           "x-admin-secret": ADMIN_SECRET,
@@ -80,10 +81,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         cache: "no-store",
       });
 
-      const upstreamStatus = r.status;
       const upstreamText = await r.text();
-
-      res.status(upstreamStatus);
+      res.status(r.status);
       res.setHeader("content-type", r.headers.get("content-type") || "application/json; charset=utf-8");
       return res.send(upstreamText);
     } finally {
@@ -93,7 +92,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const msg =
       String(e?.name || "") === "AbortError"
         ? `upstream timed out after ${TIMEOUT_MS}ms`
-        : (e?.message || "unknown error");
+        : e?.message || "unknown error";
 
     return res.status(504).json({ ok: false, error: msg });
   }
