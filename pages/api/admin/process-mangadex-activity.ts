@@ -2,7 +2,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
-const BUILD_STAMP = "processor-queue-2026-01-24-02";
+const BUILD_STAMP = "processor-queue-2026-01-24-03";
 
 function requireAdmin(req: NextApiRequest) {
   const secret = req.headers["x-admin-secret"];
@@ -41,50 +41,66 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const batchSize = Math.max(1, Math.min(50, asInt(req.query.batch, 15)));
     const lockSeconds = Math.max(30, Math.min(600, asInt(req.query.lock_seconds, 180)));
 
-    // -----------------------------
-    // A) ENQUEUE: recent activity -> queue (FAST)
-    // IMPORTANT: do NOT overwrite status here.
-    // -----------------------------
+    const nowIso = new Date().toISOString();
+
+    // -------------------------------------------------
+    // A) ENQUEUE: collect recent feed activity
+    // -------------------------------------------------
     const { data: rows, error } = await supabaseAdmin
       .from("mangadex_recent_chapters")
-      .select("mangadex_manga_id, updated_at")
-      .order("updated_at", { ascending: false })
+      .select("mangadex_manga_id, mangadex_updated_at")
+      .order("mangadex_updated_at", { ascending: false })
       .limit(enqueueWindow);
 
     if (error) throw error;
 
-    const ids = (rows || [])
-      .map((r: any) => r?.mangadex_manga_id)
-      .filter((v: any) => typeof v === "string" && v.length > 0);
+    // compute newest timestamp per manga
+    const newestByManga = new Map<string, string>();
 
-    const uniqueIds = Array.from(new Set(ids));
+    for (const r of rows || []) {
+      const id = r?.mangadex_manga_id;
+      const ts = r?.mangadex_updated_at;
+      if (!id || !ts) continue;
 
-    const nowIso = new Date().toISOString();
+      const prev = newestByManga.get(id);
+      if (!prev || Date.parse(ts) > Date.parse(prev)) {
+        newestByManga.set(id, ts);
+      }
+    }
 
-    // DO NOT include `status` here, so:
-    // - new rows get default status='pending'
-    // - existing rows keep their current status (done/processing/error)
-    const enqueueRows = uniqueIds.map((mdId) => ({
-      mangadex_manga_id: mdId,
-      last_seen_at: nowIso,
-      next_run_at: nowIso,
-      updated_at: nowIso,
-    }));
+    const enqueueRows = Array.from(newestByManga.entries()).map(
+      ([mdId, feedTs]) => ({
+        mangadex_manga_id: mdId,
+        last_seen_at: nowIso,
+        next_run_at: nowIso,
+        updated_at: nowIso,
+        last_feed_updated_at: feedTs,
+      })
+    );
 
     let enqueuedRows = 0;
+
     if (enqueueRows.length > 0) {
-      const { error: upErr, data: upData } = await supabaseAdmin
+      const { data: upData, error: upErr } = await supabaseAdmin
         .from("mangadex_update_queue")
         .upsert(enqueueRows, { onConflict: "mangadex_manga_id" })
         .select("mangadex_manga_id");
 
       if (upErr) throw upErr;
-      enqueuedRows = (upData || []).length || enqueueRows.length;
+      enqueuedRows = upData?.length ?? enqueueRows.length;
     }
 
-    // -----------------------------
-    // B) CLAIM: atomically grab a small batch (FAST)
-    // -----------------------------
+    // -------------------------------------------------
+    // NEW: bump done → pending only if feed is newer
+    // -------------------------------------------------
+    const { data: bumped, error: bumpErr } =
+      await supabaseAdmin.rpc("mdq_bump_pending_if_new_feed");
+
+    if (bumpErr) throw bumpErr;
+
+    // -------------------------------------------------
+    // B) CLAIM
+    // -------------------------------------------------
     const { data: claimed, error: claimErr } = await supabaseAdmin.rpc("mdq_claim_batch", {
       p_batch: batchSize,
       p_lock_seconds: lockSeconds,
@@ -97,9 +113,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       mangadex_manga_id: string;
     }>;
 
-    // -----------------------------
-    // C) PROCESS: call delta sync for each claimed row (bounded)
-    // -----------------------------
+    // -------------------------------------------------
+    // C) PROCESS
+    // -------------------------------------------------
     const results: Array<{
       queue_id: number;
       mangadex_id: string;
@@ -146,6 +162,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
 
         if (r.ok) {
+          // fetch current last_feed_updated_at so we can mark it processed
+          const { data: row, error: fetchErr } = await supabaseAdmin
+            .from("mangadex_update_queue")
+            .select("last_feed_updated_at")
+            .eq("id", item.id)
+            .single();
+
+          if (fetchErr) throw fetchErr;
+
           const { error: doneErr } = await supabaseAdmin
             .from("mangadex_update_queue")
             .update({
@@ -153,6 +178,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               locked_until: null,
               lock_token: null,
               last_error: null,
+              last_processed_feed_updated_at: row?.last_feed_updated_at ?? null,
               updated_at: new Date().toISOString(),
             })
             .eq("id", item.id);
@@ -160,6 +186,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           if (doneErr) throw doneErr;
         } else {
           const retryAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
           const { error: errErr } = await supabaseAdmin
             .from("mangadex_update_queue")
             .update({
@@ -184,6 +211,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
 
         const retryAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
         const { error: errErr } = await supabaseAdmin
           .from("mangadex_update_queue")
           .update({
@@ -205,13 +233,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       build_stamp: BUILD_STAMP,
       baseUrl,
       enqueue_window: enqueueWindow,
-      enqueued_unique_ids: uniqueIds.length,
+      unique_ids: newestByManga.size,
       enqueued_rows: enqueuedRows,
+      bumped_pending: bumped ?? 0,
       claimed: claimedRows.length,
       processed: results.length,
       results,
-      note:
-        "Queue worker: enqueue recent activity (without overwriting status), then claim+process bounded batch to avoid timeouts.",
+      note: "Queue now reprocesses only when feed is newer. No more dead queues.",
     });
   } catch (e: any) {
     const msg = String(e?.message || e);
