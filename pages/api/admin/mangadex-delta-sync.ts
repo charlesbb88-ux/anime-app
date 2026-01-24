@@ -202,6 +202,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       req.query.state_id || (mode === "chapter" ? "chapters_delta" : "titles_delta")
     );
 
+    const singleMdMangaId =
+      typeof req.query.md_manga_id === "string" && req.query.md_manga_id.length > 0
+        ? req.query.md_manga_id
+        : null;
+
     const maxPages = Math.max(1, Math.min(50, Number(req.query.max_pages || 5)));
     const hardCap = Math.max(1, Math.min(5000, Number(req.query.hard_cap || 500)));
 
@@ -278,6 +283,157 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const refreshedThisRun = new Set<string>();
 
     const sample: any[] = [];
+
+    // SINGLE-MANGA MODE: refresh exactly one MangaDex manga id (no feed paging)
+    if (singleMdMangaId && !peek) {
+      const mdMangaId = singleMdMangaId;
+
+      // Ensure crawl state row exists (same behavior as before)
+      const { data: st, error: stErr } = await supabaseAdmin
+        .from("mangadex_crawl_state")
+        .select("*")
+        .eq("id", stateId)
+        .maybeSingle();
+
+      if (stErr) throw stErr;
+      if (!st) {
+        throw new Error(
+          `mangadex_crawl_state row not found for id="${stateId}". Create it (use mode='updatedat' to satisfy your DB constraint).`
+        );
+      }
+
+      // Look up existing manga row via external id link
+      const { data: beforeLink, error: beforeLinkErr } = await supabaseAdmin
+        .from("manga_external_ids")
+        .select("manga_id")
+        .eq("source", "mangadex")
+        .eq("external_id", mdMangaId)
+        .maybeSingle();
+
+      if (beforeLinkErr) throw beforeLinkErr;
+
+      let beforeRaw: any = null;
+      if (beforeLink?.manga_id) {
+        const { data: b, error: bErr } = await supabaseAdmin
+          .from("manga")
+          .select(
+            "id, slug, title, title_english, title_native, title_preferred, description, status, publication_year, genres, cover_image_url, image_url, external_id, source"
+          )
+          .eq("id", beforeLink.manga_id)
+          .maybeSingle();
+        if (bErr) throw bErr;
+        beforeRaw = b;
+      }
+
+      // Always fetch full manga for a precise refresh
+      const m = await fetchFullMangaById(mdMangaId);
+
+      const action = beforeRaw?.id ? "update" : "insert";
+      const beforeRow = pickComparableMangaRow(beforeRaw);
+
+      const publicationYear = (m as any)?.attributes?.year ?? null;
+      const titles = normalizeMangaDexTitle(m);
+      const description = normalizeMangaDexDescription(m);
+      const status = normalizeStatus(m);
+      const { genres, themes } = splitTags(m);
+      const coverCandidates = getMangaDexCoverCandidates(m);
+      const coverUrl = coverCandidates[0] || null;
+      const { authors, artists } = getCreators(m);
+
+      const mergedGenres = Array.from(new Set([...(genres || []), ...(themes || [])])).sort((a, b) =>
+        a.localeCompare(b)
+      );
+
+      const baseTitle =
+        titles.title_preferred || titles.title_english || titles.title || `mangadex-${mdMangaId}`;
+      const slug = slugify(baseTitle);
+
+      const { data: mangaId, error: rpcErr } = await supabaseAdmin.rpc("upsert_manga_from_mangadex", {
+        p_slug: slug,
+        p_title: titles.title,
+        p_title_english: titles.title_english,
+        p_title_native: titles.title_native,
+        p_title_preferred: titles.title_preferred,
+        p_description: description,
+        p_status: status,
+        p_format: null,
+        p_source: "mangadex",
+        p_genres: mergedGenres,
+        p_publication_year: publicationYear,
+        p_total_chapters: null,
+        p_total_volumes: null,
+        p_cover_image_url: coverUrl,
+        p_external_id: mdMangaId,
+        p_snapshot: {
+          mangadex_id: mdMangaId,
+          attributes: (m as any).attributes,
+          relationships: (m as any).relationships,
+          normalized: {
+            ...titles,
+            status,
+            genres,
+            themes,
+            coverUrl,
+            coverCandidates,
+            authors,
+            artists,
+          },
+        },
+      });
+
+      if (rpcErr) throw rpcErr;
+
+      const { data: afterRaw, error: afterErr } = await supabaseAdmin
+        .from("manga")
+        .select(
+          "id, slug, title, title_english, title_native, title_preferred, description, status, publication_year, genres, cover_image_url, image_url, external_id, source"
+        )
+        .eq("id", mangaId)
+        .maybeSingle();
+
+      if (afterErr) throw afterErr;
+
+      const afterRow = pickComparableMangaRow(afterRaw);
+      const changed = diffObjects(beforeRow, afterRow);
+
+      const changedWithTrigger = {
+        __trigger: { mode: "single_manga", md_manga_id: mdMangaId },
+        ...changed,
+      };
+
+      const mdUpdatedAt = mdUpdatedAtFromManga(m);
+
+      const { error: logErr } = await supabaseAdmin.from("mangadex_delta_log").insert({
+        state_id: stateId,
+        mangadex_id: mdMangaId,
+        manga_id: mangaId,
+        mangadex_updated_at: mdUpdatedAt,
+        action,
+        changed_fields: changedWithTrigger,
+        before_row: beforeRow,
+        after_row: afterRow,
+      });
+
+      if (logErr) throw logErr;
+
+      // enqueue art job (idempotent)
+      const { error: jobErr } = await supabaseAdmin
+        .from("manga_art_jobs")
+        .upsert({ manga_id: mangaId, status: "pending", updated_at: new Date().toISOString() }, { onConflict: "manga_id" });
+      if (jobErr) throw jobErr;
+
+      return res.status(200).json({
+        ok: true,
+        build_stamp: BUILD_STAMP,
+        mode: "single_manga",
+        state_id: stateId,
+        mangadex_id: mdMangaId,
+        manga_id: mangaId,
+        action,
+        mangadex_updated_at: mdUpdatedAt,
+        changed_fields: changed,
+      });
+    }
 
     outer: while (pages < maxPages && processedRecords < hardCap) {
       const feed =
