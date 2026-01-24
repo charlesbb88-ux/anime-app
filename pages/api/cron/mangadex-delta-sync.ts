@@ -1,9 +1,10 @@
+// pages/api/cron/mangadex-delta-sync.ts
 import type { NextApiRequest, NextApiResponse } from "next";
 
 const CRON_TOKEN = process.env.CRON_TOKEN || "";
 const ADMIN_SECRET = process.env.ADMIN_SECRET || "";
 
-// Prefer SITE_URL for server-side calls (set in Vercel env vars)
+// Prefer SITE_URL for server-side calls (set this in Vercel env vars)
 const SITE_URL = process.env.SITE_URL || process.env.NEXT_PUBLIC_SITE_URL || "";
 
 // Hard timeout so this endpoint can NEVER “load forever”
@@ -20,52 +21,42 @@ function getToken(req: NextApiRequest) {
   return headerToken || queryToken;
 }
 
-function toSingle(v: unknown): string | null {
-  if (typeof v === "string") return v;
-  if (Array.isArray(v) && typeof v[0] === "string") return v[0];
-  return null;
-}
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // Always disable caching for cron endpoints
   res.setHeader("cache-control", "no-store");
 
   try {
     const token = getToken(req);
-
     if (!CRON_TOKEN || token !== CRON_TOKEN) {
       return res.status(401).json({ ok: false, error: "unauthorized" });
     }
 
-    if (!SITE_URL) {
-      return res.status(500).json({ ok: false, error: "missing SITE_URL env" });
-    }
+    if (!SITE_URL) return res.status(500).json({ ok: false, error: "missing SITE_URL env" });
+    if (!ADMIN_SECRET) return res.status(500).json({ ok: false, error: "missing ADMIN_SECRET env" });
 
-    if (!ADMIN_SECRET) {
-      return res.status(500).json({ ok: false, error: "missing ADMIN_SECRET env" });
-    }
-
-    // Build upstream URL and forward ALL query params except token
     const base = stripTrailingSlash(SITE_URL);
-    const upstream = new URL(`${base}/api/admin/mangadex-delta-sync`);
 
-    // Copy query params through (excluding token)
-    // This is the main fix: mode/state_id/peek/force/etc now work via cron.
-    for (const [k, raw] of Object.entries(req.query || {})) {
+    // Forward ALL query params except token
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(req.query)) {
       if (k === "token") continue;
-      const v = toSingle(raw);
-      if (v != null && v !== "") upstream.searchParams.set(k, v);
+      if (Array.isArray(v)) {
+        for (const item of v) qs.append(k, String(item));
+      } else if (v != null) {
+        qs.set(k, String(v));
+      }
     }
 
-    // Sensible defaults if caller didn’t set them
-    if (!upstream.searchParams.get("max_pages")) upstream.searchParams.set("max_pages", "5");
-    if (!upstream.searchParams.get("hard_cap")) upstream.searchParams.set("hard_cap", "500");
+    // Provide safe defaults if caller didn’t supply them
+    if (!qs.has("max_pages")) qs.set("max_pages", "5");
+    if (!qs.has("hard_cap")) qs.set("hard_cap", "500");
+
+    const url = `${base}/api/admin/mangadex-delta-sync?${qs.toString()}`;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
     try {
-      const r = await fetch(upstream.toString(), {
+      const r = await fetch(url, {
         method: "GET",
         headers: {
           "x-admin-secret": ADMIN_SECRET,
@@ -75,11 +66,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         cache: "no-store",
       });
 
-      const text = await r.text();
+      const upstreamStatus = r.status;
+      const upstreamText = await r.text();
 
-      res.status(r.status);
+      res.status(upstreamStatus);
       res.setHeader("content-type", r.headers.get("content-type") || "application/json; charset=utf-8");
-      return res.send(text);
+      return res.send(upstreamText);
     } finally {
       clearTimeout(timeout);
     }
@@ -88,7 +80,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       String(e?.name || "") === "AbortError"
         ? `upstream timed out after ${TIMEOUT_MS}ms`
         : e?.message || "unknown error";
-
     return res.status(504).json({ ok: false, error: msg });
   }
 }
