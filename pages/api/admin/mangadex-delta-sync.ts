@@ -12,7 +12,7 @@ import {
   type MangaDexManga,
 } from "@/lib/mangadex";
 
-const BUILD_STAMP = "delta-sync-debug-2026-01-23-02";
+const BUILD_STAMP = "delta-sync-debug-2026-01-23-03";
 
 function requireAdmin(req: NextApiRequest) {
   const secret = req.headers["x-admin-secret"];
@@ -96,7 +96,6 @@ async function fetchRecentUpdated(limit: number, offset: number) {
   return { data, total };
 }
 
-// Keep this small: only fields you want to diff in the dashboard.
 function pickComparableMangaRow(row: any) {
   if (!row) return null;
   return {
@@ -112,7 +111,7 @@ function pickComparableMangaRow(row: any) {
     genres: row.genres ?? null,
     cover_image_url: row.cover_image_url ?? null,
     image_url: row.image_url ?? null,
-    external_id: row.external_id ?? null, // ok if null; only for logging/diff
+    external_id: row.external_id ?? null,
     source: row.source ?? null,
   };
 }
@@ -145,7 +144,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       process.env.SUPABASE_PROJECT_URL ||
       null;
 
-    // DEBUG MODE: pass ?md_id=<mangadex uuid> to ONLY check what the API can see
+    // Optional debug: ?md_id=<uuid>
     const debugMdId = typeof req.query.md_id === "string" ? req.query.md_id : null;
 
     if (debugMdId) {
@@ -220,13 +219,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const mdId = (m as any)?.id as string;
         const updatedAt = parseUpdatedAt(m);
 
-        // Stop condition (cursor)
+        // Stop condition
         if (cursorUpdatedAt && updatedAt) {
           if (updatedAt < cursorUpdatedAt) break outer;
           if (updatedAt === cursorUpdatedAt && cursorLastId && mdId <= cursorLastId) break outer;
         }
 
-        // BEFORE: do we already have it? (via manga_external_ids)
         const { data: beforeLink, error: beforeLinkErr } = await supabaseAdmin
           .from("manga_external_ids")
           .select("manga_id")
@@ -254,7 +252,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const action = beforeRaw?.id ? "update" : "insert";
         const beforeRow = pickComparableMangaRow(beforeRaw);
 
-        // Normalize fields
         const publicationYear = (m as any)?.attributes?.year ?? null;
         const titles = normalizeMangaDexTitle(m);
         const description = normalizeMangaDexDescription(m);
@@ -271,7 +268,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const base = titles.title_preferred || titles.title_english || titles.title || `mangadex-${mdId}`;
         const slug = slugify(base);
 
-        // Upsert
         const { data: mangaId, error: rpcErr } = await supabaseAdmin.rpc("upsert_manga_from_mangadex", {
           p_slug: slug,
           p_title: titles.title,
@@ -307,7 +303,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         if (rpcErr) throw rpcErr;
 
-        // AFTER: load and diff
         const { data: afterRaw, error: afterErr } = await supabaseAdmin
           .from("manga")
           .select(
@@ -321,7 +316,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const afterRow = pickComparableMangaRow(afterRaw);
         const changed = diffObjects(beforeRow, afterRow);
 
-        // Log touch (action + diff)
         await supabaseAdmin.from("mangadex_delta_log").insert({
           state_id: stateId,
           mangadex_id: mdId,
@@ -333,7 +327,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           after_row: afterRow,
         });
 
-        // Cache cover if missing
         if (coverCandidates.length > 0) {
           const alreadyHasCover = Boolean(afterRaw?.cover_image_url || afterRaw?.image_url);
           if (!alreadyHasCover) {
@@ -354,7 +347,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           }
         }
 
-        // Enqueue art job (idempotent)
         const { error: jobErr } = await supabaseAdmin
           .from("manga_art_jobs")
           .upsert(
@@ -380,22 +372,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       offset += pageLimit;
     }
 
-    if (processed > 0) {
-      const { error: updStateErr } = await supabaseAdmin
-        .from("mangadex_crawl_state")
-        .update({
-          cursor_updated_at: newestUpdatedAt,
-          cursor_last_id: newestId,
-          cursor_offset: 0,
-          updated_at: new Date().toISOString(),
-          processed_count: (st?.processed_count ?? 0) + processed,
-          mode: "updatedat",
-          page_limit: pageLimit,
-        })
-        .eq("id", stateId);
+    // ✅ HEARTBEAT: always update updated_at so you can SEE the job is checking
+    // If processed=0, we keep cursor as-is.
+    const nextCursorUpdatedAt = processed ? newestUpdatedAt : cursorUpdatedAt;
+    const nextCursorLastId = processed ? newestId : cursorLastId;
 
-      if (updStateErr) throw updStateErr;
-    }
+    const { error: updStateErr } = await supabaseAdmin
+      .from("mangadex_crawl_state")
+      .update({
+        cursor_updated_at: nextCursorUpdatedAt,
+        cursor_last_id: nextCursorLastId,
+        cursor_offset: 0,
+        updated_at: new Date().toISOString(),
+        processed_count: (st?.processed_count ?? 0) + processed,
+        mode: "updatedat",
+        page_limit: pageLimit,
+      })
+      .eq("id", stateId);
+
+    if (updStateErr) throw updStateErr;
 
     return res.status(200).json({
       ok: true,
