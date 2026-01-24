@@ -33,7 +33,8 @@ function asInt(v: any, def: number) {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // Step 2 — Make your worker write one summary row per run
+  // Step 4) Update your worker to write a run log row
+  // A) Add this near the top inside handler
   const t0 = Date.now();
 
   try {
@@ -229,15 +230,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
-    // After processing finishes compute summary stats
+    // B) Right before you return res.status(200).json(...), add this block
     const okCount = results.filter((r) => r.ok).length;
     const errCount = results.length - okCount;
     const durationMs = Date.now() - t0;
 
-    // store a small sample so the log isn't huge
     const sampleResults = results.slice(0, 20);
 
-    // Insert the run row (breadcrumb)
     const { error: logErr } = await supabaseAdmin.from("mangadex_worker_runs").insert({
       build_stamp: BUILD_STAMP,
       enqueue_window: enqueueWindow,
