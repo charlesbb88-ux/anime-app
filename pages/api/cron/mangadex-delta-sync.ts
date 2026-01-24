@@ -4,7 +4,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 const CRON_TOKEN = process.env.CRON_TOKEN || "";
 const ADMIN_SECRET = process.env.ADMIN_SECRET || "";
 
-// Prefer SITE_URL for server-side calls (set this in Vercel env vars)
+// Prefer SITE_URL for server-side calls (set in Vercel env vars)
 const SITE_URL = process.env.SITE_URL || process.env.NEXT_PUBLIC_SITE_URL || "";
 
 // Hard timeout so this endpoint can NEVER “load forever”
@@ -21,11 +21,34 @@ function getToken(req: NextApiRequest) {
   return headerToken || queryToken;
 }
 
+// Only forward safe, expected query params to admin endpoint
+function pickQuery(req: NextApiRequest) {
+  const out: Record<string, string> = {};
+
+  const allow = [
+    "mode",
+    "state_id",
+    "max_pages",
+    "hard_cap",
+    "force",
+    "peek",
+    "md_id",
+  ] as const;
+
+  for (const k of allow) {
+    const v = req.query[k];
+    if (typeof v === "string" && v.length) out[k] = v;
+  }
+
+  return out;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   res.setHeader("cache-control", "no-store");
 
   try {
     const token = getToken(req);
+
     if (!CRON_TOKEN || token !== CRON_TOKEN) {
       return res.status(401).json({ ok: false, error: "unauthorized" });
     }
@@ -35,20 +58,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const base = stripTrailingSlash(SITE_URL);
 
-    // Forward ALL query params except token
-    const qs = new URLSearchParams();
-    for (const [k, v] of Object.entries(req.query)) {
-      if (k === "token") continue;
-      if (Array.isArray(v)) {
-        for (const item of v) qs.append(k, String(item));
-      } else if (v != null) {
-        qs.set(k, String(v));
-      }
-    }
+    const qs = new URLSearchParams(pickQuery(req));
 
-    // Provide safe defaults if caller didn’t supply them
-    if (!qs.has("max_pages")) qs.set("max_pages", "5");
-    if (!qs.has("hard_cap")) qs.set("hard_cap", "500");
+    // defaults if not provided
+    if (!qs.get("max_pages")) qs.set("max_pages", "5");
+    if (!qs.get("hard_cap")) qs.set("hard_cap", "500");
 
     const url = `${base}/api/admin/mangadex-delta-sync?${qs.toString()}`;
 
@@ -79,7 +93,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const msg =
       String(e?.name || "") === "AbortError"
         ? `upstream timed out after ${TIMEOUT_MS}ms`
-        : e?.message || "unknown error";
+        : (e?.message || "unknown error");
+
     return res.status(504).json({ ok: false, error: msg });
   }
 }
