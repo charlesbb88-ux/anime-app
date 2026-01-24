@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 type JoinedManga = { slug: string | null; title: string | null };
 
 type Row = {
-  state_id: string | null;
+  state_id: string;
   logged_at: string;
   mangadex_updated_at: string | null;
   mangadex_id: string;
@@ -16,7 +16,7 @@ type Row = {
 };
 
 type Item = {
-  state_id: string | null;
+  state_id: string;
   logged_at: string;
   mangadex_updated_at: string | null;
   mangadex_id: string;
@@ -27,7 +27,7 @@ type Item = {
   changed_fields: any | null;
 };
 
-type CrawlState = {
+type StateRow = {
   id: string;
   updated_at: string | null;
   cursor_updated_at: string | null;
@@ -37,11 +37,7 @@ type CrawlState = {
   page_limit: number | null;
 };
 
-type Props = {
-  items: Item[];
-  state: CrawlState | null;
-  stateId: string;
-};
+type Props = { items: Item[]; state: StateRow | null; stateId: string };
 
 function firstJoin(m: Row["manga"]): JoinedManga | null {
   if (!m) return null;
@@ -125,22 +121,18 @@ function actionLabel(a: string | null) {
   return v.toUpperCase();
 }
 
-function actionHelp(a: string | null) {
-  const v = normalizeAction(a);
-  if (v === "insert") return "Inserted: MangaDex ID did not exist in your DB yet, so a new row was created.";
-  if (v === "update") return "Updated: MangaDex ID already existed in your DB, fields were refreshed.";
-  if (v === "touch") return "Touched: legacy log row where action was null (UI fallback, not a real action).";
-  return `Action: "${v}" (custom/unknown).`;
-}
-
 export async function getServerSideProps(ctx: any) {
   const stateId = String(ctx?.query?.state_id || "titles_delta");
 
-  const { data: stData } = await supabaseAdmin
+  const { data: state, error: stErr } = await supabaseAdmin
     .from("mangadex_crawl_state")
     .select("id, updated_at, cursor_updated_at, cursor_last_id, processed_count, mode, page_limit")
     .eq("id", stateId)
     .maybeSingle();
+
+  if (stErr) {
+    return { props: { items: [] as Item[], state: null, stateId } };
+  }
 
   const { data, error } = await supabaseAdmin
     .from("mangadex_delta_log")
@@ -161,7 +153,7 @@ export async function getServerSideProps(ctx: any) {
     .limit(400);
 
   if (error) {
-    return { props: { items: [] as Item[], state: stData ?? null, stateId } };
+    return { props: { items: [] as Item[], state: state ?? null, stateId } };
   }
 
   const rows = (data || []) as unknown as Row[];
@@ -169,7 +161,7 @@ export async function getServerSideProps(ctx: any) {
   const items: Item[] = rows.map((r) => {
     const jm = firstJoin(r.manga);
     return {
-      state_id: r.state_id ?? null,
+      state_id: r.state_id,
       logged_at: r.logged_at,
       mangadex_updated_at: r.mangadex_updated_at ?? null,
       mangadex_id: r.mangadex_id,
@@ -181,7 +173,7 @@ export async function getServerSideProps(ctx: any) {
     };
   });
 
-  return { props: { items, state: stData ?? null, stateId } };
+  return { props: { items, state: state ?? null, stateId } };
 }
 
 export default function MangaDexDeltaPage({ items, state, stateId }: Props) {
@@ -231,34 +223,37 @@ export default function MangaDexDeltaPage({ items, state, stateId }: Props) {
     <div style={{ padding: 20, maxWidth: 1150, margin: "0 auto" }}>
       <h1 style={{ fontSize: 22, marginBottom: 6 }}>MangaDex Delta</h1>
 
-      {/* Crawl State / Heartbeat */}
-      <div style={{ border: "1px solid #222", borderRadius: 12, padding: 12, marginBottom: 14 }}>
-        <div style={{ opacity: 0.85, marginBottom: 6 }}>
-          <b>state_id:</b> <code>{stateId}</code>
-        </div>
+      <div style={{ opacity: 0.8, marginBottom: 10 }}>
+        <b>state_id:</b> <code>{stateId}</code>
+      </div>
 
-        {state ? (
-          <div style={{ display: "grid", gap: 6, opacity: 0.8, fontSize: 13 }}>
-            <div>
-              <b>last checked (state.updated_at):</b> {formatCST(state.updated_at)}{" "}
-              <ClientOnlyAgo ts={state.updated_at} />
-            </div>
-            <div>
-              <b>cursor_updated_at:</b> {formatCST(state.cursor_updated_at)}
-            </div>
-            <div>
-              <b>cursor_last_id:</b> {state.cursor_last_id ?? "-"}
-            </div>
-            <div>
-              <b>processed_count (lifetime):</b> {state.processed_count ?? 0}
-            </div>
-            <div>
-              <b>mode:</b> {state.mode ?? "-"} &nbsp;&nbsp; <b>page_limit:</b> {state.page_limit ?? "-"}
-            </div>
+      <div
+        style={{
+          border: "1px solid #222",
+          borderRadius: 12,
+          padding: 12,
+          marginBottom: 14,
+          background: "rgba(0,0,0,0.03)",
+        }}
+      >
+        <div style={{ display: "grid", gap: 6 }}>
+          <div>
+            <b>last checked (state.updated_at):</b>{" "}
+            {formatCST(state?.updated_at ?? null)} <ClientOnlyAgo ts={state?.updated_at ?? null} />
           </div>
-        ) : (
-          <div style={{ opacity: 0.7 }}>No crawl state row found for this state_id.</div>
-        )}
+          <div>
+            <b>cursor_updated_at:</b> {formatCST(state?.cursor_updated_at ?? null)}
+          </div>
+          <div>
+            <b>cursor_last_id:</b> {state?.cursor_last_id ?? "-"}
+          </div>
+          <div>
+            <b>processed_count (lifetime):</b> {state?.processed_count ?? 0}
+          </div>
+          <div>
+            <b>mode:</b> {state?.mode ?? "-"} &nbsp;&nbsp; <b>page_limit:</b> {state?.page_limit ?? "-"}
+          </div>
+        </div>
       </div>
 
       <div style={{ opacity: 0.7, marginBottom: 14, lineHeight: 1.35 }}>
@@ -336,11 +331,6 @@ export default function MangaDexDeltaPage({ items, state, stateId }: Props) {
             Hide empty diffs
           </label>
         </div>
-
-        <div style={{ opacity: 0.7, fontSize: 13 }}>
-          <b>insert</b> = brand new manga row created. <b>update</b> = existing manga refreshed.{" "}
-          <b>touch</b> = legacy row where action was null (UI fallback, not a real action).
-        </div>
       </div>
 
       {/* List */}
@@ -349,24 +339,13 @@ export default function MangaDexDeltaPage({ items, state, stateId }: Props) {
           const a = normalizeAction(it.action);
           const title = it.title ?? it.slug ?? it.mangadex_id;
 
-          const headerBadgeStyle: React.CSSProperties = {
-            fontWeight: 900,
-            minWidth: 96,
-            textTransform: "uppercase",
-            letterSpacing: 0.5,
-          };
-
           const badgeColor =
             a === "insert" ? "#1fe57a" : a === "update" ? "#4ea1ff" : a === "touch" ? "#bbb" : "#ffcc66";
 
           return (
             <details
-              key={`${it.logged_at}-${it.mangadex_id}`}
-              style={{
-                border: "1px solid #222",
-                borderRadius: 12,
-                padding: 12,
-              }}
+              key={`${it.logged_at}-${it.mangadex_id}-${it.state_id}`}
+              style={{ border: "1px solid #222", borderRadius: 12, padding: 12 }}
             >
               <summary
                 style={{
@@ -377,7 +356,9 @@ export default function MangaDexDeltaPage({ items, state, stateId }: Props) {
                   flexWrap: "wrap",
                 }}
               >
-                <span style={{ ...headerBadgeStyle, color: badgeColor }}>{actionLabel(it.action)}</span>
+                <span style={{ fontWeight: 900, minWidth: 96, color: badgeColor }}>
+                  {actionLabel(it.action)}
+                </span>
 
                 <span style={{ fontWeight: 750, flex: "1 1 320px" }}>{title}</span>
 
@@ -387,9 +368,10 @@ export default function MangaDexDeltaPage({ items, state, stateId }: Props) {
               </summary>
 
               <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-                <div style={{ opacity: 0.8 }}>{actionHelp(it.action)}</div>
-
                 <div style={{ display: "grid", gap: 6 }}>
+                  <div>
+                    <b>state_id:</b> {it.state_id}
+                  </div>
                   <div>
                     <b>slug:</b> {it.slug ?? "-"}
                   </div>
