@@ -1,19 +1,8 @@
+// pages/api/cron/mangadex-delta-sync.ts
 import type { NextApiRequest, NextApiResponse } from "next";
 
 const CRON_TOKEN = process.env.CRON_TOKEN || "";
 const ADMIN_SECRET = process.env.ADMIN_SECRET || "";
-
-// Prefer explicit SITE_URL, but fall back to Vercel’s envs safely.
-// NOTE: VERCEL_URL is usually like "myapp.vercel.app" (no https://)
-function getBaseUrl() {
-  const raw =
-    process.env.SITE_URL ||
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
-    "";
-
-  return stripTrailingSlash(raw);
-}
 
 // Hard timeout so this endpoint can NEVER “load forever”
 const TIMEOUT_MS = 25_000;
@@ -23,33 +12,37 @@ function stripTrailingSlash(s: string) {
 }
 
 function getToken(req: NextApiRequest) {
-  // header token first (best), then query token (works with simple cron services)
   const headerToken = String(req.headers["x-cron-token"] || "");
   const queryToken = String(req.query.token || "");
   return headerToken || queryToken;
 }
 
-function pickQueryString(req: NextApiRequest) {
-  // Forward these to the admin endpoint if present
-  const stateId = typeof req.query.state_id === "string" ? req.query.state_id : null;
-  const mdId = typeof req.query.md_id === "string" ? req.query.md_id : null;
+function getBaseUrl() {
+  const raw =
+    process.env.SITE_URL ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
+    "";
+  return stripTrailingSlash(raw);
+}
 
-  // These are already supported in your admin endpoint
-  const maxPages = typeof req.query.max_pages === "string" ? req.query.max_pages : "5";
-  const hardCap = typeof req.query.hard_cap === "string" ? req.query.hard_cap : "500";
-
+function buildForwardedQuery(req: NextApiRequest) {
   const qs = new URLSearchParams();
-  qs.set("max_pages", maxPages);
-  qs.set("hard_cap", hardCap);
 
-  if (stateId) qs.set("state_id", stateId);
-  if (mdId) qs.set("md_id", mdId);
+  // common knobs
+  qs.set("max_pages", String(req.query.max_pages || "5"));
+  qs.set("hard_cap", String(req.query.hard_cap || "500"));
+  qs.set("state_id", String(req.query.state_id || "titles_delta"));
+
+  // debug knobs
+  if (String(req.query.peek || "") === "1") qs.set("peek", "1");
+  if (String(req.query.force || "") === "1") qs.set("force", "1");
+  if (typeof req.query.md_id === "string" && req.query.md_id) qs.set("md_id", req.query.md_id);
 
   return qs.toString();
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // Always disable caching for cron endpoints
   res.setHeader("cache-control", "no-store");
 
   try {
@@ -71,15 +64,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(500).json({ ok: false, error: "missing ADMIN_SECRET env" });
     }
 
-    const qs = pickQueryString(req);
-    const url = `${base}/api/admin/mangadex-delta-sync?${qs}`;
+    const forwarded = buildForwardedQuery(req);
+    const url = `${base}/api/admin/mangadex-delta-sync?${forwarded}`;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-    let upstreamText = "";
-    let upstreamStatus = 0;
-    let upstreamContentType = "text/plain; charset=utf-8";
 
     try {
       const r = await fetch(url, {
@@ -92,33 +81,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         cache: "no-store",
       });
 
-      upstreamStatus = r.status;
-      upstreamContentType = r.headers.get("content-type") || upstreamContentType;
-      upstreamText = await r.text();
+      const text = await r.text();
+      const ct = r.headers.get("content-type") || "text/plain; charset=utf-8";
 
-      // If upstream returned JSON, pass it through exactly
-      if (upstreamContentType.includes("application/json")) {
-        res.status(upstreamStatus);
-        res.setHeader("content-type", upstreamContentType);
-        return res.send(upstreamText);
-      }
+      res.status(r.status);
+      res.setHeader("content-type", ct);
 
-      // Otherwise, return a wrapper so you still see status + url + body
-      res.status(upstreamStatus);
-      res.setHeader("content-type", "application/json; charset=utf-8");
-      return res.send(
-        JSON.stringify(
-          {
-            ok: upstreamStatus >= 200 && upstreamStatus < 300,
-            called: url,
-            upstream_status: upstreamStatus,
-            upstream_content_type: upstreamContentType,
-            upstream_body: upstreamText,
-          },
-          null,
-          2
-        )
-      );
+      // Pass-through the upstream response so you see exact output
+      return res.send(text);
     } finally {
       clearTimeout(timeout);
     }
