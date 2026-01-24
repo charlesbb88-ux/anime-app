@@ -33,6 +33,9 @@ function asInt(v: any, def: number) {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  // Step 2 — Make your worker write one summary row per run
+  const t0 = Date.now();
+
   try {
     requireAdmin(req);
     const baseUrl = getBaseUrl(req);
@@ -68,15 +71,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
-    const enqueueRows = Array.from(newestByManga.entries()).map(
-      ([mdId, feedTs]) => ({
-        mangadex_manga_id: mdId,
-        last_seen_at: nowIso,
-        next_run_at: nowIso,
-        updated_at: nowIso,
-        last_feed_updated_at: feedTs,
-      })
-    );
+    const enqueueRows = Array.from(newestByManga.entries()).map(([mdId, feedTs]) => ({
+      mangadex_manga_id: mdId,
+      last_seen_at: nowIso,
+      next_run_at: nowIso,
+      updated_at: nowIso,
+      last_feed_updated_at: feedTs,
+    }));
 
     let enqueuedRows = 0;
 
@@ -228,6 +229,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
+    // After processing finishes compute summary stats
+    const okCount = results.filter((r) => r.ok).length;
+    const errCount = results.length - okCount;
+    const durationMs = Date.now() - t0;
+
+    // store a small sample so the log isn't huge
+    const sampleResults = results.slice(0, 20);
+
+    // Insert the run row (breadcrumb)
+    const { error: logErr } = await supabaseAdmin.from("mangadex_worker_runs").insert({
+      build_stamp: BUILD_STAMP,
+      enqueue_window: enqueueWindow,
+      unique_ids: newestByManga.size,
+      enqueued_rows: enqueuedRows,
+      bumped_pending: Number(bumped ?? 0),
+      claimed: claimedRows.length,
+      processed: results.length,
+      ok_count: okCount,
+      error_count: errCount,
+      duration_ms: durationMs,
+      sample_results: sampleResults,
+    });
+
+    if (logErr) throw logErr;
+
     return res.status(200).json({
       ok: true,
       build_stamp: BUILD_STAMP,
@@ -238,6 +264,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       bumped_pending: bumped ?? 0,
       claimed: claimedRows.length,
       processed: results.length,
+      ok_count: okCount,
+      error_count: errCount,
+      duration_ms: durationMs,
+      sample_results: sampleResults,
       results,
       note: "Queue now reprocesses only when feed is newer. No more dead queues.",
     });
