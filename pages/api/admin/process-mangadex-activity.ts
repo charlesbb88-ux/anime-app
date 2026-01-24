@@ -2,6 +2,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
+const BUILD_STAMP = "processor-queue-2026-01-24-02";
+
 function requireAdmin(req: NextApiRequest) {
   const secret = req.headers["x-admin-secret"];
   if (!process.env.ADMIN_SECRET) throw new Error("ADMIN_SECRET not set");
@@ -35,13 +37,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     requireAdmin(req);
     const baseUrl = getBaseUrl(req);
 
-    // Tuneables (safe defaults)
-    const enqueueWindow = Math.max(50, Math.min(500, asInt(req.query.window, 300))); // how many feed rows to look at
-    const batchSize = Math.max(1, Math.min(50, asInt(req.query.batch, 15)));        // how many queue items to process
+    const enqueueWindow = Math.max(50, Math.min(500, asInt(req.query.window, 300)));
+    const batchSize = Math.max(1, Math.min(50, asInt(req.query.batch, 15)));
     const lockSeconds = Math.max(30, Math.min(600, asInt(req.query.lock_seconds, 180)));
 
     // -----------------------------
     // A) ENQUEUE: recent activity -> queue (FAST)
+    // IMPORTANT: do NOT overwrite status here.
     // -----------------------------
     const { data: rows, error } = await supabaseAdmin
       .from("mangadex_recent_chapters")
@@ -57,42 +59,42 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const uniqueIds = Array.from(new Set(ids));
 
-    // Build queue rows
     const nowIso = new Date().toISOString();
+
+    // DO NOT include `status` here, so:
+    // - new rows get default status='pending'
+    // - existing rows keep their current status (done/processing/error)
     const enqueueRows = uniqueIds.map((mdId) => ({
       mangadex_manga_id: mdId,
-      status: "pending",
       last_seen_at: nowIso,
       next_run_at: nowIso,
       updated_at: nowIso,
     }));
 
-    // Upsert into queue so new activity re-flags as pending
-    // NOTE: this only touches the new queue table.
-    let enqueued = 0;
+    let enqueuedRows = 0;
     if (enqueueRows.length > 0) {
       const { error: upErr, data: upData } = await supabaseAdmin
         .from("mangadex_update_queue")
         .upsert(enqueueRows, { onConflict: "mangadex_manga_id" })
-        .select("mangadex_manga_id"); // returns rows touched if allowed
+        .select("mangadex_manga_id");
 
       if (upErr) throw upErr;
-      enqueued = (upData || []).length || enqueueRows.length;
+      enqueuedRows = (upData || []).length || enqueueRows.length;
     }
 
     // -----------------------------
     // B) CLAIM: atomically grab a small batch (FAST)
     // -----------------------------
-    const { data: claimed, error: claimErr } = await supabaseAdmin
-      .rpc("mdq_claim_batch", { p_batch: batchSize, p_lock_seconds: lockSeconds });
+    const { data: claimed, error: claimErr } = await supabaseAdmin.rpc("mdq_claim_batch", {
+      p_batch: batchSize,
+      p_lock_seconds: lockSeconds,
+    });
 
     if (claimErr) throw claimErr;
 
     const claimedRows = (claimed || []) as Array<{
       id: number;
       mangadex_manga_id: string;
-      attempts: number;
-      lock_token: string | null;
     }>;
 
     // -----------------------------
@@ -143,7 +145,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           response: payload,
         });
 
-        // Mark DONE / ERROR in queue
         if (r.ok) {
           const { error: doneErr } = await supabaseAdmin
             .from("mangadex_update_queue")
@@ -158,7 +159,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
           if (doneErr) throw doneErr;
         } else {
-          const retryAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 min backoff
+          const retryAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
           const { error: errErr } = await supabaseAdmin
             .from("mangadex_update_queue")
             .update({
@@ -201,15 +202,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     return res.status(200).json({
       ok: true,
+      build_stamp: BUILD_STAMP,
       baseUrl,
       enqueue_window: enqueueWindow,
       enqueued_unique_ids: uniqueIds.length,
-      enqueued_rows: enqueued,
+      enqueued_rows: enqueuedRows,
       claimed: claimedRows.length,
       processed: results.length,
       results,
       note:
-        "Correct architecture: enqueue recent activity into mangadex_update_queue, then claim+process a bounded batch to avoid timeouts.",
+        "Queue worker: enqueue recent activity (without overwriting status), then claim+process bounded batch to avoid timeouts.",
     });
   } catch (e: any) {
     const msg = String(e?.message || e);
