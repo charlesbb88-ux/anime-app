@@ -1,5 +1,7 @@
 // pages/dev/mangadex-delta.tsx
 import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/router";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 type JoinedManga = { slug: string | null; title: string | null };
@@ -25,6 +27,9 @@ type Item = {
   slug: string | null;
   title: string | null;
   changed_fields: any | null;
+  trigger_mode: "manga" | "chapter" | null;
+  trigger_feed_id: string | null;
+  trigger_feed_updated_at: string | null;
 };
 
 type StateRow = {
@@ -121,6 +126,35 @@ function actionLabel(a: string | null) {
   return v.toUpperCase();
 }
 
+function badgeColorForAction(a: string | null) {
+  const v = normalizeAction(a);
+  if (v === "insert") return "#1fe57a";
+  if (v === "update") return "#4ea1ff";
+  if (v === "touch") return "#bbb";
+  return "#ffcc66";
+}
+
+function isEmptyChangedFields(obj: any) {
+  if (obj == null) return true;
+  if (typeof obj !== "object") return false;
+  if (Array.isArray(obj)) return obj.length === 0;
+  // ignore __trigger only when determining "real" diffs
+  const keys = Object.keys(obj).filter((k) => k !== "__trigger");
+  return keys.length === 0;
+}
+
+function extractTrigger(changed_fields: any): {
+  trigger_mode: "manga" | "chapter" | null;
+  trigger_feed_id: string | null;
+  trigger_feed_updated_at: string | null;
+} {
+  const t = changed_fields?.__trigger;
+  const mode = t?.mode === "chapter" ? "chapter" : t?.mode === "manga" ? "manga" : null;
+  const feedId = typeof t?.feed_id === "string" ? t.feed_id : null;
+  const feedUpdatedAt = typeof t?.feed_updatedAt === "string" ? t.feed_updatedAt : null;
+  return { trigger_mode: mode, trigger_feed_id: feedId, trigger_feed_updated_at: feedUpdatedAt };
+}
+
 export async function getServerSideProps(ctx: any) {
   const stateId = String(ctx?.query?.state_id || "titles_delta");
 
@@ -160,6 +194,8 @@ export async function getServerSideProps(ctx: any) {
 
   const items: Item[] = rows.map((r) => {
     const jm = firstJoin(r.manga);
+    const trig = extractTrigger(r.changed_fields);
+
     return {
       state_id: r.state_id,
       logged_at: r.logged_at,
@@ -170,10 +206,59 @@ export async function getServerSideProps(ctx: any) {
       slug: jm?.slug ?? null,
       title: jm?.title ?? null,
       changed_fields: r.changed_fields ?? null,
+      trigger_mode: trig.trigger_mode,
+      trigger_feed_id: trig.trigger_feed_id,
+      trigger_feed_updated_at: trig.trigger_feed_updated_at,
     };
   });
 
   return { props: { items, state: state ?? null, stateId } };
+}
+
+function StatePicker({ stateId }: { stateId: string }) {
+  const router = useRouter();
+  const [val, setVal] = useState(stateId);
+
+  useEffect(() => setVal(stateId), [stateId]);
+
+  function go(next: string) {
+    // full reload server-side (SSR) so we see new state/logs immediately
+    router.push({ pathname: router.pathname, query: { ...router.query, state_id: next } });
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+      <b>state:</b>
+      <select
+        value={val}
+        onChange={(e) => {
+          const next = e.target.value;
+          setVal(next);
+          go(next);
+        }}
+        style={{
+          padding: "10px 12px",
+          borderRadius: 10,
+          border: "1px solid #333",
+          background: "transparent",
+          color: "inherit",
+          outline: "none",
+          minWidth: 220,
+        }}
+      >
+        <option value="titles_delta">titles_delta (manga metadata feed)</option>
+        <option value="chapters_delta">chapters_delta (chapter activity feed)</option>
+      </select>
+
+      <div style={{ opacity: 0.75 }}>
+        Tip: bookmark
+        {" "}
+        <code style={{ padding: "2px 6px", border: "1px solid #222", borderRadius: 8 }}>
+          /dev/mangadex-delta?state_id=chapters_delta
+        </code>
+      </div>
+    </div>
+  );
 }
 
 export default function MangaDexDeltaPage({ items, state, stateId }: Props) {
@@ -190,16 +275,20 @@ export default function MangaDexDeltaPage({ items, state, stateId }: Props) {
       if (onlyAction !== "all" && a !== onlyAction) return false;
 
       if (hideEmptyChanges) {
-        const obj = it.changed_fields;
-        const empty =
-          obj == null ||
-          (typeof obj === "object" && !Array.isArray(obj) && Object.keys(obj).length === 0);
-        if (empty) return false;
+        if (isEmptyChangedFields(it.changed_fields)) return false;
       }
 
       if (!q) return true;
 
-      const hay = [it.title ?? "", it.slug ?? "", it.mangadex_id ?? "", it.manga_id ?? "", a]
+      const hay = [
+        it.title ?? "",
+        it.slug ?? "",
+        it.mangadex_id ?? "",
+        it.manga_id ?? "",
+        a,
+        it.trigger_mode ?? "",
+        it.trigger_feed_id ?? "",
+      ]
         .join(" ")
         .toLowerCase();
 
@@ -208,23 +297,33 @@ export default function MangaDexDeltaPage({ items, state, stateId }: Props) {
   }, [items, search, onlyAction, hideEmptyChanges]);
 
   const counts = useMemo(() => {
-    const c = { insert: 0, update: 0, touch: 0, other: 0 };
+    const c = { insert: 0, update: 0, touch: 0, other: 0, empty_diffs: 0, chapter_triggered: 0 };
     for (const it of items || []) {
       const a = normalizeAction(it.action);
       if (a === "insert") c.insert += 1;
       else if (a === "update") c.update += 1;
       else if (a === "touch") c.touch += 1;
       else c.other += 1;
+
+      if (isEmptyChangedFields(it.changed_fields)) c.empty_diffs += 1;
+      if (it.trigger_mode === "chapter") c.chapter_triggered += 1;
     }
     return c;
   }, [items]);
 
   return (
     <div style={{ padding: 20, maxWidth: 1150, margin: "0 auto" }}>
-      <h1 style={{ fontSize: 22, marginBottom: 6 }}>MangaDex Delta</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <h1 style={{ fontSize: 22, marginBottom: 6 }}>MangaDex Delta</h1>
+        <div style={{ opacity: 0.8, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <Link href="/dev" style={{ opacity: 0.9 }}>
+            /dev
+          </Link>
+        </div>
+      </div>
 
-      <div style={{ opacity: 0.8, marginBottom: 10 }}>
-        <b>state_id:</b> <code>{stateId}</code>
+      <div style={{ marginBottom: 10 }}>
+        <StatePicker stateId={stateId} />
       </div>
 
       <div
@@ -251,7 +350,22 @@ export default function MangaDexDeltaPage({ items, state, stateId }: Props) {
             <b>processed_count (lifetime):</b> {state?.processed_count ?? 0}
           </div>
           <div>
-            <b>mode:</b> {state?.mode ?? "-"} &nbsp;&nbsp; <b>page_limit:</b> {state?.page_limit ?? "-"}
+            <b>state.mode (db):</b> {state?.mode ?? "-"} &nbsp;&nbsp; <b>page_limit:</b>{" "}
+            {state?.page_limit ?? "-"}
+          </div>
+
+          <div style={{ opacity: 0.8, marginTop: 6, lineHeight: 1.35 }}>
+            {stateId === "titles_delta" ? (
+              <>
+                You are viewing <b>manga metadata</b> activity (MangaDex <code>/manga</code> updatedAt).
+                This often goes quiet for long stretches.
+              </>
+            ) : (
+              <>
+                You are viewing <b>homepage-style chapter activity</b> (MangaDex <code>/chapter</code> updatedAt).
+                Many rows will be <b>UPDATED</b> with <b>empty diffs</b> because it refreshed the manga but fields didn’t change.
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -259,19 +373,27 @@ export default function MangaDexDeltaPage({ items, state, stateId }: Props) {
       <div style={{ opacity: 0.7, marginBottom: 14, lineHeight: 1.35 }}>
         Showing <b>{filtered.length}</b> of <b>{items.length}</b> most recent rows from{" "}
         <code>mangadex_delta_log</code>.
-        <div style={{ marginTop: 6 }}>
-          <span style={{ marginRight: 10 }}>
+        <div style={{ marginTop: 6, display: "flex", gap: 14, flexWrap: "wrap" }}>
+          <span>
             NEW: <b>{counts.insert}</b>
           </span>
-          <span style={{ marginRight: 10 }}>
+          <span>
             UPDATED: <b>{counts.update}</b>
           </span>
-          <span style={{ marginRight: 10 }}>
+          <span>
             TOUCHED: <b>{counts.touch}</b>
           </span>
           {counts.other > 0 ? (
-            <span style={{ marginRight: 10 }}>
+            <span>
               OTHER: <b>{counts.other}</b>
+            </span>
+          ) : null}
+          <span>
+            EMPTY DIFFS: <b>{counts.empty_diffs}</b>
+          </span>
+          {stateId === "chapters_delta" ? (
+            <span>
+              CHAPTER-TRIGGERED: <b>{counts.chapter_triggered}</b>
             </span>
           ) : null}
         </div>
@@ -328,7 +450,7 @@ export default function MangaDexDeltaPage({ items, state, stateId }: Props) {
               checked={hideEmptyChanges}
               onChange={(e) => setHideEmptyChanges(e.target.checked)}
             />
-            Hide empty diffs
+            Hide empty diffs (ignores __trigger)
           </label>
         </div>
       </div>
@@ -338,14 +460,20 @@ export default function MangaDexDeltaPage({ items, state, stateId }: Props) {
         {filtered.map((it) => {
           const a = normalizeAction(it.action);
           const title = it.title ?? it.slug ?? it.mangadex_id;
+          const badgeColor = badgeColorForAction(it.action);
 
-          const badgeColor =
-            a === "insert" ? "#1fe57a" : a === "update" ? "#4ea1ff" : a === "touch" ? "#bbb" : "#ffcc66";
+          const emptyDiff = isEmptyChangedFields(it.changed_fields);
+          const isChapterTriggered = it.trigger_mode === "chapter";
 
           return (
             <details
               key={`${it.logged_at}-${it.mangadex_id}-${it.state_id}`}
-              style={{ border: "1px solid #222", borderRadius: 12, padding: 12 }}
+              style={{
+                border: "1px solid #222",
+                borderRadius: 12,
+                padding: 12,
+                background: emptyDiff ? "rgba(255,255,255,0.02)" : "transparent",
+              }}
             >
               <summary
                 style={{
@@ -362,12 +490,32 @@ export default function MangaDexDeltaPage({ items, state, stateId }: Props) {
 
                 <span style={{ fontWeight: 750, flex: "1 1 320px" }}>{title}</span>
 
+                {isChapterTriggered ? (
+                  <span
+                    style={{
+                      fontSize: 12,
+                      padding: "2px 8px",
+                      borderRadius: 999,
+                      border: "1px solid #333",
+                      opacity: 0.85,
+                    }}
+                  >
+                    chapter-trigger
+                  </span>
+                ) : null}
+
+                {emptyDiff ? (
+                  <span style={{ fontSize: 12, opacity: 0.7 }}>
+                    (no field diffs)
+                  </span>
+                ) : null}
+
                 <span style={{ opacity: 0.7, fontSize: 12, whiteSpace: "nowrap" }}>
                   {formatCST(it.logged_at)} <ClientOnlyAgo ts={it.logged_at} />
                 </span>
               </summary>
 
-              <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+              <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
                 <div style={{ display: "grid", gap: 6 }}>
                   <div>
                     <b>state_id:</b> {it.state_id}
@@ -391,9 +539,34 @@ export default function MangaDexDeltaPage({ items, state, stateId }: Props) {
                     <b>mangadex_updated_at:</b> {formatCST(it.mangadex_updated_at)}{" "}
                     <ClientOnlyAgo ts={it.mangadex_updated_at} />
                   </div>
+
+                  {it.trigger_mode ? (
+                    <div
+                      style={{
+                        marginTop: 6,
+                        padding: 10,
+                        borderRadius: 10,
+                        border: "1px solid #222",
+                        background: "rgba(0,0,0,0.03)",
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, marginBottom: 6 }}>Trigger</div>
+                      <div style={{ display: "grid", gap: 4 }}>
+                        <div>
+                          <b>trigger_mode:</b> {it.trigger_mode}
+                        </div>
+                        <div>
+                          <b>trigger_feed_id:</b> {it.trigger_feed_id ?? "-"}
+                        </div>
+                        <div>
+                          <b>trigger_feed_updated_at:</b> {formatCST(it.trigger_feed_updated_at)}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
 
-                <div style={{ marginTop: 6 }}>
+                <div>
                   <b>changed_fields:</b>
                   <pre
                     style={{
