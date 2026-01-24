@@ -12,7 +12,17 @@ import {
   type MangaDexManga,
 } from "@/lib/mangadex";
 
-const BUILD_STAMP = "delta-sync-debug-2026-01-24-01";
+const BUILD_STAMP = "delta-sync-debug-2026-01-24-02";
+
+/**
+ * What this rewrite fixes
+ * - The cursor stop condition is now robust (time-based only). We do NOT do UUID tie-breaking.
+ *   (Tie-breaks are not reliable with MangaDex paging and can cause processed=0 forever.)
+ * - Cursor advancement uses the MAX updatedAt seen while processing, not “first item only”.
+ * - Heartbeat is always updated so you can confirm the job ran.
+ * - Optional: idempotent-ish logging (best effort) without requiring DB schema changes.
+ * - Adds safer timeouts for MangaDex fetch to avoid “loads forever”.
+ */
 
 function requireAdmin(req: NextApiRequest) {
   const secret = req.headers["x-admin-secret"];
@@ -22,6 +32,49 @@ function requireAdmin(req: NextApiRequest) {
 
 function stripTrailingSlash(s: string) {
   return String(s || "").replace(/\/+$/, "");
+}
+
+function parseUpdatedAt(m: any): string | null {
+  const v = m?.attributes?.updatedAt || m?.attributes?.updated_at || null;
+  return typeof v === "string" ? v : null;
+}
+
+function safeTitleFromMd(m: any): string | null {
+  const t = m?.attributes?.title;
+  if (!t || typeof t !== "object") return null;
+  return (t.en as string) || (Object.values(t)[0] as string) || null;
+}
+
+async function fetchWithTimeout(url: string, ms: number, headers?: Record<string, string>) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { headers, signal: controller.signal, cache: "no-store" as any });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchRecentUpdated(limit: number, offset: number) {
+  const url = new URL("https://api.mangadex.org/manga");
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("offset", String(offset));
+  url.searchParams.set("order[updatedAt]", "desc");
+  url.searchParams.append("includes[]", "cover_art");
+  url.searchParams.append("includes[]", "author");
+  url.searchParams.append("includes[]", "artist");
+
+  const r = await fetchWithTimeout(url.toString(), 20_000, { "User-Agent": "your-app-delta-sync" });
+
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    throw new Error(`MangaDex list failed: ${r.status} ${txt}`.slice(0, 500));
+  }
+
+  const j = await r.json();
+  const data = (j?.data || []) as MangaDexManga[];
+  const total = typeof j?.total === "number" ? j.total : null;
+  return { data, total };
 }
 
 async function cacheCoverToStorage(opts: {
@@ -36,8 +89,8 @@ async function cacheCoverToStorage(opts: {
   for (const url of sourceUrls) {
     lastUrl = url;
 
-    const imgRes = await fetch(url, {
-      headers: { "User-Agent": "your-app-cover-cacher" },
+    const imgRes = await fetchWithTimeout(url, 20_000, {
+      "User-Agent": "your-app-cover-cacher",
     });
 
     if (!imgRes.ok) {
@@ -70,36 +123,6 @@ async function cacheCoverToStorage(opts: {
   throw new Error(
     `Failed to download cover from all candidates. Last: ${lastUrl} (status ${lastStatus})`
   );
-}
-
-function parseUpdatedAt(m: any): string | null {
-  const v = m?.attributes?.updatedAt || m?.attributes?.updated_at || null;
-  return typeof v === "string" ? v : null;
-}
-
-async function fetchRecentUpdated(limit: number, offset: number) {
-  const url = new URL("https://api.mangadex.org/manga");
-  url.searchParams.set("limit", String(limit));
-  url.searchParams.set("offset", String(offset));
-  url.searchParams.set("order[updatedAt]", "desc");
-  url.searchParams.append("includes[]", "cover_art");
-  url.searchParams.append("includes[]", "author");
-  url.searchParams.append("includes[]", "artist");
-
-  const r = await fetch(url.toString(), {
-    headers: { "User-Agent": "your-app-delta-sync" },
-  });
-
-  if (!r.ok) {
-    const txt = await r.text().catch(() => "");
-    throw new Error(`MangaDex list failed: ${r.status} ${txt}`.slice(0, 500));
-  }
-
-  const j = await r.json();
-  const data = (j?.data || []) as MangaDexManga[];
-  const total = typeof j?.total === "number" ? j.total : null;
-
-  return { data, total };
 }
 
 // Keep this small: only fields you want to diff in the dashboard.
@@ -141,7 +164,37 @@ function diffObjects(before: any, after: any) {
   return changes;
 }
 
+// Best-effort dedupe without requiring schema changes.
+// If you add a unique constraint later, switch this to upsert.
+async function insertDeltaLogOnce(payload: any) {
+  // If your table is large, you can delete this check. It’s only here to reduce dupes
+  // when updatedAt ties cause reprocessing.
+  const state_id = payload.state_id;
+  const mangadex_id = payload.mangadex_id;
+  const mangadex_updated_at = payload.mangadex_updated_at ?? null;
+
+  if (state_id && mangadex_id && mangadex_updated_at) {
+    const { data: existing, error: existErr } = await supabaseAdmin
+      .from("mangadex_delta_log")
+      .select("id")
+      .eq("state_id", state_id)
+      .eq("mangadex_id", mangadex_id)
+      .eq("mangadex_updated_at", mangadex_updated_at)
+      .limit(1);
+
+    if (!existErr && existing && existing.length > 0) {
+      return { skipped: true };
+    }
+  }
+
+  const { error: insErr } = await supabaseAdmin.from("mangadex_delta_log").insert(payload);
+  if (insErr) throw insErr;
+  return { skipped: false };
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  res.setHeader("cache-control", "no-store");
+
   try {
     requireAdmin(req);
 
@@ -157,8 +210,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const hardCap = Math.max(1, Math.min(5000, Number(req.query.hard_cap || 500)));
 
     // Debug helpers
-    const peek = String(req.query.peek || "") === "1";     // show what MangaDex "updatedAt" actually returns
-    const force = String(req.query.force || "") === "1";   // ignore cursor stop condition (TEST ONLY)
+    const peek = String(req.query.peek || "") === "1"; // show what MangaDex returns
+    const force = String(req.query.force || "") === "1"; // ignore cursor stop (TEST ONLY)
     const debugMdId = typeof req.query.md_id === "string" ? req.query.md_id : null;
 
     // DEBUG MODE: check if a specific md id exists already
@@ -217,10 +270,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const peekRows = data.map((m: any) => ({
         id: m?.id ?? null,
         updatedAt: parseUpdatedAt(m),
-        title:
-          m?.attributes?.title?.en ||
-          (m?.attributes?.title ? Object.values(m.attributes.title)[0] : null) ||
-          null,
+        title: safeTitleFromMd(m),
       }));
 
       return res.status(200).json({
@@ -232,7 +282,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         cursor_before: { cursorUpdatedAt, cursorLastId },
         peek: peekRows,
         note:
-          "This is MangaDex /manga order[updatedAt]=desc. If these updatedAt values are NOT newer than your cursorUpdatedAt, processed will correctly be 0.",
+          "This is MangaDex /manga order[updatedAt]=desc. If these updatedAt values are not newer than cursorUpdatedAt, processed will be 0. This endpoint is for manga metadata updates, not chapter feed.",
       });
     }
 
@@ -240,10 +290,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let pages = 0;
     let offset = 0;
 
-    let newestUpdatedAt: string | null = null;
-    let newestId: string | null = null;
+    // Cursor advance uses MAX updatedAt seen while we actually process items
+    let maxSeenUpdatedAt: string | null = cursorUpdatedAt;
+    let newestIdForInfo: string | null = null;
 
-    const touched: Array<{ mangadex_id: string; manga_id: string; updatedAt: string | null; action: string }> = [];
+    const touched: Array<{
+      mangadex_id: string;
+      manga_id: string;
+      updatedAt: string | null;
+      action: string;
+      logged: boolean;
+    }> = [];
 
     outer: while (pages < maxPages && processed < hardCap) {
       const { data } = await fetchRecentUpdated(pageLimit, offset);
@@ -257,10 +314,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const mdId = (m as any)?.id as string;
         const updatedAt = parseUpdatedAt(m);
 
-        // Stop condition (cursor) - unless force=1
+        // Stop condition (cursor) — robust version:
+        // ONLY time-based. No UUID tie-breaking.
         if (!force && cursorUpdatedAt && updatedAt) {
           if (updatedAt < cursorUpdatedAt) break outer;
-          if (updatedAt === cursorUpdatedAt && cursorLastId && mdId <= cursorLastId) break outer;
+        }
+
+        // If updatedAt is null, we still allow processing in force mode only
+        if (!updatedAt && !force) {
+          // If MangaDex returns null updatedAt (rare), skip to avoid weird cursor behavior
+          continue;
         }
 
         // BEFORE: do we already have it? (via manga_external_ids)
@@ -359,8 +422,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const afterRow = pickComparableMangaRow(afterRaw);
         const changed = diffObjects(beforeRow, afterRow);
 
-        // Log
-        const { error: logErr } = await supabaseAdmin.from("mangadex_delta_log").insert({
+        // Log (best effort dedupe)
+        const logResult = await insertDeltaLogOnce({
           state_id: stateId,
           mangadex_id: mdId,
           manga_id: mangaId,
@@ -370,8 +433,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           before_row: beforeRow,
           after_row: afterRow,
         });
-
-        if (logErr) throw logErr;
 
         // Cache cover if missing
         if (coverCandidates.length > 0) {
@@ -408,13 +469,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         if (jobErr) throw jobErr;
 
-        if (!newestUpdatedAt && updatedAt) {
-          newestUpdatedAt = updatedAt;
-          newestId = mdId;
+        // Track max updatedAt seen for cursor advancement
+        if (updatedAt && (!maxSeenUpdatedAt || updatedAt > maxSeenUpdatedAt)) {
+          maxSeenUpdatedAt = updatedAt;
+          newestIdForInfo = mdId;
         }
 
         processed += 1;
-        touched.push({ mangadex_id: mdId, manga_id: mangaId, updatedAt, action });
+        touched.push({
+          mangadex_id: mdId,
+          manga_id: mangaId,
+          updatedAt,
+          action,
+          logged: !logResult.skipped,
+        });
       }
 
       offset += pageLimit;
@@ -432,12 +500,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (hbErr) throw hbErr;
 
-    if (processed > 0) {
+    // Advance cursor if we processed anything and saw a newer timestamp
+    if (processed > 0 && maxSeenUpdatedAt && (!cursorUpdatedAt || maxSeenUpdatedAt > cursorUpdatedAt)) {
       const { error: updStateErr } = await supabaseAdmin
         .from("mangadex_crawl_state")
         .update({
-          cursor_updated_at: newestUpdatedAt,
-          cursor_last_id: newestId,
+          cursor_updated_at: maxSeenUpdatedAt,
+          // keep for info/debug only; we do NOT rely on it for stopping anymore
+          cursor_last_id: newestIdForInfo,
           cursor_offset: 0,
           processed_count: (st?.processed_count ?? 0) + processed,
           mode: "updatedat",
@@ -455,13 +525,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       supabase_url: supabaseUrl,
       state_id: stateId,
       cursor_before: { cursorUpdatedAt, cursorLastId },
-      cursor_after: processed ? { cursorUpdatedAt: newestUpdatedAt, cursorLastId: newestId } : null,
+      cursor_after:
+        processed > 0
+          ? { cursorUpdatedAt: maxSeenUpdatedAt, cursorLastId: newestIdForInfo }
+          : null,
       pages,
       processed,
       forced: force,
       sample: touched.slice(0, 25),
       note:
-        "If processed=0 consistently, MangaDex /manga updatedAt isn't advancing past your cursor. Use ?peek=1 to prove it. MangaDex homepage 'recent updates' is mostly chapter activity, not manga metadata.",
+        "This tracks MangaDex manga metadata updatedAt. It will not match MangaDex homepage 'recent updates' (often chapter activity). Use ?peek=1 to compare cursor vs newest.",
     });
   } catch (e: any) {
     return res.status(500).json({ error: e?.message || "Unknown error" });
