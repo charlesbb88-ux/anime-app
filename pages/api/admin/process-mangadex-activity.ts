@@ -12,7 +12,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     requireAdmin(req);
 
-    // 1. Get the most recent distinct MangaDex manga IDs from activity
+    // Always derive base URL safely from the incoming request
+    const proto =
+      (req.headers["x-forwarded-proto"] as string) ||
+      (req.socket as any)?.encrypted
+        ? "https"
+        : "http";
+
+    const host = req.headers.host;
+    if (!host) throw new Error("Missing host header");
+
+    const baseUrl = `${proto}://${host}`;
+
+    // 1. Get most recent distinct MangaDex manga IDs
     const { data: rows, error } = await supabaseAdmin
       .from("mangadex_recent_chapters")
       .select("mangadex_manga_id")
@@ -22,21 +34,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (error) throw error;
 
     const uniqueIds = Array.from(
-      new Set(rows.map(r => r.mangadex_manga_id).filter(Boolean))
+      new Set((rows || []).map(r => r.mangadex_manga_id).filter(Boolean))
     );
 
     const processed: string[] = [];
+    const results: any[] = [];
 
-    // 2. For each manga, just call your existing importer logic
+    // 2. Trigger your existing delta sync once per manga
     for (const mdId of uniqueIds) {
-      // Call your existing delta sync endpoint internally
-      const url = `${process.env.NEXT_PUBLIC_SITE_URL}/api/admin/mangadex-delta-sync?mode=chapter&state_id=manual-trigger&force=1&max_pages=1&hard_cap=1`;
+      const url = `${baseUrl}/api/admin/mangadex-delta-sync?mode=chapter&state_id=manual-trigger&force=1&max_pages=1&hard_cap=1`;
 
-      await fetch(url, {
+      const r = await fetch(url, {
         headers: {
           "x-admin-secret": process.env.ADMIN_SECRET!,
-          "accept": "application/json",
+          accept: "application/json",
         },
+      });
+
+      const text = await r.text().catch(() => "");
+      results.push({
+        mangadex_id: mdId,
+        status: r.status,
+        ok: r.ok,
+        response: text.slice(0, 300),
       });
 
       processed.push(mdId);
@@ -44,10 +64,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     return res.status(200).json({
       ok: true,
+      baseUrl,
       processed_count: processed.length,
       processed,
+      results,
     });
-
   } catch (e: any) {
     return res.status(500).json({ error: e?.message || "Unknown error" });
   }
