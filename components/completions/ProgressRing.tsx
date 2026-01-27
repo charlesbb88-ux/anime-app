@@ -1,25 +1,51 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useId, useMemo, useState } from "react";
 
 type CompletionKind = "anime" | "manga";
 
 type Props = {
   current: number;
   total: number;
+
+  /** overall svg size (px) */
   size?: number;
+
+  /** thickness of the ring (px) */
   stroke?: number;
 
+  /** used to build hrefs + aria labels */
   kind?: CompletionKind;
   slug?: string | null;
 
+  /** cap number of segments (ex: show at most 18 slices even if total=200) */
   segmentCap?: number;
 
-  // gap between segments in degrees
+  /** gap between segments in degrees */
   gapDeg?: number;
 
-  // how the hover label should look
-  hoverFontSize?: number;
+  /** center text sizes */
+  centerLabelFontSize?: number;
+  centerTopFontSize?: number;
+  centerBottomFontSize?: number;
+
+  /** label shown ABOVE the numbers in the center */
+  centerLabel?: string;
+
+  /** if true, hovering a segment shows its range in the center */
+  showHoverInCenter?: boolean;
+
+  /** colors */
+  filledColor?: string;
+
+  /** empty segments look */
+  emptyFillColor?: string; // usually modal bg
+  emptyInnerStrokeColor?: string; // the gray outline color
+  emptyInnerStrokeWidth?: number; // thickness of the INSIDE border
+
+  /** hover outline (also inside-only) */
+  hoveredOutlineColor?: string;
+  hoveredOutlineWidth?: number;
 };
 
 function clamp(n: number, min: number, max: number) {
@@ -34,11 +60,29 @@ function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
   };
 }
 
-function arcPath(cx: number, cy: number, r: number, startAngle: number, endAngle: number) {
-  const start = polarToCartesian(cx, cy, r, startAngle);
-  const end = polarToCartesian(cx, cy, r, endAngle);
-  const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
-  return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 1 ${end.x} ${end.y}`;
+function donutSlicePath(
+  cx: number,
+  cy: number,
+  rOuter: number,
+  rInner: number,
+  startAngle: number,
+  endAngle: number
+) {
+  const outerStart = polarToCartesian(cx, cy, rOuter, startAngle);
+  const outerEnd = polarToCartesian(cx, cy, rOuter, endAngle);
+  const innerEnd = polarToCartesian(cx, cy, rInner, endAngle);
+  const innerStart = polarToCartesian(cx, cy, rInner, startAngle);
+
+  const delta = endAngle - startAngle;
+  const largeArcFlag = delta <= 180 ? "0" : "1";
+
+  return [
+    `M ${outerStart.x} ${outerStart.y}`,
+    `A ${rOuter} ${rOuter} 0 ${largeArcFlag} 1 ${outerEnd.x} ${outerEnd.y}`,
+    `L ${innerEnd.x} ${innerEnd.y}`,
+    `A ${rInner} ${rInner} 0 ${largeArcFlag} 0 ${innerStart.x} ${innerStart.y}`,
+    "Z",
+  ].join(" ");
 }
 
 export default function ProgressRing({
@@ -46,21 +90,44 @@ export default function ProgressRing({
   total,
   size = 140,
   stroke = 22,
+
   kind,
   slug,
+
   segmentCap,
-  gapDeg = 1.1, // smaller = tighter gaps
-  hoverFontSize = 10,
+  gapDeg = 1.1,
+
+  centerLabel = "",
+  centerLabelFontSize = 11,
+  centerTopFontSize = 14,
+  centerBottomFontSize = 11,
+
+  showHoverInCenter = true,
+
+  filledColor = "#22c55e",
+
+  emptyFillColor = "#ffffff",
+  emptyInnerStrokeColor = "#d1d5db",
+  emptyInnerStrokeWidth = 3,
+
+  hoveredOutlineColor = "#111827",
+  hoveredOutlineWidth = 2,
 }: Props) {
+  const reactId = useId();
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
   const safeTotal = Math.max(0, Number.isFinite(total) ? total : 0);
   const safeCurrent = clamp(Number.isFinite(current) ? current : 0, 0, safeTotal);
   const pct = safeTotal > 0 ? safeCurrent / safeTotal : 0;
+  const percentLabel = Math.round(pct * 100);
 
   const cx = size / 2;
   const cy = size / 2;
-  const r = (size - stroke) / 2;
+
+  // ring geometry
+  const rMid = (size - stroke) / 2;
+  const rOuter = rMid + stroke / 2;
+  const rInner = rMid - stroke / 2;
 
   const segments = useMemo(() => {
     const desired = safeTotal > 0 ? safeTotal : 1;
@@ -77,11 +144,9 @@ export default function ProgressRing({
       start: number;
       end: number;
       isFilled: boolean;
-      hoverText: string; // what we show ON the segment
-      label: string; // for aria
+      label: string;
       href: string | null;
-      midAngle: number;
-      arcD: string;
+      d: string;
       angleSpan: number;
     }> = [];
 
@@ -90,11 +155,6 @@ export default function ProgressRing({
       const end = safeTotal > 0 ? Math.floor(((i + 1) * safeTotal) / segments) : 0;
 
       const isFilled = safeTotal > 0 ? end <= safeCurrent : false;
-
-      // ON-HOVER TEXT:
-      // If this is 1:1 mapping, start==end and this is the actual episode/chapter number.
-      // If capped/bucketed, show a range like "1–7".
-      const hoverText = start === end ? `${start}` : `${start}–${end}`;
 
       const href =
         slug && start > 0
@@ -105,11 +165,9 @@ export default function ProgressRing({
 
       const startAngle = i * step + gap / 2;
       const endAngle = (i + 1) * step - gap / 2;
-
       const angleSpan = endAngle - startAngle;
-      const midAngle = (startAngle + endAngle) / 2;
 
-      const arcD = angleSpan > 0 ? arcPath(cx, cy, r, startAngle, endAngle) : "";
+      const d = angleSpan > 0 ? donutSlicePath(cx, cy, rOuter, rInner, startAngle, endAngle) : "";
 
       const label =
         kind === "manga"
@@ -120,102 +178,144 @@ export default function ProgressRing({
             ? `Episode ${start}`
             : `Episodes ${start}–${end}`;
 
-      out.push({ i, start, end, isFilled, hoverText, label, href, midAngle, arcD, angleSpan });
+      out.push({ i, start, end, isFilled, label, href, d, angleSpan });
     }
 
     return out;
-  }, [segments, safeTotal, safeCurrent, kind, slug, step, gap, cx, cy, r]);
+  }, [segments, safeTotal, safeCurrent, kind, slug, step, gap, cx, cy, rOuter, rInner]);
 
-  const filledColor = "#22c55e";
-  const emptyColor = "#d1d5db";
-
-  const percentLabel = Math.round(pct * 100);
-
-  // where the hover text sits (center of the stroke)
-  const textR = r; // the arc is drawn on this radius already
   const hovered = hoveredIdx != null ? segMeta[hoveredIdx] : null;
 
-  const hoverPos = hovered
-    ? polarToCartesian(cx, cy, textR, hovered.midAngle)
-    : null;
+  // What you see in the center:
+  // 1) label (new) above
+  // 2) main number line
+  // 3) bottom detail line (hover label or %)
+  const centerTopText =
+    showHoverInCenter && hovered && safeTotal > 0
+      ? hovered.start === hovered.end
+        ? `${hovered.start}`
+        : `${hovered.start}–${hovered.end}`
+      : safeTotal > 0
+        ? `${safeCurrent} / ${safeTotal}`
+        : "—";
 
-  // if the segment is super tiny (tons of segments), text will look bad.
-  // This hides it automatically when it would be unreadable.
-  const hoverTextAllowed =
-    hovered && hovered.angleSpan >= 7; // degrees threshold — tweak if you want
+  const centerBottomText =
+    showHoverInCenter && hovered && safeTotal > 0 ? hovered.label : safeTotal > 0 ? `${percentLabel}%` : "";
+
+  // inside-only stroke helper
+  const insideStrokePaintWidth = (w: number) => Math.max(0.5, w * 2);
+
+  // Center text layout (scaled)
+  const hasLabel = Boolean(centerLabel && centerLabel.trim().length > 0);
+  const labelY = cy - centerTopFontSize - 12;
+  const topY = cy - 2;
+  const bottomY = cy + (centerBottomFontSize + 6);
 
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {/* SEGMENTS */}
-      <g>
-        {segMeta.map((seg) => {
-          if (!seg.arcD) return null;
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Progress ring">
+      {segMeta.map((seg) => {
+        if (!seg.d) return null;
 
-          const strokeColor = seg.isFilled ? filledColor : emptyColor;
+        const isHovered = hoveredIdx === seg.i;
+        const clipId = `${reactId}-clip-${seg.i}`;
 
-          const path = (
-            <path
-              d={seg.arcD}
-              fill="none"
-              stroke={strokeColor}
-              strokeWidth={stroke}
-              strokeLinecap="butt"
-              className={seg.href ? "cursor-pointer hover:opacity-90" : undefined}
-              onMouseEnter={() => setHoveredIdx(seg.i)}
-              onMouseLeave={() => setHoveredIdx((prev) => (prev === seg.i ? null : prev))}
-            />
-          );
+        const fill = seg.isFilled ? filledColor : emptyFillColor;
 
-          return seg.href ? (
-            <a key={seg.i} href={seg.href} aria-label={seg.label}>
-              {path}
-            </a>
-          ) : (
-            <g key={seg.i}>{path}</g>
-          );
-        })}
-      </g>
+        const showEmptyBorder = !seg.isFilled && emptyInnerStrokeWidth > 0;
+        const showHoverOutline = isHovered && hoveredOutlineWidth > 0;
 
-      {/* HOVER NUMBER ON TOP OF THE SEGMENT */}
-      {hoverTextAllowed && hoverPos ? (
+        const content = (
+          <g
+            onMouseEnter={() => setHoveredIdx(seg.i)}
+            onMouseLeave={() => setHoveredIdx((prev) => (prev === seg.i ? null : prev))}
+            className={seg.href ? "cursor-pointer" : undefined}
+          >
+            <defs>
+              <clipPath id={clipId}>
+                <path d={seg.d} />
+              </clipPath>
+            </defs>
+
+            {/* base tile */}
+            <path d={seg.d} fill={fill} />
+
+            {/* EMPTY inside border */}
+            {showEmptyBorder ? (
+              <path
+                d={seg.d}
+                fill="none"
+                stroke={emptyInnerStrokeColor}
+                strokeWidth={insideStrokePaintWidth(emptyInnerStrokeWidth)}
+                strokeLinejoin="round"
+                clipPath={`url(#${clipId})`}
+                pointerEvents="none"
+                opacity={1}
+              />
+            ) : null}
+
+            {/* Hover outline (inside-only) */}
+            {showHoverOutline ? (
+              <path
+                d={seg.d}
+                fill="none"
+                stroke={hoveredOutlineColor}
+                strokeWidth={insideStrokePaintWidth(hoveredOutlineWidth)}
+                strokeLinejoin="round"
+                clipPath={`url(#${clipId})`}
+                pointerEvents="none"
+                opacity={0.18}
+              />
+            ) : null}
+          </g>
+        );
+
+        return seg.href ? (
+          <a key={seg.i} href={seg.href} aria-label={seg.label}>
+            {content}
+          </a>
+        ) : (
+          <g key={seg.i} aria-label={seg.label}>
+            {content}
+          </g>
+        );
+      })}
+
+      {/* CENTER LABEL (new, above the numbers) */}
+      {hasLabel ? (
         <text
-          x={hoverPos.x}
-          y={hoverPos.y}
+          x={cx}
+          y={labelY}
           textAnchor="middle"
           dominantBaseline="middle"
-          style={{
-            fontSize: hoverFontSize,
-            fontWeight: 800,
-            fill: "#111827",
-            paintOrder: "stroke",
-            stroke: "#ffffff",
-            strokeWidth: 3,
-          }}
+          style={{ fontSize: centerLabelFontSize, fontWeight: 700, fill: "#6b7280", letterSpacing: 0.2 }}
           pointerEvents="none"
         >
-          {hovered!.hoverText}
+          {centerLabel}
         </text>
       ) : null}
 
-      {/* CENTER TEXT (keep as-is vibe) */}
+      {/* CENTER TOP (numbers/range) */}
       <text
         x={cx}
-        y={cy - 2}
+        y={topY}
         textAnchor="middle"
         dominantBaseline="middle"
-        style={{ fontSize: 14, fontWeight: 700, fill: "#111827" }}
+        style={{ fontSize: centerTopFontSize, fontWeight: 800, fill: "#111827" }}
+        pointerEvents="none"
       >
-        {safeTotal > 0 ? `${safeCurrent} of ${safeTotal}` : "—"}
+        {centerTopText}
       </text>
 
+      {/* CENTER BOTTOM (hover label or percent) */}
       <text
         x={cx}
-        y={cy + 16}
+        y={bottomY}
         textAnchor="middle"
         dominantBaseline="middle"
-        style={{ fontSize: 11, fontWeight: 500, fill: "#6b7280" }}
+        style={{ fontSize: centerBottomFontSize, fontWeight: 500, fill: "#6b7280" }}
+        pointerEvents="none"
       >
-        {safeTotal > 0 ? `${percentLabel}%` : ""}
+        {centerBottomText}
       </text>
     </svg>
   );

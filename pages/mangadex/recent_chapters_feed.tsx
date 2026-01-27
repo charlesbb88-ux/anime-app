@@ -5,8 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 
 type RecentChapterRow = {
   id: string;
-  mangadex_chapter_id: string;
-  mangadex_manga_id: string;
+  mangadex_manga_id: string | null;
   chapter: string | null;
   volume: string | null;
   title: string | null;
@@ -25,23 +24,21 @@ type FeedItem = {
   chapter_title: string | null;
   lang: string | null;
   group: string | null;
-  updated_at: string; // iso string
-  slug: string | null; // your site slug
+  updated_at: string;
+
+  ink_manga_id: string | null;
+  ink_slug: string | null;
 };
 
-// MangaDex-style grid window
 const COLS = 4;
 const ROWS_PER_COL = 6;
 const PAGE_SIZE = COLS * ROWS_PER_COL; // 24
-
-// we scan a larger window, but only show 24
 const CHAPTER_SCAN_WINDOW = 1500;
 
-// must match your manga_external_ids.source enum value
-const MANGADEX_SOURCE = "mangadex";
+const MANGA_ROUTE_PREFIX = "/manga";
 
-function safeStr(v: any): string | null {
-  return typeof v === "string" && v.trim().length > 0 ? v : null;
+function safeStr(v: unknown): string | null {
+  return typeof v === "string" && v.trim().length > 0 ? v.trim() : null;
 }
 
 function pickMangaTitleFromRawJson(raw: any): string | null {
@@ -53,7 +50,7 @@ function pickMangaTitleFromRawJson(raw: any): string | null {
     if (titleObj && typeof titleObj === "object") {
       const keys = ["en", "ja", "ko", "zh", "zh-hk"];
       for (const k of keys) {
-        const t = safeStr(titleObj[k]);
+        const t = safeStr((titleObj as any)[k]);
         if (t) return t;
       }
       const first = safeStr(Object.values(titleObj)[0]);
@@ -63,12 +60,6 @@ function pickMangaTitleFromRawJson(raw: any): string | null {
   } catch {
     return null;
   }
-}
-
-function pickCoverFromRawJson(_raw: any): string | null {
-  // You aren’t storing cover in this table right now, so keep placeholder.
-  // If later you store cover somewhere, implement it here.
-  return null;
 }
 
 function timeAgo(iso: string): string {
@@ -94,67 +85,73 @@ function formatVolCh(vol: string | null, ch: string | null) {
   return "Chapter";
 }
 
-async function fetchSlugMapByMangadexIds(mangadexIds: string[]) {
-  // returns Map<mangadex_manga_id, slug>
-  const out = new Map<string, string>();
+type MapResponse = {
+  ok: boolean;
+  received: number;
+  matched: number;
+  map: Record<string, { manga_id: string; slug: string | null }>;
+};
 
-  const ids = mangadexIds
-    .map((x) => safeStr(x))
-    .filter((x): x is string => !!x);
-
+async function fetchInkMap(mdMangaIds: string[]) {
+  const ids = mdMangaIds.map(safeStr).filter((x): x is string => !!x);
+  const out = new Map<string, { manga_id: string; slug: string | null }>();
   if (ids.length === 0) return out;
 
-  // 1) external_id (mangadex uuid) -> manga_id
-  const extToMangaId = new Map<string, string>();
+  const r = await fetch("/api/admin/mangadex-manga-map", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
 
-  // Supabase "in" has limits; chunk it
-  const CHUNK = 200;
+  const j = (await r.json().catch(() => null)) as MapResponse | null;
+  if (!r.ok) throw new Error((j as any)?.error || `Mapping failed (${r.status})`);
 
-  for (let i = 0; i < ids.length; i += CHUNK) {
-    const chunk = ids.slice(i, i + CHUNK);
-
-    const { data, error } = await supabase
-      .from("manga_external_ids")
-      .select("external_id, manga_id")
-      .eq("source", MANGADEX_SOURCE)
-      .in("external_id", chunk);
-
-    if (error) throw error;
-
-    for (const row of (data as any[]) || []) {
-      const ext = safeStr(row?.external_id);
-      const mid = safeStr(row?.manga_id);
-      if (ext && mid) extToMangaId.set(ext, mid);
-    }
+  for (const [ext, v] of Object.entries(j?.map || {})) {
+    const mid = safeStr(v?.manga_id);
+    const slug = safeStr(v?.slug);
+    if (mid) out.set(ext, { manga_id: mid, slug: slug || null });
   }
 
-  const mangaIds = Array.from(new Set(Array.from(extToMangaId.values())));
-  if (mangaIds.length === 0) return out;
+  return out;
+}
 
-  // 2) manga_id -> slug
-  const idToSlug = new Map<string, string>();
+/**
+ * ✅ ONLY job: ink_manga_id -> cached_url from manga_covers
+ * No timestamps. No extra columns.
+ *
+ * Assumes manga_covers has:
+ * - manga_id (FK to manga.id)
+ * - cached_url (the image)
+ *
+ * If your FK column is NOT "manga_id", change FK_COLUMN below.
+ */
+type MangaCoversRow = {
+  manga_id: string | null;
+  cached_url: string | null;
+};
 
-  for (let i = 0; i < mangaIds.length; i += CHUNK) {
-    const chunk = mangaIds.slice(i, i + CHUNK);
+async function fetchCoverMapFromMangaCovers(inkIds: string[]) {
+  const ids = inkIds.map(safeStr).filter((x): x is string => !!x);
+  const out = new Map<string, string | null>();
+  if (ids.length === 0) return out;
 
-    const { data, error } = await supabase
-      .from("manga")
-      .select("id, slug")
-      .in("id", chunk);
+  const FK_COLUMN = "manga_id"; // <- change ONLY if your column is named differently
 
-    if (error) throw error;
+  const { data, error } = await supabase
+    .from("manga_covers")
+    .select(`${FK_COLUMN}, cached_url`)
+    .in(FK_COLUMN, ids);
 
-    for (const row of (data as any[]) || []) {
-      const id = safeStr(row?.id);
-      const slug = safeStr(row?.slug);
-      if (id && slug) idToSlug.set(id, slug);
-    }
-  }
+  if (error) throw error;
 
-  // 3) ext -> slug
-  for (const [ext, mid] of extToMangaId.entries()) {
-    const slug = idToSlug.get(mid);
-    if (slug) out.set(ext, slug);
+  const rows = (data as any as MangaCoversRow[]) || [];
+
+  // pick first non-null cached_url per manga_id
+  for (const r of rows) {
+    const mid = safeStr((r as any)[FK_COLUMN]);
+    const url = safeStr(r.cached_url);
+    if (!mid || !url) continue;
+    if (!out.has(mid)) out.set(mid, url);
   }
 
   return out;
@@ -168,10 +165,7 @@ const MangadexStyleFeed: NextPage = () => {
 
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
-
-  // debug counters
   const [mappedCount, setMappedCount] = useState(0);
-  const [missingIds, setMissingIds] = useState<string[]>([]);
 
   async function fetchPage(pageIndex: number, mode: "replace" | "append") {
     const from = pageIndex * CHAPTER_SCAN_WINDOW;
@@ -182,7 +176,6 @@ const MangadexStyleFeed: NextPage = () => {
       .select(
         `
           id,
-          mangadex_chapter_id,
           mangadex_manga_id,
           chapter,
           volume,
@@ -199,8 +192,6 @@ const MangadexStyleFeed: NextPage = () => {
     if (error) throw error;
 
     const rows = (data as RecentChapterRow[]) || [];
-
-    // Deduplicate by mangadex_manga_id (newest wins)
     const byManga = new Map<string, FeedItem>();
 
     for (const r of rows) {
@@ -216,43 +207,48 @@ const MangadexStyleFeed: NextPage = () => {
       byManga.set(mdMangaId, {
         mangadex_manga_id: mdMangaId,
         title,
-        cover_url: pickCoverFromRawJson(r?.raw_json),
+        cover_url: null, // filled from manga_covers.cached_url
         chapter: safeStr(r?.chapter),
         volume: safeStr(r?.volume),
         chapter_title: safeStr(r?.title),
         lang: safeStr(r?.translated_language),
         group: safeStr(r?.group_name),
         updated_at: updatedAt,
-        slug: null,
+        ink_manga_id: null,
+        ink_slug: null,
       });
     }
 
     const unique = Array.from(byManga.values()).sort(
       (a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at)
     );
-
-    // only render 24 at a time (MangaDex style)
     const pageItems = unique.slice(0, PAGE_SIZE);
 
-    // Lookup slugs for these 24 Mangadex IDs using manga_external_ids -> manga -> slug
-    const mdIds = pageItems.map((x) => x.mangadex_manga_id);
-    const slugMap = await fetchSlugMapByMangadexIds(mdIds);
+    // 1) map mangadex -> ink id + ink slug (same as before)
+    const map = await fetchInkMap(pageItems.map((x) => x.mangadex_manga_id));
+    const withInk = pageItems.map((it) => {
+      const hit = map.get(it.mangadex_manga_id);
+      return {
+        ...it,
+        ink_manga_id: hit?.manga_id || null,
+        ink_slug: hit?.slug || null,
+      };
+    });
 
-    const withSlugs = pageItems.map((it) => ({
+    // 2) fetch cover images from manga_covers using ink_manga_id
+    const inkIds = withInk.map((x) => x.ink_manga_id).filter((x): x is string => !!x);
+    const coverMap = await fetchCoverMapFromMangaCovers(inkIds);
+
+    const final = withInk.map((it) => ({
       ...it,
-      slug: slugMap.get(it.mangadex_manga_id) || null,
+      cover_url: it.ink_manga_id ? coverMap.get(it.ink_manga_id) || null : null,
     }));
 
-    // debug
-    const mapped = withSlugs.filter((x) => !!x.slug).length;
-    const missing = withSlugs.filter((x) => !x.slug).map((x) => x.mangadex_manga_id);
-    setMappedCount(mapped);
-    setMissingIds(missing);
+    setMappedCount(final.filter((x) => !!x.ink_manga_id).length);
 
-    if (mode === "replace") setItems(withSlugs);
-    else setItems((prev) => [...prev, ...withSlugs]);
+    if (mode === "replace") setItems(final);
+    else setItems((prev) => [...prev, ...final]);
 
-    // if we got a full scan window, there might be more
     setHasMore(rows.length === CHAPTER_SCAN_WINDOW);
   }
 
@@ -267,7 +263,7 @@ const MangadexStyleFeed: NextPage = () => {
       } catch (e: any) {
         console.error(e);
         if (!cancelled) {
-          setError("Failed to load latest updates.");
+          setError(e?.message || "Failed to load latest updates.");
           setItems([]);
           setHasMore(false);
         }
@@ -279,6 +275,7 @@ const MangadexStyleFeed: NextPage = () => {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function onLoadMore() {
@@ -291,69 +288,59 @@ const MangadexStyleFeed: NextPage = () => {
       setPage(next);
     } catch (e: any) {
       console.error(e);
-      setError("Failed to load more.");
+      setError(e?.message || "Failed to load more.");
     } finally {
       setLoadingMore(false);
     }
   }
 
-  // MangaDex-style: fill DOWN each column
   const cols = useMemo(() => {
     const out: FeedItem[][] = Array.from({ length: COLS }, () => []);
     const slice = items.slice(0, PAGE_SIZE);
-
     for (let c = 0; c < COLS; c++) {
       const start = c * ROWS_PER_COL;
-      const end = start + ROWS_PER_COL;
-      out[c] = slice.slice(start, end);
+      out[c] = slice.slice(start, start + ROWS_PER_COL);
     }
-
     return out;
   }, [items]);
 
   return (
     <main className="min-h-screen bg-white text-gray-900">
       <div className="mx-auto max-w-6xl px-4 py-8">
-        <header className="mb-4 flex items-center justify-between gap-4">
+        <header className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight">Latest Updates</h1>
             <p className="mt-1 text-sm text-gray-500">
               From <span className="font-mono">mangadex_recent_chapters</span> • newest{" "}
-              <span className="font-mono">mangadex_updated_at</span> first{" "}
-              <span className="text-gray-400">
-                (mapped {mappedCount}/{PAGE_SIZE}
-                {missingIds.length > 0 ? ` • missing: ${missingIds.slice(0, 3).join(", ")}${missingIds.length > 3 ? "…" : ""}` : ""}
-                )
-              </span>
+              <span className="font-mono">mangadex_updated_at</span> first • mapped {mappedCount}/{PAGE_SIZE}
             </p>
           </div>
 
-          <button
-            onClick={onLoadMore}
-            disabled={!hasMore || loadingMore || loading}
-            className="flex-none rounded-md border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm hover:bg-gray-50 disabled:opacity-50"
-          >
-            {loading ? "Loading…" : loadingMore ? "Loading…" : "Load more"}
-          </button>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <button
+              onClick={onLoadMore}
+              disabled={!hasMore || loadingMore || loading}
+              className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm hover:bg-gray-50 disabled:opacity-50"
+            >
+              {loading ? "Loading…" : loadingMore ? "Loading…" : "Load more"}
+            </button>
+          </div>
         </header>
 
         {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
         {loading && <p className="text-sm text-gray-500">Loading…</p>}
 
-        {!loading && items.length === 0 && (
-          <p className="text-sm text-gray-500">No recent updates found.</p>
-        )}
+        {!loading && items.length === 0 && <p className="text-sm text-gray-500">No recent updates found.</p>}
 
         {!loading && items.length > 0 && (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
             {cols.map((col, colIdx) => (
               <div key={colIdx} className="space-y-2">
                 {col.map((it) => {
-                  const href = it.slug ? `/manga/${it.slug}` : null;
+                  const href = it.ink_slug ? `${MANGA_ROUTE_PREFIX}/${it.ink_slug}` : null;
 
-                  const card = (
+                  const Card = (
                     <div className="group flex items-start gap-3 rounded-md bg-gray-50 px-2.5 py-2 hover:bg-gray-100">
-                      {/* thumb */}
                       <div className="h-[52px] w-[40px] flex-none overflow-hidden rounded bg-gray-200">
                         {it.cover_url ? (
                           // eslint-disable-next-line @next/next/no-img-element
@@ -370,52 +357,65 @@ const MangadexStyleFeed: NextPage = () => {
                         )}
                       </div>
 
-                      {/* text */}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <div className="truncate text-[13px] font-semibold text-gray-900 group-hover:underline">
-                              {it.title}
-                            </div>
+                            <div className="truncate text-[13px] font-semibold text-gray-900">{it.title}</div>
                             <div className="mt-0.5 truncate text-[12px] text-gray-600">
                               {formatVolCh(it.volume, it.chapter)}
                               {it.chapter_title ? ` — ${it.chapter_title}` : ""}
                             </div>
                           </div>
 
-                          <div className="flex-none text-right text-[11px] text-gray-500">
-                            {timeAgo(it.updated_at)}
-                          </div>
+                          <div className="flex-none text-right text-[11px] text-gray-500">{timeAgo(it.updated_at)}</div>
                         </div>
 
                         <div className="mt-1 flex items-center gap-2 text-[11px] text-gray-500">
-                          <span className="rounded bg-white px-1.5 py-0.5 font-mono">
-                            {it.lang || "?"}
-                          </span>
+                          <span className="rounded bg-white px-1.5 py-0.5 font-mono">{it.lang || "?"}</span>
                           <span className="truncate">{it.group || "No Group"}</span>
+                        </div>
 
-                          {!it.slug && (
-                            <span className="ml-auto rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
-                              Not imported
-                            </span>
-                          )}
+                        <div className="mt-1 text-[11px] text-gray-500">
+                          <div className="truncate">
+                            <span className="font-mono">MD:</span>{" "}
+                            <span className="font-mono">{it.mangadex_manga_id}</span>
+                          </div>
+                          <div className="truncate">
+                            <span className="font-mono">INK:</span>{" "}
+                            {it.ink_manga_id ? (
+                              <>
+                                <span className="font-mono">{it.ink_manga_id}</span>
+                                {it.ink_slug ? (
+                                  <span className="ml-2 text-gray-400">
+                                    (slug: <span className="font-mono">{it.ink_slug}</span>)
+                                  </span>
+                                ) : null}
+                              </>
+                            ) : (
+                              <span className="font-semibold text-amber-700">No manga_external_ids match</span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
                   );
 
-                  return href ? (
-                    <Link key={it.mangadex_manga_id} href={href} className="block">
-                      {card}
-                    </Link>
-                  ) : (
-                    <div
+                  if (!href) {
+                    return (
+                      <div key={it.mangadex_manga_id} className="cursor-not-allowed opacity-95">
+                        {Card}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <Link
                       key={it.mangadex_manga_id}
-                      className="block cursor-not-allowed opacity-80"
-                      title={`No match in manga_external_ids for ${it.mangadex_manga_id}`}
+                      href={href}
+                      className="block rounded-md focus:outline-none focus:ring-2 focus:ring-gray-300"
                     >
-                      {card}
-                    </div>
+                      {Card}
+                    </Link>
                   );
                 })}
               </div>
