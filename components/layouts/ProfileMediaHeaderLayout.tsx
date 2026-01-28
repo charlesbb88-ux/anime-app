@@ -5,7 +5,7 @@ import React, { useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
-type Tab = "posts" | "bookmarks" | "watchlist" | "activity" | "journal" | "library";
+type Tab = "posts" | "watchlist" | "activity" | "journal" | "library" | "completions";
 
 type Props = {
   backdropUrl: string | null;
@@ -77,15 +77,13 @@ export default function ProfileMediaHeaderLayout({
 
   // ✅ match ProfileTopNav colors exactly (slate)
   function tabClass(isActive: boolean) {
-    return `pb-2 ${
-      isActive ? "border-b-2 border-slate-900 text-slate-900" : "text-slate-500 hover:text-slate-800"
-    }`;
+    return `pb-2 ${isActive ? "border-b-2 border-slate-900 text-slate-900" : "text-slate-500 hover:text-slate-800"
+      }`;
   }
 
   const computedActive: Tab = useMemo(() => {
     if (activeTab) return activeTab;
-
-    if (isPathActive(`${baseProfilePath}/bookmarks`)) return "bookmarks";
+    if (isPathActive(`${baseProfilePath}/completions`)) return "completions";
     if (isPathActive(`${baseProfilePath}/watchlist`)) return "watchlist";
     if (isPathActive(`${baseProfilePath}/activity`)) return "activity";
     if (isPathActive(`${baseProfilePath}/journal`)) return "journal";
@@ -174,35 +172,61 @@ export default function ProfileMediaHeaderLayout({
             ) : null}
           </div>
 
-          {/* Tabs row: truly centered to the full header width */}
+          {/* Tabs row: centered on desktop, scrollable on mobile (prevents page widening) */}
           <div className="mt-4">
             <div className="grid grid-cols-[1fr_auto_1fr] items-end">
               <div />
-              <nav className="flex gap-8 text-sm font-medium border-b border-slate-200">
-                <Link href={baseProfilePath} className={tabClass(computedActive === "posts")}>
-                  Posts
-                </Link>
 
-                <Link href={`${baseProfilePath}/bookmarks`} className={tabClass(computedActive === "bookmarks")}>
-                  Bookmarks
-                </Link>
+              <nav
+                className="
+                  border-b border-slate-200
+                  min-w-0
+                  overflow-x-auto whitespace-nowrap [-webkit-overflow-scrolling:touch]
+                  md:overflow-visible
+                "
+              >
+                <div className="flex gap-8 text-sm font-medium w-max md:w-auto">
+                  <Link href={baseProfilePath} className={tabClass(computedActive === "posts")}>
+                    Posts
+                  </Link>
 
-                <Link href={`${baseProfilePath}/watchlist`} className={tabClass(computedActive === "watchlist")}>
-                  Watchlist
-                </Link>
+                  <Link
+                    href={`${baseProfilePath}/completions`}
+                    className={tabClass(computedActive === "completions")}
+                  >
+                    Completions
+                  </Link>
 
-                <Link href={`${baseProfilePath}/activity`} className={tabClass(computedActive === "activity")}>
-                  Activity
-                </Link>
+                  <Link
+                    href={`${baseProfilePath}/watchlist`}
+                    className={tabClass(computedActive === "watchlist")}
+                  >
+                    Watchlist
+                  </Link>
 
-                <Link href={`${baseProfilePath}/journal`} className={tabClass(computedActive === "journal")}>
-                  Journal
-                </Link>
+                  <Link
+                    href={`${baseProfilePath}/activity`}
+                    className={tabClass(computedActive === "activity")}
+                  >
+                    Activity
+                  </Link>
 
-                <Link href={`${baseProfilePath}/library`} className={tabClass(computedActive === "library")}>
-                  My Library
-                </Link>
+                  <Link
+                    href={`${baseProfilePath}/journal`}
+                    className={tabClass(computedActive === "journal")}
+                  >
+                    Journal
+                  </Link>
+
+                  <Link
+                    href={`${baseProfilePath}/library`}
+                    className={tabClass(computedActive === "library")}
+                  >
+                    My Library
+                  </Link>
+                </div>
               </nav>
+
               <div />
             </div>
           </div>

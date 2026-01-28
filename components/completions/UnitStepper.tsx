@@ -5,8 +5,19 @@ import Link from "next/link";
 
 type Props = {
   total: number;
+
+  /** watched/read count */
   current: number;
+
+  /** reviewed count */
+  reviewed?: number;
+
+  /** rated count */
+  rated?: number;
+
+  /** used for: current border (only) */
   accent?: string;
+
   hrefBase?: string | null;
 
   label?: string;
@@ -15,39 +26,64 @@ type Props = {
   initialBatch?: number;
   batchSize?: number;
   endlessScroll?: boolean;
+
+  /** optional override colors (defaults match your rings) */
+  colorProgress?: string; // blue
+  colorReviewed?: string; // green
+  colorRated?: string; // red
 };
 
 const COLS = 5;
 
-// ✅ Better style: subtle connectors (thin + light) + sit behind tiles
+// ✅ Subtle connectors that sit behind tiles
 const CONNECTOR_W = 2;
 const CONNECTOR_EMPTY = "rgba(15,23,42,0.14)";
 const CONNECTOR_OPACITY = 0.9;
 
+// ✅ ONE KNOB: change this and ALL “fully done” black updates everywhere
+const FULLY_DONE_COLOR = "#000000";
+
 export default function UnitStepper({
   total,
   current,
-  accent = "#7C3AED",
+  reviewed = 0,
+  rated = 0,
+
+  accent = "#0EA5E9",
   hrefBase = null,
+
   label,
   rightHint,
+
   initialBatch = 25,
   batchSize = 25,
   endlessScroll = false,
+
+  colorProgress = "#0EA5E9",
+  colorReviewed = "#22C55E",
+  colorRated = "#EF4444",
 }: Props) {
   if (!Number.isFinite(total) || total < 1) {
     return <div className="text-xs text-slate-500">No units found.</div>;
   }
 
-  const focus = clampInt(current < 1 ? 1 : current, 1, total);
+  const safeTotal = clampInt(total, 1, Number.MAX_SAFE_INTEGER);
 
-  const [shown, setShown] = useState(() => Math.min(total, Math.max(1, initialBatch)));
+  // ✅ focus = "current unit" (1-based), used for current border
+  const focus = clampInt(current < 1 ? 1 : current, 1, safeTotal);
+
+  // ✅ completion states (0..total)
+  const safeCurrent = clampInt(current, 0, safeTotal);
+  const safeReviewed = clampInt(reviewed, 0, safeTotal);
+  const safeRated = clampInt(rated, 0, safeTotal);
+
+  const [shown, setShown] = useState(() => Math.min(safeTotal, Math.max(1, initialBatch)));
   useEffect(() => {
-    setShown(Math.min(total, Math.max(1, initialBatch)));
-  }, [total, initialBatch]);
+    setShown(Math.min(safeTotal, Math.max(1, initialBatch)));
+  }, [safeTotal, initialBatch]);
 
-  const canLoadMore = shown < total;
-  const loadMore = () => setShown((prev) => Math.min(total, prev + batchSize));
+  const canLoadMore = shown < safeTotal;
+  const loadMore = () => setShown((prev) => Math.min(safeTotal, prev + batchSize));
 
   const units = useMemo(() => {
     const arr: number[] = [];
@@ -56,8 +92,10 @@ export default function UnitStepper({
   }, [shown]);
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  // ✅ IMPORTANT: we measure a stable, non-inline box (the tile container div)
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const [paths, setPaths] = useState<Array<{ d: string; filled: boolean }>>([]);
+  const [paths, setPaths] = useState<Array<{ d: string; stroke: string }>>([]);
   const [svgSize, setSvgSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -80,9 +118,9 @@ export default function UnitStepper({
     obs.observe(el);
     return () => obs.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endlessScroll, canLoadMore, shown, total]);
+  }, [endlessScroll, canLoadMore, shown, safeTotal, batchSize]);
 
-  // Compute connector paths
+  // Compute connector paths (based on the stable tile boxes)
   useLayoutEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
@@ -91,7 +129,7 @@ export default function UnitStepper({
       const rect = wrap.getBoundingClientRect();
       setSvgSize({ w: rect.width, h: rect.height });
 
-      const next: Array<{ d: string; filled: boolean }> = [];
+      const next: Array<{ d: string; stroke: string }> = [];
       const EPS_SAME_ROW = 6;
 
       const getRel = (el: HTMLDivElement) => {
@@ -104,6 +142,9 @@ export default function UnitStepper({
         const cy = top + r.height / 2;
         return { left, right, top, bottom, cx, cy };
       };
+
+      // ✅ fully done: progress + review + rate
+      const fullyDone = (n: number) => n <= safeCurrent && n <= safeReviewed && n <= safeRated;
 
       for (let i = 1; i < shown; i++) {
         const a = itemRefs.current[i - 1] as HTMLDivElement | null;
@@ -118,11 +159,13 @@ export default function UnitStepper({
 
         if (!sameRow && !isRowBreak) continue;
 
-        const filled = i + 1 <= focus;
+        // ✅ connector “coming out of” tile i:
+        // fully done -> FULLY_DONE_COLOR, else -> empty gray
+        const stroke = fullyDone(i) ? FULLY_DONE_COLOR : CONNECTOR_EMPTY;
 
         if (sameRow) {
           next.push({
-            filled,
+            stroke,
             d: [`M ${A.right} ${A.cy}`, `L ${B.left} ${B.cy}`].join(" "),
           });
           continue;
@@ -141,7 +184,7 @@ export default function UnitStepper({
         trackY = Math.max(gapTop + 6, Math.min(gapBottom - 6, trackY));
 
         next.push({
-          filled,
+          stroke,
           d: [`M ${startX} ${startY}`, `L ${startX} ${trackY}`, `L ${endX} ${trackY}`, `L ${endX} ${endY}`].join(" "),
         });
       }
@@ -164,7 +207,7 @@ export default function UnitStepper({
       ro.disconnect();
       window.removeEventListener("scroll", onScroll, true);
     };
-  }, [shown, focus]);
+  }, [shown, safeCurrent, safeReviewed, safeRated]);
 
   return (
     <div className="w-full">
@@ -177,20 +220,15 @@ export default function UnitStepper({
 
       <div className={(label || rightHint) ? "mt-2" : ""}>
         <div ref={wrapRef} className="relative w-full overflow-hidden">
-          {/* Connector overlay (subtle + behind tiles) */}
-          <svg
-            width={svgSize.w}
-            height={svgSize.h}
-            className="pointer-events-none absolute inset-0"
-            style={{ zIndex: 0 }}
-          >
+          {/* Connector overlay (behind tiles) */}
+          <svg width={svgSize.w} height={svgSize.h} className="pointer-events-none absolute inset-0" style={{ zIndex: 0 }}>
             {paths.map((p, idx) => (
               <path
                 key={idx}
                 d={p.d}
                 fill="none"
                 opacity={CONNECTOR_OPACITY}
-                stroke={p.filled ? accent : CONNECTOR_EMPTY}
+                stroke={p.stroke}
                 strokeWidth={CONNECTOR_W}
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -201,15 +239,23 @@ export default function UnitStepper({
           {/* Tiles above connectors */}
           <div className="relative z-[1] grid grid-cols-5 gap-4">
             {units.map((n, idx) => (
-              <div
+              <StepperCell
                 key={n}
                 ref={(el) => {
                   itemRefs.current[idx] = el;
                 }}
-                className="w-full"
-              >
-                <StepperItem n={n} total={total} focus={focus} accent={accent} hrefBase={hrefBase} />
-              </div>
+                n={n}
+                total={safeTotal}
+                focus={focus}
+                hrefBase={hrefBase}
+                accent={accent}
+                didProgress={n <= safeCurrent}
+                didReview={n <= safeReviewed}
+                didRate={n <= safeRated}
+                colorProgress={colorProgress}
+                colorReviewed={colorReviewed}
+                colorRated={colorRated}
+              />
             ))}
           </div>
         </div>
@@ -232,71 +278,103 @@ export default function UnitStepper({
   );
 }
 
-function StepperItem({
-  n,
-  total,
-  focus,
-  accent,
-  hrefBase,
-}: {
-  n: number;
-  total: number;
-  focus: number;
-  accent: string;
-  hrefBase: string | null;
-}) {
-  const isCompleted = n < focus;
+const StepperCell = React.forwardRef(function StepperCell(
+  {
+    n,
+    total,
+    focus,
+    hrefBase,
+    accent,
+
+    didProgress,
+    didReview,
+    didRate,
+
+    colorProgress,
+    colorReviewed,
+    colorRated,
+  }: {
+    n: number;
+    total: number;
+    focus: number;
+    hrefBase: string | null;
+    accent: string;
+
+    didProgress: boolean;
+    didReview: boolean;
+    didRate: boolean;
+
+    colorProgress: string;
+    colorReviewed: string;
+    colorRated: string;
+  },
+  ref: React.ForwardedRef<HTMLDivElement>
+) {
   const isCurrent = n === focus;
 
-  // keep borders “hairline” so the whole thing stays light
-  const base =
-    "grid place-items-center w-full h-10 rounded-lg select-none transition-transform active:translate-y-[1px] border";
-  const textClass = "text-[12px] font-semibold";
+  const anyFilled = didProgress || didReview || didRate;
+  const isFullyDone = didProgress && didReview && didRate;
 
-  const styleCompleted: React.CSSProperties = {
-    backgroundColor: accent,
-    color: "white",
-    borderColor: "transparent",
-  };
-
-  const styleCurrent: React.CSSProperties = {
-    borderColor: accent,
-    color: accent,
-    backgroundColor: "white",
-  };
-
-  const styleFuture: React.CSSProperties = {
-    borderColor: "rgba(15,23,42,0.22)",
-    color: "rgba(15,23,42,0.65)",
-    backgroundColor: "white",
-  };
-
-  const style = isCompleted ? styleCompleted : isCurrent ? styleCurrent : styleFuture;
-
-  const className = [base, !isCompleted ? "hover:bg-slate-50" : ""].filter(Boolean).join(" ");
   const aria = `Go to ${n} of ${total}`;
 
-  const inner = (
-    <div className={textClass} style={{ lineHeight: 1 }}>
-      {n}
+  // measured box
+  const boxClass = "w-full h-10 rounded-lg border-2 overflow-hidden relative select-none";
+
+  const boxStyle: React.CSSProperties = {
+    // ✅ fully done = FULLY_DONE_COLOR
+    // ✅ otherwise = black border
+    borderColor: isFullyDone ? FULLY_DONE_COLOR : "#000000",
+    backgroundColor: "white",
+  };
+
+  const content = (
+    <div className={boxClass} style={boxStyle}>
+      {/* background */}
+      {isFullyDone ? (
+        <div className="absolute inset-0" style={{ backgroundColor: FULLY_DONE_COLOR }} />
+      ) : (
+        <>
+          <div className="absolute inset-0 grid grid-cols-3">
+            <div style={{ backgroundColor: didProgress ? colorProgress : "transparent" }} />
+            <div style={{ backgroundColor: didReview ? colorReviewed : "transparent" }} />
+            <div style={{ backgroundColor: didRate ? colorRated : "transparent" }} />
+          </div>
+        </>
+      )}
+
+      {/* number OR checkmark */}
+      <div
+        className="absolute inset-0 grid place-items-center text-[14px] font-bold"
+        style={
+          anyFilled || isFullyDone
+            ? { color: "white", textShadow: "0 1px 1px rgba(0,0,0,0.25)" }
+            : { color: "#000000" }
+        }
+      >
+        {isFullyDone ? "✓" : n}
+      </div>
+
+      {/* hover hint */}
+      {!anyFilled && !isFullyDone ? <div className="absolute inset-0 hover:bg-slate-50/70" /> : null}
     </div>
   );
 
-  if (hrefBase) {
-    return (
-      <Link href={`${hrefBase}${n}`} aria-label={aria} className={className} style={style}>
-        {inner}
-      </Link>
-    );
-  }
-
   return (
-    <button type="button" aria-label={aria} className={className} style={style}>
-      {inner}
-    </button>
+    <div ref={ref} className="w-full">
+      {hrefBase ? (
+        <Link href={`${hrefBase}${n}`} aria-label={aria} className="block w-full">
+          {content}
+        </Link>
+      ) : (
+        <button type="button" aria-label={aria} className="block w-full">
+          {content}
+        </button>
+      )}
+    </div>
   );
-}
+});
+
 
 function clampInt(n: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, Math.floor(n)));
+  return Math.min(max, Math.max(min, Math.floor(Number.isFinite(n) ? n : 0)));
 }
