@@ -50,10 +50,23 @@ export type AniListExternalLink = {
   site: string; // "Official Site", "Twitter", etc.
 };
 
+/** ✅ PageInfo type (used by paging helpers) */
+export type AniListPageInfo = {
+  total: number;
+  perPage: number;
+  currentPage: number;
+  lastPage: number;
+  hasNextPage: boolean;
+};
+
 // ---------- Anime (type: ANIME) ----------
 
 export type AniListAnime = {
   id: number;
+
+  /** ✅ NEW (recommended): MAL id */
+  idMal?: number | null;
+
   title: AniListTitle;
   description: string | null;
 
@@ -68,7 +81,7 @@ export type AniListAnime = {
   endDate: AniListFuzzyDate | null;
 
   coverImage: {
-    extraLarge: string | null; // ✅ NEW
+    extraLarge: string | null;
     large: string | null;
     medium: string | null;
   } | null;
@@ -107,7 +120,7 @@ export type AniListManga = {
   endDate: AniListFuzzyDate | null;
 
   coverImage: {
-    extraLarge: string | null; // ✅ NEW
+    extraLarge: string | null;
     large: string | null;
     medium: string | null;
   } | null;
@@ -135,6 +148,22 @@ type AniListSearchResult = {
 
 type AniListSingleResult = {
   Media: any | null;
+};
+
+/** ✅ Page result with pageInfo */
+type AniListAnimePageResult = {
+  Page: {
+    pageInfo: AniListPageInfo;
+    media: any[];
+  };
+};
+
+/** ✅ IDs-only page result with pageInfo */
+type AniListAnimeIdsPageResult = {
+  Page: {
+    pageInfo: AniListPageInfo;
+    media: any[];
+  };
 };
 
 type AniListGraphQLResponse<T> = {
@@ -196,6 +225,7 @@ export async function searchAniListAnime(
       Page(page: $page, perPage: $perPage) {
         media(search: $search, type: ANIME) {
           id
+          idMal
           title {
             romaji
             english
@@ -276,6 +306,7 @@ export async function searchAniListAnime(
 
     return {
       id: m.id,
+      idMal: m.idMal ?? null,
       title: {
         romaji: m.title?.romaji ?? null,
         english: m.title?.english ?? null,
@@ -308,6 +339,136 @@ export async function searchAniListAnime(
   return { data: mapped, error: null };
 }
 
+/**
+ * ✅ listAniListAnimePage(page, perPage)
+ * - no search
+ * - includes pageInfo
+ * - includes idMal
+ */
+export async function listAniListAnimePage(
+  page: number = 1,
+  perPage: number = 50
+): Promise<{
+  data: AniListAnime[];
+  pageInfo: AniListPageInfo | null;
+  error: string | null;
+}> {
+  const query = `
+    query ($page: Int, $perPage: Int) {
+      Page(page: $page, perPage: $perPage) {
+        pageInfo { total perPage currentPage lastPage hasNextPage }
+        media(type: ANIME, sort: ID) {
+          id
+          idMal
+          title { romaji english native userPreferred }
+          description(asHtml: false)
+          episodes
+          duration
+          format
+          status
+          season
+          seasonYear
+          startDate { year month day }
+          endDate { year month day }
+          coverImage { extraLarge large medium }
+          bannerImage
+          averageScore
+          popularity
+          source
+          genres
+          tags { name description rank isAdult isGeneralSpoiler isMediaSpoiler category }
+          trailer { id site thumbnail }
+          nextAiringEpisode { id episode airingAt timeUntilAiring }
+          studios { nodes { id name isAnimationStudio } }
+          externalLinks { id url site }
+        }
+      }
+    }
+  `;
+
+  const { data, error } = await callAniList<AniListAnimePageResult>(query, {
+    page,
+    perPage,
+  });
+
+  if (error || !data) return { data: [], pageInfo: null, error };
+
+  const media = data.Page.media ?? [];
+  const mapped: AniListAnime[] = media.map((m: any) => {
+    const studios =
+      m.studios && m.studios.nodes ? (m.studios.nodes as AniListStudio[]) : null;
+
+    return {
+      id: m.id,
+      idMal: m.idMal ?? null,
+      title: {
+        romaji: m.title?.romaji ?? null,
+        english: m.title?.english ?? null,
+        native: m.title?.native ?? null,
+        userPreferred: m.title?.userPreferred ?? null,
+      },
+      description: m.description ?? null,
+      episodes: m.episodes ?? null,
+      duration: m.duration ?? null,
+      format: m.format ?? null,
+      status: m.status ?? null,
+      season: m.season ?? null,
+      seasonYear: m.seasonYear ?? null,
+      startDate: m.startDate ?? null,
+      endDate: m.endDate ?? null,
+      coverImage: m.coverImage ?? null,
+      bannerImage: m.bannerImage ?? null,
+      averageScore: m.averageScore ?? null,
+      popularity: m.popularity ?? null,
+      source: m.source ?? null,
+      genres: m.genres ?? null,
+      tags: m.tags ?? null,
+      trailer: m.trailer ?? null,
+      nextAiringEpisode: m.nextAiringEpisode ?? null,
+      studios,
+      externalLinks: m.externalLinks ?? null,
+    };
+  });
+
+  const pageInfo: AniListPageInfo | null = data.Page.pageInfo ?? null;
+  return { data: mapped, pageInfo, error: null };
+}
+
+/**
+ * ✅ NEW: listAniListAnimeIdsPage(page, perPage)
+ * - returns ONLY ids + pageInfo (includes total)
+ * - avoids fetching full payload just to know progress totals
+ */
+export async function listAniListAnimeIdsPage(
+  page: number = 1,
+  perPage: number = 50
+): Promise<{ ids: number[]; pageInfo: AniListPageInfo | null; error: string | null }> {
+  const query = `
+    query ($page: Int, $perPage: Int) {
+      Page(page: $page, perPage: $perPage) {
+        pageInfo { total perPage currentPage lastPage hasNextPage }
+        media(type: ANIME, sort: ID) { id }
+      }
+    }
+  `;
+
+  // callAniList is internal in this module; we can call it directly
+  const { data, error } = await callAniList<AniListAnimeIdsPageResult>(query, {
+    page,
+    perPage,
+  });
+
+  if (error || !data) return { ids: [], pageInfo: null, error };
+
+  const ids = (data.Page?.media ?? [])
+    .map((m: any) => Number(m.id))
+    .filter((n: any) => Number.isFinite(n));
+
+  const pageInfo = (data.Page?.pageInfo ?? null) as AniListPageInfo | null;
+
+  return { ids, pageInfo, error: null };
+}
+
 export async function getAniListAnimeById(
   id: number
 ): Promise<{ data: AniListAnime | null; error: string | null }> {
@@ -315,6 +476,7 @@ export async function getAniListAnimeById(
     query ($id: Int) {
       Media(id: $id, type: ANIME) {
         id
+        idMal
         title {
           romaji
           english
@@ -392,6 +554,7 @@ export async function getAniListAnimeById(
 
   const anime: AniListAnime = {
     id: m.id,
+    idMal: m.idMal ?? null,
     title: {
       romaji: m.title?.romaji ?? null,
       english: m.title?.english ?? null,
