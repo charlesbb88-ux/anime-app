@@ -610,12 +610,22 @@ function ModalBody({
               <UnitStepper
                 total={Math.max(0, total)}
                 current={Math.max(0, current)}
-                accent="#7C3AED"
-                hrefBase={seriesHref ? `${seriesHref}?${it.kind === "manga" ? "ch" : "ep"}=` : null}
+                reviewed={Math.max(0, reviewed)}
+                rated={Math.max(0, rated)}
+                hrefBase={
+                  seriesHref
+                    ? it.kind === "manga"
+                      ? `${seriesHref}/chapter/`
+                      : `${seriesHref}/episode/`
+                    : null
+                }
                 label={it.kind === "manga" ? "Chapters" : "Episodes"}
                 initialBatch={30}
                 batchSize={30}
                 endlessScroll
+                colorProgress={RING_FILLED_PROGRESS}
+                colorReviewed={RING_FILLED_REVIEWED}
+                colorRated={RING_FILLED_RATED}
               />
             )}
           </div>

@@ -8,13 +8,12 @@ type Props = {
   avatarUrl: string | null;
   bio?: string | null;
   activeTab?:
-    | "posts"
-    | "bookmarks"
-    | "watchlist"
-    | "activity"
-    | "journal"
-    | "library"
-    | "completions";
+  | "posts"
+  | "watchlist"
+  | "activity"
+  | "journal"
+  | "library"
+  | "completions";
 };
 
 export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: Props) {
@@ -28,9 +27,8 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
   const baseProfilePath = `/${username}`;
 
   function tabClass(isActive: boolean) {
-    return `pb-.5 ${
-      isActive ? "border-b-2 border-black text-black" : "text-slate-500 hover:text-black"
-    }`;
+    return `pb-.5 ${isActive ? "border-b-2 border-black text-black" : "text-slate-500 hover:text-black"
+      }`;
   }
 
   const currentTab = useMemo(() => {
@@ -44,7 +42,6 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
       const seg = path.slice((baseProfilePath + "/").length).split("/")[0];
 
       if (
-        seg === "bookmarks" ||
         seg === "watchlist" ||
         seg === "activity" ||
         seg === "journal" ||
@@ -79,53 +76,51 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
           </div>
         </div>
 
-        {/* Right: tabs */}
-        <nav className="flex gap-6 text-sm font-medium shrink-0 mt-4">
-          <Link href={baseProfilePath} className={tabClass(currentTab === "posts")}>
-            Posts
-          </Link>
+        {/* Right: tabs
+            ✅ mobile: horizontal scroll (prevents page widening)
+            ✅ desktop: behaves like before (tight width, sits on the right)
+        */}
+        <nav className="mt-4 min-w-0 flex-1 overflow-x-auto whitespace-nowrap [-webkit-overflow-scrolling:touch] md:flex-none md:overflow-visible">
+          <div className="flex gap-6 text-sm font-medium w-max md:w-auto">
+            <Link href={baseProfilePath} className={tabClass(currentTab === "posts")}>
+              Posts
+            </Link>
 
-          <Link
-            href={`${baseProfilePath}/bookmarks`}
-            className={tabClass(currentTab === "bookmarks")}
-          >
-            Bookmarks
-          </Link>
+            <Link
+              href={`${baseProfilePath}/completions`}
+              className={tabClass(currentTab === "completions")}
+            >
+              Completions
+            </Link>
 
-          <Link
-            href={`${baseProfilePath}/watchlist`}
-            className={tabClass(currentTab === "watchlist")}
-          >
-            Watchlist
-          </Link>
+            <Link
+              href={`${baseProfilePath}/watchlist`}
+              className={tabClass(currentTab === "watchlist")}
+            >
+              Watchlist
+            </Link>
 
-          <Link
-            href={`${baseProfilePath}/activity`}
-            className={tabClass(currentTab === "activity")}
-          >
-            Activity
-          </Link>
+            <Link
+              href={`${baseProfilePath}/activity`}
+              className={tabClass(currentTab === "activity")}
+            >
+              Activity
+            </Link>
 
-          <Link
-            href={`${baseProfilePath}/journal`}
-            className={tabClass(currentTab === "journal")}
-          >
-            Journal
-          </Link>
+            <Link
+              href={`${baseProfilePath}/journal`}
+              className={tabClass(currentTab === "journal")}
+            >
+              Journal
+            </Link>
 
-          <Link
-            href={`${baseProfilePath}/library`}
-            className={tabClass(currentTab === "library")}
-          >
-            My Library
-          </Link>
-
-          <Link
-            href={`${baseProfilePath}/completions`}
-            className={tabClass(currentTab === "completions")}
-          >
-            Completions
-          </Link>
+            <Link
+              href={`${baseProfilePath}/library`}
+              className={tabClass(currentTab === "library")}
+            >
+              My Library
+            </Link>
+          </div>
         </nav>
       </div>
 
