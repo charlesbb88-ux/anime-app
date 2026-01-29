@@ -5,15 +5,41 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import { supabase } from "../../lib/supabaseClient";
 import CommentRow from "../../components/CommentRow";
+import ReviewPostRow from "../../components/ReviewPostRow";
 import LeftSidebar from "../../components/LeftSidebar";
 import RightSidebar from "../../components/RightSidebar";
 import { openAuthModal } from "../../lib/openAuthModal";
+import PostContextHeaderLayout from "@/components/PostContextHeaderLayout";
 
 type Post = {
   id: string;
   content: string;
   created_at: string;
   user_id: string;
+
+  anime_id: string | null;
+  anime_episode_id: string | null;
+  manga_id: string | null;
+  manga_chapter_id: string | null;
+  review_id: string | null;
+};
+
+type ReviewRow = {
+  id: string;
+  rating: number | null;
+  contains_spoilers: boolean | null;
+  author_liked: boolean | null;
+
+  anime_id: string | null;
+  anime_episode_id: string | null;
+  manga_id: string | null;
+  manga_chapter_id: string | null;
+};
+
+type AnimeRow = {
+  id: string;
+  title: string | null;
+  image_url: string | null;
 };
 
 type Like = {
@@ -43,12 +69,12 @@ type Profile = {
 
 // ---- Layout + typography tokens (MATCH HOME) ----
 const LAYOUT = {
-  pageMaxWidth: "80rem", // total width: left + gap + center + gap + right
-  pagePaddingY: "2rem", // top / bottom padding
-  pagePaddingX: "1.5rem", // left / right padding
-  columnGap: "1rem", // space between columns (same both sides)
-  mainWidth: "41rem", // center column width
-  sidebarWidth: "19rem", // left/right sidebar width (visual width)
+  pageMaxWidth: "72rem",
+  pagePaddingY: ".2rem",
+  pagePaddingX: "1rem",
+  columnGap: "1rem",
+  mainWidth: "36rem",
+  sidebarWidth: "16rem",
 };
 
 const TYPO = {
@@ -63,6 +89,10 @@ export default function PostPage() {
   const [user, setUser] = useState<any>(null);
   const [post, setPost] = useState<Post | null>(null);
   const [loadingPost, setLoadingPost] = useState(true);
+
+  // review visuals (only for review posts)
+  const [reviewRow, setReviewRow] = useState<ReviewRow | null>(null);
+  const [reviewAnime, setReviewAnime] = useState<AnimeRow | null>(null);
 
   // post likes
   const [likeCount, setLikeCount] = useState(0);
@@ -191,18 +221,72 @@ export default function PostPage() {
 
     const { data, error } = await supabase
       .from("posts")
-      .select("id, content, created_at, user_id")
+      .select(
+        "id, content, created_at, user_id, anime_id, anime_episode_id, manga_id, manga_chapter_id, review_id"
+      )
       .eq("id", postId)
       .single();
 
-    setLoadingPost(false);
-
     if (error) {
       console.error("Error fetching post:", error);
+      setPost(null);
+      setReviewRow(null);
+      setReviewAnime(null);
+      setLoadingPost(false);
       return;
     }
 
-    setPost(data as Post);
+    const p = data as Post;
+    setPost(p);
+
+    // ✅ load review visuals if this post is a review post
+    if (p.review_id) {
+      // 1) fetch review row
+      const { data: r, error: rErr } = await supabase
+        .from("reviews")
+        .select(
+          "id, rating, contains_spoilers, author_liked, anime_id, anime_episode_id, manga_id, manga_chapter_id"
+        )
+        .eq("id", p.review_id)
+        .single();
+
+      if (rErr) {
+        console.error("Error fetching review:", rErr);
+        setReviewRow(null);
+        setReviewAnime(null);
+        setLoadingPost(false);
+        return;
+      }
+
+      const rr = r as ReviewRow;
+      setReviewRow(rr);
+
+      // 2) fetch anime for poster/title (prefer review.anime_id; fallback to post.anime_id)
+      const animeId = rr.anime_id ?? p.anime_id;
+
+      if (animeId) {
+        const { data: a, error: aErr } = await supabase
+          .from("anime")
+          .select("id, title, image_url")
+          .eq("id", animeId)
+          .single();
+
+        if (aErr) {
+          console.error("Error fetching anime:", aErr);
+          setReviewAnime(null);
+        } else {
+          setReviewAnime(a as AnimeRow);
+        }
+      } else {
+        setReviewAnime(null);
+      }
+    } else {
+      // not a review post
+      setReviewRow(null);
+      setReviewAnime(null);
+    }
+
+    setLoadingPost(false);
   }
 
   async function loadLikes(postId: string) {
@@ -322,7 +406,7 @@ export default function PostPage() {
         if (!row.id) return;
 
         if (row.username) {
-          usernameMap[row.id] = row.username; // canonical lowercase handle
+          usernameMap[row.id] = row.username;
         }
         avatarMap[row.id] = row.avatar_url ?? null;
       });
@@ -607,13 +691,10 @@ export default function PostPage() {
     }
   }
 
-  // ---------- display helpers (MATCH INDEX HANDLE LOGIC) ----------
-  // canonical handle (no @)
+  // ---------- display helpers ----------
   function getHandle(userId: string): string | null {
     const username = usernamesById[userId];
-    if (username && username.trim()) {
-      return username.trim(); // already lowercase from UsernameGate
-    }
+    if (username && username.trim()) return username.trim();
     return null;
   }
 
@@ -624,17 +705,13 @@ export default function PostPage() {
 
   function getDisplayName(userId: string): string {
     const handle = getHandle(userId);
-    if (handle) {
-      return `@${handle}`;
-    }
+    if (handle) return `@${handle}`;
     return `User-${userId.slice(0, 4)}`;
   }
 
   function getInitial(userId: string): string {
     const handle = getHandle(userId);
-    if (handle) {
-      return handle.charAt(0).toUpperCase();
-    }
+    if (handle) return handle.charAt(0).toUpperCase();
     return getDisplayName(userId).charAt(0).toUpperCase();
   }
 
@@ -659,9 +736,7 @@ export default function PostPage() {
 
   function handleRootInputChange(e: any) {
     setRootCommentInput(e.target.value);
-    if (replyTextareaRef.current) {
-      autoGrow(replyTextareaRef.current);
-    }
+    if (replyTextareaRef.current) autoGrow(replyTextareaRef.current);
   }
 
   function handleReplyBlur() {
@@ -674,7 +749,6 @@ export default function PostPage() {
     }
   }
 
-  // composer avatar node for reply box
   const composerAvatarNode = (
     <div
       style={{
@@ -710,67 +784,97 @@ export default function PostPage() {
     </div>
   );
 
-  return (
+  // ✅ this is your existing page content (unchanged),
+  // just moved into a reusable block so we can wrap it.
+  const pageBody = (
     <div
       style={{
-        minHeight: "100vh",
-        background: "#f5f5f5",
-        fontFamily: "system-ui, sans-serif",
+        maxWidth: LAYOUT.pageMaxWidth,
+        margin: "0 auto",
+        padding: `${LAYOUT.pagePaddingY} ${LAYOUT.pagePaddingX}`,
       }}
     >
+      {/* ONE FLEX ROW: left | center | right — same as Home */}
       <div
         style={{
-          maxWidth: LAYOUT.pageMaxWidth,
-          margin: "0 auto",
-          padding: `${LAYOUT.pagePaddingY} ${LAYOUT.pagePaddingX}`,
+          display: "flex",
+          justifyContent: "center",
+          gap: LAYOUT.columnGap,
         }}
       >
-        {/* ONE FLEX ROW: left | center | right — same as Home */}
-        <div
+        {/* LEFT SIDEBAR (sticky) */}
+        <aside
           style={{
-            display: "flex",
-            justifyContent: "center",
-            gap: LAYOUT.columnGap,
+            flex: `0 0 ${LAYOUT.sidebarWidth}`,
+            maxWidth: LAYOUT.sidebarWidth,
+            position: "sticky",
+            top: "1.5rem",
+            alignSelf: "flex-start",
+            height: "fit-content",
           }}
         >
-          {/* LEFT SIDEBAR (sticky) */}
-          <aside
-            style={{
-              flex: `0 0 ${LAYOUT.sidebarWidth}`,
-              maxWidth: LAYOUT.sidebarWidth,
-              position: "sticky",
-              top: "1.5rem",
-              alignSelf: "flex-start",
-              height: "fit-content",
-            }}
-          >
-            <LeftSidebar />
-          </aside>
+          <LeftSidebar />
+        </aside>
 
-          {/* CENTER COLUMN – post + replies */}
-          <main
-            style={{
-              flex: `0 0 ${LAYOUT.mainWidth}`,
-              maxWidth: LAYOUT.mainWidth,
-            }}
-          >
-            <Link href="/" style={{ fontSize: TYPO.small }}>
-              ← Back to feed
-            </Link>
-
-            {loadingPost ? (
-              <p style={{ marginTop: "1rem" }}>Loading post…</p>
-            ) : !post ? (
-              <p style={{ marginTop: "1rem" }}>Post not found.</p>
-            ) : (
-              <>
-                {/* MAIN POST */}
-                <div
-                  style={{
-                    marginTop: "1rem",
-                    marginBottom: "0.75rem",
-                  }}
-                >
+        {/* CENTER COLUMN – post + replies */}
+        <main
+          style={{
+            flex: `0 0 ${LAYOUT.mainWidth}`,
+            maxWidth: LAYOUT.mainWidth,
+          }}
+        >
+          {loadingPost ? (
+            <p style={{ marginTop: "1rem" }}>Loading post…</p>
+          ) : !post ? (
+            <p style={{ marginTop: "1rem" }}>Post not found.</p>
+          ) : (
+            <>
+              {/* MAIN POST */}
+              <div style={{ marginBottom: "0.75rem" }}>
+                {post.review_id ? (
+                  <ReviewPostRow
+                    postId={post.id}
+                    reviewId={post.review_id}
+                    userId={post.user_id}
+                    createdAt={post.created_at}
+                    content={post.content}
+                    rating={reviewRow?.rating ?? null}
+                    containsSpoilers={!!reviewRow?.contains_spoilers}
+                    authorLiked={!!reviewRow?.author_liked}
+                    displayName={postAuthorName}
+                    username={postAuthorHandle ?? undefined}
+                    avatarUrl={postAuthorAvatarUrl ?? null}
+                    initial={postAuthorInitial}
+                    originLabel={reviewAnime?.title ?? ""}
+                    originHref={reviewAnime?.id ? `/anime/${reviewAnime.id}` : undefined}
+                    episodeLabel={
+                      (reviewRow?.anime_episode_id ?? post.anime_episode_id)
+                        ? `EP ${reviewRow?.anime_episode_id ?? post.anime_episode_id}`
+                        : undefined
+                    }
+                    episodeHref={
+                      reviewAnime?.id &&
+                        (reviewRow?.anime_episode_id ?? post.anime_episode_id)
+                        ? `/anime/${reviewAnime.id}/episodes/${reviewRow?.anime_episode_id ?? post.anime_episode_id
+                        }`
+                        : undefined
+                    }
+                    posterUrl={reviewAnime?.image_url ?? null}
+                    href={`/posts/${post.id}`}
+                    isMain
+                    isOwner={!!isPostOwner}
+                    replyCount={rootReplyCount}
+                    likeCount={likeCount}
+                    likedByMe={likedByMe}
+                    onReplyClick={handlePostReplyClick}
+                    onToggleLike={handleTogglePostLike}
+                    onEdit={handleEditPostRow}
+                    onDelete={handleDeletePostRow}
+                    isMenuOpen={openMenuPost}
+                    onToggleMenu={handleTogglePostMenu}
+                    disableHoverHighlight
+                  />
+                ) : (
                   <CommentRow
                     id={post.id}
                     userId={post.user_id}
@@ -793,202 +897,206 @@ export default function PostPage() {
                     onToggleMenu={handleTogglePostMenu}
                     disableHoverHighlight
                   />
-                </div>
+                )}
+              </div>
 
-                {/* REPLY COMPOSER */}
-                {user ? (
+              {/* REPLY COMPOSER */}
+              {user ? (
+                <div style={{ marginTop: "0.4rem" }}>
                   <div
                     style={{
-                      marginTop: "0.4rem",
+                      border: "1px solid #11111111",
+                      borderRadius: 0,
+                      background: "#ffffff",
                     }}
                   >
                     <div
                       style={{
-                        border: "1px solid #11111111",
-                        borderRadius: 0,
-                        background: "#ffffff",
+                        display: "flex",
+                        alignItems: replyActive ? "flex-start" : "center",
+                        gap: "0.6rem",
+                        padding: replyActive
+                          ? "0.5rem 0.75rem 0.3rem 0.75rem"
+                          : "0.35rem 0.75rem",
                       }}
                     >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: replyActive ? "flex-start" : "center",
-                          gap: "0.6rem",
-                          padding: replyActive
-                            ? "0.5rem 0.75rem 0.3rem 0.75rem"
-                            : "0.35rem 0.75rem",
-                        }}
-                      >
-                        {/* avatar – now clickable to profile if username exists */}
-                        {currentUserUsername ? (
-                          <Link
-                            href={`/${currentUserUsername}`}
-                            style={{
-                              display: "inline-block",
-                              textDecoration: "none",
-                            }}
-                          >
-                            {composerAvatarNode}
-                          </Link>
-                        ) : (
-                          composerAvatarNode
-                        )}
-
-                        {/* textarea */}
-                        <div style={{ flex: 1 }}>
-                          <textarea
-                            id="root-reply-input"
-                            ref={replyTextareaRef}
-                            value={rootCommentInput}
-                            onChange={handleRootInputChange}
-                            onFocus={() => setReplyActive(true)}
-                            onBlur={handleReplyBlur}
-                            placeholder={
-                              !replyActive ? "Post your reply" : ""
-                            }
-                            rows={1}
-                            style={{
-                              width: "100%",
-                              border: "none",
-                              outline: "none",
-                              resize: "none",
-                              background: "transparent",
-                              padding: isCollapsed ? "0" : "0.6rem 0",
-                              height: isCollapsed ? "26px" : "auto",
-                              minHeight: isCollapsed ? "26px" : "36px",
-                              fontSize: "1rem",
-                              fontFamily: "inherit",
-                              lineHeight: isCollapsed ? "30px" : 1.5,
-                              overflowY: "hidden",
-                            }}
-                          />
-                        </div>
-
-                        {/* inline Reply button when collapsed */}
-                        {isCollapsed && (
-                          <button
-                            onClick={handleAddRootComment}
-                            disabled={replyDisabled}
-                            style={{
-                              padding: "0.4rem 0.95rem",
-                              borderRadius: "999px",
-                              border: "none",
-                              background: replyDisabled ? "#a0a0a0" : "#000",
-                              color: "#fff",
-                              cursor: replyDisabled ? "default" : "pointer",
-                              fontSize: "0.9rem",
-                              fontWeight: 500,
-                            }}
-                          >
-                            Reply
-                          </button>
-                        )}
-                      </div>
-
-                      {/* under-text Reply button when expanded / typing */}
-                      {!isCollapsed && (
-                        <div
+                      {currentUserUsername ? (
+                        <Link
+                          href={`/${currentUserUsername}`}
                           style={{
-                            padding: "0 0.75rem 0.45rem 0.75rem",
-                            display: "flex",
-                            justifyContent: "flex-end",
+                            display: "inline-block",
+                            textDecoration: "none",
                           }}
                         >
-                          <button
-                            onClick={handleAddRootComment}
-                            disabled={replyDisabled}
-                            style={{
-                              padding: "0.4rem 0.95rem",
-                              borderRadius: "999px",
-                              border: "none",
-                              background: replyDisabled ? "#a0a0a0" : "#000",
-                              color: "#fff",
-                              cursor: replyDisabled ? "default" : "pointer",
-                              fontSize: "0.9rem",
-                              fontWeight: 500,
-                            }}
-                          >
-                            {addingRootComment ? "Replying…" : "Reply"}
-                          </button>
-                        </div>
+                          {composerAvatarNode}
+                        </Link>
+                      ) : (
+                        composerAvatarNode
+                      )}
+
+                      <div style={{ flex: 1 }}>
+                        <textarea
+                          id="root-reply-input"
+                          ref={replyTextareaRef}
+                          value={rootCommentInput}
+                          onChange={handleRootInputChange}
+                          onFocus={() => setReplyActive(true)}
+                          onBlur={handleReplyBlur}
+                          placeholder={!replyActive ? "Post your reply" : ""}
+                          rows={1}
+                          style={{
+                            width: "100%",
+                            border: "none",
+                            outline: "none",
+                            resize: "none",
+                            background: "transparent",
+                            padding: isCollapsed ? "0" : "0.6rem 0",
+                            height: isCollapsed ? "26px" : "auto",
+                            minHeight: isCollapsed ? "26px" : "36px",
+                            fontSize: "1rem",
+                            fontFamily: "inherit",
+                            lineHeight: isCollapsed ? "30px" : 1.5,
+                            overflowY: "hidden",
+                          }}
+                        />
+                      </div>
+
+                      {isCollapsed && (
+                        <button
+                          onClick={handleAddRootComment}
+                          disabled={replyDisabled}
+                          style={{
+                            padding: "0.4rem 0.95rem",
+                            borderRadius: "999px",
+                            border: "none",
+                            background: replyDisabled ? "#a0a0a0" : "#000",
+                            color: "#fff",
+                            cursor: replyDisabled ? "default" : "pointer",
+                            fontSize: "0.9rem",
+                            fontWeight: 500,
+                          }}
+                        >
+                          Reply
+                        </button>
                       )}
                     </div>
+
+                    {!isCollapsed && (
+                      <div
+                        style={{
+                          padding: "0 0.75rem 0.45rem 0.75rem",
+                          display: "flex",
+                          justifyContent: "flex-end",
+                        }}
+                      >
+                        <button
+                          onClick={handleAddRootComment}
+                          disabled={replyDisabled}
+                          style={{
+                            padding: "0.4rem 0.95rem",
+                            borderRadius: "999px",
+                            border: "none",
+                            background: replyDisabled ? "#a0a0a0" : "#000",
+                            color: "#fff",
+                            cursor: replyDisabled ? "default" : "pointer",
+                            fontSize: "0.9rem",
+                            fontWeight: 500,
+                          }}
+                        >
+                          {addingRootComment ? "Replying…" : "Reply"}
+                        </button>
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <p style={{ color: "#666", marginTop: "0.6rem" }}>
-                    Log in to reply.
+                </div>
+              ) : (
+                <p style={{ color: "#666", marginTop: "0.6rem" }}>
+                  Log in to reply.
+                </p>
+              )}
+
+              {/* REPLIES LIST */}
+              <section style={{ marginTop: 0 }}>
+                {commentsLoading ? (
+                  <p>Loading replies…</p>
+                ) : comments.length === 0 ? (
+                  <p style={{ color: "#666", fontSize: "0.9rem" }}>
+                    No replies yet.
                   </p>
+                ) : (
+                  <div>
+                    {comments.map((c) => {
+                      const isOwner = user && user.id === c.user_id;
+                      const handle = getHandle(c.user_id);
+                      const name = getDisplayName(c.user_id);
+                      const initial = getInitial(c.user_id);
+                      const avatarUrl = getAvatarUrl(c.user_id);
+
+                      const replyCount = commentReplyCounts[c.id] || 0;
+                      const cLikeCount = commentLikeCounts[c.id] || 0;
+                      const cLiked = !!commentLikedByMe[c.id];
+                      const menuOpen = openMenuCommentId === c.id;
+
+                      return (
+                        <CommentRow
+                          key={c.id}
+                          id={c.id}
+                          userId={c.user_id}
+                          createdAt={c.created_at}
+                          content={c.content}
+                          displayName={name}
+                          initial={initial}
+                          username={handle ?? undefined}
+                          avatarUrl={avatarUrl}
+                          isOwner={!!isOwner}
+                          href={`/comments/${c.id}`}
+                          replyCount={replyCount}
+                          likeCount={cLikeCount}
+                          likedByMe={cLiked}
+                          onReplyClick={handleReplyClick}
+                          onToggleLike={toggleCommentLike}
+                          onEdit={handleEditComment}
+                          onDelete={handleDeleteComment}
+                          isMenuOpen={menuOpen}
+                          onToggleMenu={toggleCommentMenu}
+                        />
+                      );
+                    })}
+                  </div>
                 )}
+              </section>
+            </>
+          )}
+        </main>
 
-                {/* REPLIES LIST */}
-                <section style={{ marginTop: 0 }}>
-                  {commentsLoading ? (
-                    <p>Loading replies…</p>
-                  ) : comments.length === 0 ? (
-                    <p style={{ color: "#666", fontSize: "0.9rem" }}>
-                      No replies yet.
-                    </p>
-                  ) : (
-                    <div>
-                      {comments.map((c) => {
-                        const isOwner = user && user.id === c.user_id;
-                        const handle = getHandle(c.user_id);
-                        const name = getDisplayName(c.user_id);
-                        const initial = getInitial(c.user_id);
-                        const avatarUrl = getAvatarUrl(c.user_id);
-
-                        const replyCount = commentReplyCounts[c.id] || 0;
-                        const cLikeCount = commentLikeCounts[c.id] || 0;
-                        const cLiked = !!commentLikedByMe[c.id];
-                        const menuOpen = openMenuCommentId === c.id;
-
-                        return (
-                          <CommentRow
-                            key={c.id}
-                            id={c.id}
-                            userId={c.user_id}
-                            createdAt={c.created_at}
-                            content={c.content}
-                            displayName={name}
-                            initial={initial}
-                            username={handle ?? undefined}
-                            avatarUrl={avatarUrl}
-                            isOwner={!!isOwner}
-                            href={`/comments/${c.id}`}
-                            replyCount={replyCount}
-                            likeCount={cLikeCount}
-                            likedByMe={cLiked}
-                            onReplyClick={handleReplyClick}
-                            onToggleLike={toggleCommentLike}
-                            onEdit={handleEditComment}
-                            onDelete={handleDeleteComment}
-                            isMenuOpen={menuOpen}
-                            onToggleMenu={toggleCommentMenu}
-                          />
-                        );
-                      })}
-                    </div>
-                  )}
-                </section>
-              </>
-            )}
-          </main>
-
-          {/* RIGHT SIDEBAR (sticky) */}
-          <aside
-            style={{
-              flex: `0 0 ${LAYOUT.sidebarWidth}`,
-              maxWidth: LAYOUT.sidebarWidth,
-              position: "sticky",
-              top: "1.5rem",
-              alignSelf: "flex-start",
-              height: "fit-content",
-            }}
-          >
-            <RightSidebar />
-          </aside>
-        </div>
+        {/* RIGHT SIDEBAR (sticky) */}
+        <aside
+          style={{
+            flex: `0 0 ${LAYOUT.sidebarWidth}`,
+            maxWidth: LAYOUT.sidebarWidth,
+            position: "sticky",
+            top: "1.5rem",
+            alignSelf: "flex-start",
+            height: "fit-content",
+          }}
+        >
+          <RightSidebar />
+        </aside>
       </div>
     </div>
   );
+
+  return (
+    <div style={{ minHeight: "100vh", fontFamily: "system-ui, sans-serif" }}>
+      {/* ✅ Wrap only when we actually have a post to provide context */}
+      {post ? (
+        <PostContextHeaderLayout post={post} review={reviewRow}>
+          {pageBody}
+        </PostContextHeaderLayout>
+      ) : (
+        pageBody
+      )}
+    </div>
+  );
 }
+(PostPage as any).hideHeader = true;
