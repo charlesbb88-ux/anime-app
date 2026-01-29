@@ -788,6 +788,7 @@ export default function PostPage() {
   // just moved into a reusable block so we can wrap it.
   const pageBody = (
     <div
+      className="postPageWrap"
       style={{
         maxWidth: LAYOUT.pageMaxWidth,
         margin: "0 auto",
@@ -796,6 +797,7 @@ export default function PostPage() {
     >
       {/* ONE FLEX ROW: left | center | right — same as Home */}
       <div
+        className="postLayoutRow"
         style={{
           display: "flex",
           justifyContent: "center",
@@ -804,6 +806,7 @@ export default function PostPage() {
       >
         {/* LEFT SIDEBAR (sticky) */}
         <aside
+          className="postSidebar"
           style={{
             flex: `0 0 ${LAYOUT.sidebarWidth}`,
             maxWidth: LAYOUT.sidebarWidth,
@@ -818,6 +821,7 @@ export default function PostPage() {
 
         {/* CENTER COLUMN – post + replies */}
         <main
+          className="postMain"
           style={{
             flex: `0 0 ${LAYOUT.mainWidth}`,
             maxWidth: LAYOUT.mainWidth,
@@ -1071,6 +1075,7 @@ export default function PostPage() {
 
         {/* RIGHT SIDEBAR (sticky) */}
         <aside
+          className="postSidebar"
           style={{
             flex: `0 0 ${LAYOUT.sidebarWidth}`,
             maxWidth: LAYOUT.sidebarWidth,
@@ -1096,6 +1101,29 @@ export default function PostPage() {
       ) : (
         pageBody
       )}
+
+      <style jsx global>{`
+  @media (max-width: 768px) {
+    .postSidebar {
+      display: none !important;
+    }
+
+    .postMain {
+      flex: 1 1 auto !important;
+      max-width: 100% !important;
+    }
+
+    .postLayoutRow {
+      justify-content: flex-start !important;
+    }
+
+    /* remove page padding on phones so content is edge-to-edge */
+    .postPageWrap {
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+    }
+  }
+`}</style>
     </div>
   );
 }
