@@ -1,216 +1,226 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "../lib/supabaseClient"; // ⬅️ change this path if needed
 
-const TYPO = {
-  base: "1rem",
+type TrendingRow = {
+  slug: string;
+  title: string;
+  image_url: string | null;
+  score: number | null;
 };
 
-export default function LeftSidebar() {
-  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+function formatScore(score: number | null | undefined) {
+  if (score == null) return "0";
+  const isInt = Math.floor(score) === score;
+  return isInt ? String(score) : score.toFixed(1);
+}
 
-  const handleToggleUserMenu = () => {
-    setIsUserMenuOpen((prev) => !prev);
-  };
-
-  const handleLogout = async () => {
-    const { error } = await supabase.auth.signOut();
-
-    if (error) {
-      console.error("Error logging out:", error.message);
-      return;
-    }
-
-    // close the menu
-    setIsUserMenuOpen(false);
-
-    // send them somewhere after logout (change to "/login" if you want)
-    window.location.href = "/";
-  };
+function TrendingCard(props: {
+  title: string;
+  subtitle: string;
+  hrefPrefix: string; // "/anime" or "/manga"
+  rows: TrendingRow[];
+  loading: boolean;
+  error: string | null;
+}) {
+  const { title, subtitle, hrefPrefix, rows, loading, error } = props;
 
   return (
-    <aside
+    <div
       style={{
-        width: "100%",
-        display: "flex",
-        flexDirection: "column",
-        gap: "1rem",
+        padding: "1rem 1.1rem",
+        background: "#ffffff",
+        borderRadius: 10,
+        border: "1px solid #11111111",
       }}
     >
-      {/* TOP CARD: NAV BUTTONS */}
-      <div
-        style={{
-          padding: "1rem 1.1rem",
-          background: "#ffffff",
-          borderRadius: 10,
-          border: "1px solid #11111111",
-          display: "flex",
-          flexDirection: "column",
-          gap: "1rem",
-          height: "auto",
-        }}
-      >
-        <nav
-          style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}
-        >
-          {[
-            "Home",
-            "Log",
-            "Lists",
-            "Bookmarks",
-            "Reviews",
-            "Profile",
-            "Settings",
-          ].map((label) => (
-            <button
-              key={label}
-              style={{
-                width: "100%",
-                padding: "0.6rem 0.8rem",
-                fontSize: TYPO.base,
-                textAlign: "left",
-                border: "1px solid #eee",
-                borderRadius: 8,
-                background: "#fafafa",
-                cursor: "pointer",
-                transition: "background 0.15s",
-              }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.background = "#f2f2f2")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.background = "#fafafa")
-              }
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+        <div style={{ fontSize: "0.95rem", fontWeight: 700 }}>{title}</div>
+        <div style={{ fontSize: "0.85rem", color: "#777" }}>{subtitle}</div>
       </div>
 
-      {/* BOTTOM CARD: USER + MENU (three dots + pop-up) */}
-      <div
-        style={{
-          padding: "0.8rem 1.1rem",
-          background: "#ffffff",
-          borderRadius: 10,
-          border: "1px solid #11111111",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "0.75rem",
-          }}
-        >
-          {/* Left side: avatar + name */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.75rem",
-            }}
-          >
-            {/* Avatar placeholder */}
-            <div
-              style={{
-                width: "2.4rem",
-                height: "2.4rem",
-                borderRadius: "50%",
-                background: "#e5e5e5",
-                border: "1px solid #d0d0d0",
-                flexShrink: 0,
-              }}
-            />
+      <div style={{ height: 10 }} />
 
-            {/* Username */}
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "center",
-              }}
+      {loading && <div style={{ fontSize: "0.9rem", color: "#777" }}>Loading…</div>}
+
+      {!loading && error && (
+        <div style={{ fontSize: "0.9rem", color: "#b00000" }}>{error}</div>
+      )}
+
+      {!loading && !error && rows.length === 0 && (
+        <div style={{ fontSize: "0.9rem", color: "#777" }}>No activity yet this week.</div>
+      )}
+
+      {!loading && !error && rows.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
+          {rows.map((a, idx) => (
+            <Link
+              key={`${a.slug}-${idx}`}
+              href={`${hrefPrefix}/${a.slug}`}
+              style={{ textDecoration: "none", color: "inherit" }}
             >
-              <span
-                style={{
-                  fontSize: TYPO.base,
-                  fontWeight: 600,
-                }}
-              >
-                Username
-              </span>
-              <span
-                style={{
-                  fontSize: "0.85rem",
-                  color: "#777",
-                }}
-              >
-                View profile
-              </span>
-            </div>
-          </div>
-
-          {/* Right side: three dots + pop-up menu */}
-          <div
-            style={{
-              position: "relative",
-            }}
-          >
-            <button
-              type="button"
-              onClick={handleToggleUserMenu}
-              style={{
-                border: "none",
-                background: "transparent",
-                cursor: "pointer",
-                padding: "0 0.3rem",
-                fontSize: "1.2rem",
-                lineHeight: 1,
-                color: "#555",
-              }}
-            >
-              ⋯
-            </button>
-
-            {isUserMenuOpen && (
               <div
                 style={{
-                  position: "absolute",
-                  top: "1.6rem",
-                  right: 0,
-                  background: "#fff",
-                  border: "1px solid #ddd",
-                  borderRadius: "6px",
-                  boxShadow: "0 4px 12px rgba(0, 0, 0, 0.12)",
-                  minWidth: "140px",
-                  zIndex: 20,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.65rem",
+                  padding: "0.5rem",
+                  borderRadius: 8,
+                  border: "1px solid #eee",
+                  background: "#fafafa",
+                  cursor: "pointer",
+                  transition: "background 0.15s",
                 }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "#f2f2f2")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "#fafafa")}
               >
-                <button
-                  type="button"
-                  onClick={handleLogout}
+                <div
                   style={{
-                    display: "block",
-                    width: "100%",
-                    textAlign: "left",
-                    padding: "0.55rem 0.8rem",
-                    border: "none",
-                    background: "transparent",
-                    cursor: "pointer",
-                    fontSize: "0.9rem",
-                    color: "#b00000",
+                    width: 22,
+                    textAlign: "center",
+                    fontWeight: 700,
+                    color: "#444",
+                    flexShrink: 0,
                   }}
                 >
-                  Log out
-                </button>
+                  {idx + 1}
+                </div>
+
+                <div
+                  style={{
+                    width: 34,
+                    height: 48,
+                    borderRadius: 6,
+                    background: "#eaeaea",
+                    border: "1px solid #ddd",
+                    overflow: "hidden",
+                    flexShrink: 0,
+                  }}
+                >
+                  {a.image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={a.image_url}
+                      alt=""
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
+                  ) : null}
+                </div>
+
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div
+                    style={{
+                      fontSize: "0.95rem",
+                      fontWeight: 650,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                    title={a.title}
+                  >
+                    {a.title}
+                  </div>
+                  <div style={{ fontSize: "0.82rem", color: "#777" }}>
+                    Activity: {formatScore(a.score)}
+                  </div>
+                </div>
               </div>
-            )}
-          </div>
+            </Link>
+          ))}
         </div>
-      </div>
+      )}
+    </div>
+  );
+}
+
+export default function LeftSidebar() {
+  const [animeRows, setAnimeRows] = useState<TrendingRow[]>([]);
+  const [mangaRows, setMangaRows] = useState<TrendingRow[]>([]);
+
+  const [animeLoading, setAnimeLoading] = useState(true);
+  const [mangaLoading, setMangaLoading] = useState(true);
+
+  const [animeError, setAnimeError] = useState<string | null>(null);
+  const [mangaError, setMangaError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAnime() {
+      setAnimeLoading(true);
+      setAnimeError(null);
+
+      try {
+        const { data, error } = await supabase
+          .from("anime_weekly_trending")
+          .select("slug, title, image_url, score")
+          .order("score", { ascending: false })
+          .limit(10);
+
+        if (error) throw error;
+        if (!cancelled) setAnimeRows((data ?? []) as TrendingRow[]);
+      } catch (e: any) {
+        if (!cancelled) {
+          setAnimeError(e?.message ?? "Failed to load top anime.");
+          setAnimeRows([]);
+        }
+      } finally {
+        if (!cancelled) setAnimeLoading(false);
+      }
+    }
+
+    async function loadManga() {
+      setMangaLoading(true);
+      setMangaError(null);
+
+      try {
+        const { data, error } = await supabase
+          .from("manga_weekly_trending")
+          .select("slug, title, image_url, score")
+          .order("score", { ascending: false })
+          .limit(10);
+
+        if (error) throw error;
+        if (!cancelled) setMangaRows((data ?? []) as TrendingRow[]);
+      } catch (e: any) {
+        if (!cancelled) {
+          setMangaError(e?.message ?? "Failed to load top manga.");
+          setMangaRows([]);
+        }
+      } finally {
+        if (!cancelled) setMangaLoading(false);
+      }
+    }
+
+    loadAnime();
+    loadManga();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <aside style={{ width: "100%", display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <TrendingCard
+        title="Top Anime"
+        subtitle="This week"
+        hrefPrefix="/anime"
+        rows={animeRows}
+        loading={animeLoading}
+        error={animeError}
+      />
+
+      <TrendingCard
+        title="Top Manga"
+        subtitle="This week"
+        hrefPrefix="/manga"
+        rows={mangaRows}
+        loading={mangaLoading}
+        error={mangaError}
+      />
     </aside>
   );
 }
