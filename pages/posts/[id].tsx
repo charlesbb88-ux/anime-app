@@ -38,6 +38,14 @@ type ReviewRow = {
 
 type AnimeRow = {
   id: string;
+  slug: string | null;
+  title: string | null;
+  image_url: string | null;
+};
+
+type MangaRow = {
+  id: string;
+  slug: string | null;
   title: string | null;
   image_url: string | null;
 };
@@ -93,6 +101,9 @@ export default function PostPage() {
   // review visuals (only for review posts)
   const [reviewRow, setReviewRow] = useState<ReviewRow | null>(null);
   const [reviewAnime, setReviewAnime] = useState<AnimeRow | null>(null);
+  const [reviewManga, setReviewManga] = useState<MangaRow | null>(null);
+  const [episodeNum, setEpisodeNum] = useState<number | null>(null);
+  const [chapterNum, setChapterNum] = useState<number | null>(null);
 
   // post likes
   const [likeCount, setLikeCount] = useState(0);
@@ -232,12 +243,15 @@ export default function PostPage() {
       setPost(null);
       setReviewRow(null);
       setReviewAnime(null);
+      setReviewManga(null);
       setLoadingPost(false);
       return;
     }
 
     const p = data as Post;
     setPost(p);
+    setEpisodeNum(null);
+    setChapterNum(null);
 
     // ✅ load review visuals if this post is a review post
     if (p.review_id) {
@@ -254,6 +268,7 @@ export default function PostPage() {
         console.error("Error fetching review:", rErr);
         setReviewRow(null);
         setReviewAnime(null);
+        setReviewManga(null);
         setLoadingPost(false);
         return;
       }
@@ -261,13 +276,68 @@ export default function PostPage() {
       const rr = r as ReviewRow;
       setReviewRow(rr);
 
-      // 2) fetch anime for poster/title (prefer review.anime_id; fallback to post.anime_id)
+      const episodeId = rr.anime_episode_id ?? p.anime_episode_id;
+      const chapterId = rr.manga_chapter_id ?? p.manga_chapter_id;
+
+      // ✅ fetch human episode number
+      if (episodeId) {
+        const { data: ep, error: epErr } = await supabase
+          .from("anime_episodes")
+          .select("episode_number")
+          .eq("id", episodeId)
+          .single();
+
+        if (epErr) {
+          console.error("Error fetching episode_number:", epErr);
+          setEpisodeNum(null);
+        } else {
+          const n =
+            typeof ep?.episode_number === "number"
+              ? ep.episode_number
+              : ep?.episode_number != null
+                ? Number(ep.episode_number)
+                : null;
+
+          setEpisodeNum(Number.isFinite(n as any) ? (n as number) : null);
+        }
+      }
+
+      // ✅ fetch human chapter number
+      if (chapterId) {
+        const { data: ch, error: chErr } = await supabase
+          .from("manga_chapters")
+          .select("chapter_number")
+          .eq("id", chapterId)
+          .single();
+
+        if (chErr) {
+          console.error("Error fetching chapter_number:", chErr);
+          setChapterNum(null);
+        } else {
+          const n =
+            typeof ch?.chapter_number === "number"
+              ? ch.chapter_number
+              : ch?.chapter_number != null
+                ? Number(ch.chapter_number)
+                : null;
+
+          setChapterNum(Number.isFinite(n as any) ? (n as number) : null);
+        }
+      }
+
+      // 2) fetch origin row for poster/title/link
+      // prefer review.*_id; fallback to post.*_id
       const animeId = rr.anime_id ?? p.anime_id;
+      const mangaId = rr.manga_id ?? p.manga_id;
+
+      // reset both first
+      setReviewAnime(null);
+      setReviewManga(null);
 
       if (animeId) {
         const { data: a, error: aErr } = await supabase
           .from("anime")
-          .select("id, title, image_url")
+          .select("id, slug, title, image_url")
           .eq("id", animeId)
           .single();
 
@@ -277,13 +347,29 @@ export default function PostPage() {
         } else {
           setReviewAnime(a as AnimeRow);
         }
+      } else if (mangaId) {
+        const { data: m, error: mErr } = await supabase
+          .from("manga")
+          .select("id, slug, title, image_url")
+          .eq("id", mangaId)
+          .single();
+
+        if (mErr) {
+          console.error("Error fetching manga:", mErr);
+          setReviewManga(null);
+        } else {
+          setReviewManga(m as MangaRow);
+        }
       } else {
+        // neither anime nor manga linked
         setReviewAnime(null);
+        setReviewManga(null);
       }
     } else {
       // not a review post
       setReviewRow(null);
       setReviewAnime(null);
+      setReviewManga(null);
     }
 
     setLoadingPost(false);
@@ -734,6 +820,29 @@ export default function PostPage() {
   const replyDisabled = addingRootComment || !rootCommentInput.trim();
   const isCollapsed = !replyActive && !rootCommentInput.trim();
 
+  const originTitle = reviewAnime?.title ?? reviewManga?.title ?? "";
+  const originPoster = reviewAnime?.image_url ?? reviewManga?.image_url ?? null;
+
+  const originHref =
+    reviewAnime?.slug
+      ? `/anime/${reviewAnime.slug}`
+      : reviewAnime?.id
+        ? `/anime/${reviewAnime.id}`
+        : reviewManga?.slug
+          ? `/manga/${reviewManga.slug}`
+          : reviewManga?.id
+            ? `/manga/${reviewManga.id}`
+            : undefined;
+
+  // ---- manga chapter parity (ReviewPostRow now supports it) ----
+  const chapterId = reviewRow?.manga_chapter_id ?? post?.manga_chapter_id;
+
+  const chapterLabel = chapterNum != null ? `Ch ${chapterNum}` : undefined;
+
+  const chapterHref =
+    reviewManga?.slug && chapterNum != null
+      ? `/manga/${reviewManga.slug}/chapter/${chapterNum}`
+      : undefined;
   function handleRootInputChange(e: any) {
     setRootCommentInput(e.target.value);
     if (replyTextareaRef.current) autoGrow(replyTextareaRef.current);
@@ -849,21 +958,17 @@ export default function PostPage() {
                     username={postAuthorHandle ?? undefined}
                     avatarUrl={postAuthorAvatarUrl ?? null}
                     initial={postAuthorInitial}
-                    originLabel={reviewAnime?.title ?? ""}
-                    originHref={reviewAnime?.id ? `/anime/${reviewAnime.id}` : undefined}
-                    episodeLabel={
-                      (reviewRow?.anime_episode_id ?? post.anime_episode_id)
-                        ? `EP ${reviewRow?.anime_episode_id ?? post.anime_episode_id}`
-                        : undefined
-                    }
+                    originLabel={originTitle}
+                    originHref={originHref}
+                    episodeLabel={episodeNum != null ? `Ep ${episodeNum}` : undefined}
                     episodeHref={
-                      reviewAnime?.id &&
-                        (reviewRow?.anime_episode_id ?? post.anime_episode_id)
-                        ? `/anime/${reviewAnime.id}/episodes/${reviewRow?.anime_episode_id ?? post.anime_episode_id
-                        }`
+                      reviewAnime?.slug && episodeNum != null
+                        ? `/anime/${reviewAnime.slug}/episode/${episodeNum}`
                         : undefined
                     }
-                    posterUrl={reviewAnime?.image_url ?? null}
+                    chapterLabel={chapterLabel}
+                    chapterHref={chapterHref}
+                    posterUrl={originPoster}
                     href={`/posts/${post.id}`}
                     isMain
                     isOwner={!!isPostOwner}

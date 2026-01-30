@@ -57,19 +57,17 @@ export default function Header({ transparent = false }: { transparent?: boolean 
       setAuthChecking(false);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (!isMounted) return;
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!isMounted) return;
 
-        const u = session?.user ?? null;
-        setUser(u);
+      const u = session?.user ?? null;
+      setUser(u);
 
-        if (u) fetchProfile(u.id);
-        else setProfile(null);
+      if (u) fetchProfile(u.id);
+      else setProfile(null);
 
-        setAuthChecking(false);
-      }
-    );
+      setAuthChecking(false);
+    });
 
     return () => {
       isMounted = false;
@@ -174,6 +172,24 @@ export default function Header({ transparent = false }: { transparent?: boolean 
   const displayName = getDisplayName(user, profile);
   const initial = getInitial(user, profile);
 
+  // ✅ added (helper path for dropdown tabs)
+  const baseProfilePath = profile?.username ? `/${profile.username}` : null;
+
+  // ✅ ONE PLACE to change divider style
+  const dropdownDividerBorder = "1px solid #c2c2c2";
+
+  // ✅ shared base style for dropdown links
+  const dropdownItemStyleBase: React.CSSProperties = {
+    display: "block",
+    width: "100%",
+    textAlign: "left",
+    padding: "0.6rem 0.85rem",
+    textDecoration: "none",
+    cursor: "pointer",
+    fontSize: "0.9rem",
+    color: "#333",
+  };
+
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
@@ -184,18 +200,25 @@ export default function Header({ transparent = false }: { transparent?: boolean 
     window.location.href = "/";
   };
 
-  const handleGoProfile = () => {
-    if (!profile?.username) return;
-    window.location.href = `/${profile.username}`;
-  };
+  const menuLinks =
+    baseProfilePath
+      ? [
+          { label: "Posts", href: baseProfilePath },
+          { label: "Completions", href: `${baseProfilePath}/completions` },
+          { label: "Watchlist", href: `${baseProfilePath}/watchlist` },
+          { label: "Activity", href: `${baseProfilePath}/activity` },
+          { label: "Journal", href: `${baseProfilePath}/journal` },
+          { label: "My Library", href: `${baseProfilePath}/library` },
+        ]
+      : [];
 
   return (
     <>
       <header
         style={{
           width: "100%",
-          padding: "0.7rem 1.5rem",
-          borderBottom: transparent ? "none" : "1px solid #ddd",
+          padding: "0.7rem .7rem",
+          borderBottom: transparent ? "none" : "1px solid #000000",
           background: transparent ? "transparent" : "#ffffff",
           display: "flex",
           alignItems: "center",
@@ -217,18 +240,16 @@ export default function Header({ transparent = false }: { transparent?: boolean 
           WebkitBackdropFilter: "none",
         }}
       >
-
         <div
           style={{
             width: "100%",
-            maxWidth: "65rem", // max-w-6xl
+            maxWidth: "67rem", // max-w-6xl
             margin: "0 auto",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
           }}
         >
-
           {/* Left: brand + nav links */}
           <div style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
             <Link
@@ -297,7 +318,7 @@ export default function Header({ transparent = false }: { transparent?: boolean 
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: "0.55rem",
+                  gap: 0,
                   border: "none",
                   background: "transparent",
                   cursor: "pointer",
@@ -306,11 +327,11 @@ export default function Header({ transparent = false }: { transparent?: boolean 
               >
                 <div
                   style={{
-                    width: "2.1rem",
-                    height: "2.1rem",
+                    width: "2.5rem",
+                    height: "2.5rem",
                     borderRadius: "50%",
                     background: "#e5e5e5",
-                    border: "1px solid #d0d0d0",
+                    border: "1px solid #000000",
                     flexShrink: 0,
                     display: "flex",
                     alignItems: "center",
@@ -333,22 +354,9 @@ export default function Header({ transparent = false }: { transparent?: boolean 
                       }}
                     />
                   ) : (
-                    (initial || "U")
+                    initial || "U"
                   )}
                 </div>
-
-                <span
-                  style={{
-                    fontSize: "0.95rem",
-                    color: "#333",
-                    maxWidth: "9rem",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {displayName || "User"}
-                </span>
               </button>
             ) : (
               <button
@@ -369,6 +377,7 @@ export default function Header({ transparent = false }: { transparent?: boolean 
               </button>
             )}
 
+            {/* ✅ dropdown */}
             {user && isUserMenuOpen && (
               <div
                 style={{
@@ -376,34 +385,33 @@ export default function Header({ transparent = false }: { transparent?: boolean 
                   top: "2.6rem",
                   right: 0,
                   background: "#fff",
-                  border: "1px solid #ddd",
-                  borderRadius: 8,
+                  border: "1px solid #000000",
+                  borderRadius: 2,
                   boxShadow: "0 4px 12px rgba(0, 0, 0, 0.12)",
-                  minWidth: "150px",
+                  minWidth: "190px",
                   zIndex: 100,
+                  overflow: "hidden",
                 }}
               >
-                {profile?.username && (
-                  <button
-                    type="button"
-                    onClick={handleGoProfile}
-                    style={{
-                      display: "block",
-                      width: "100%",
-                      textAlign: "left",
-                      padding: "0.6rem 0.85rem",
-                      border: "none",
-                      background: "transparent",
-                      cursor: "pointer",
-                      fontSize: "0.9rem",
-                      color: "#333",
-                      borderBottom: "1px solid #eee",
-                    }}
-                  >
-                    Profile
-                  </button>
-                )}
+                {menuLinks.map((item, idx) => {
+                  const isLast = idx === menuLinks.length - 1;
 
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setIsUserMenuOpen(false)}
+                      style={{
+                        ...dropdownItemStyleBase,
+                        borderBottom: isLast ? "none" : dropdownDividerBorder,
+                      }}
+                    >
+                      {item.label}
+                    </Link>
+                  );
+                })}
+
+                {/* If you want a divider ABOVE logout too, set borderTop here */}
                 <button
                   type="button"
                   onClick={handleLogout}
@@ -417,6 +425,7 @@ export default function Header({ transparent = false }: { transparent?: boolean 
                     cursor: "pointer",
                     fontSize: "0.9rem",
                     color: "#b00000",
+                    borderTop: menuLinks.length > 0 ? dropdownDividerBorder : "none",
                   }}
                 >
                   Log out

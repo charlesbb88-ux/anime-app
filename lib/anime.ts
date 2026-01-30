@@ -20,6 +20,23 @@ type SupabaseListResult<T> = {
   error: PostgrestError | null;
 };
 
+function cleanSearch(s?: string | null): string {
+  return (s || "").trim();
+}
+
+function buildAnimeSearchOr(raw: string): string {
+  // Search title OR english OR preferred OR native OR slug
+  // NOTE: PostgREST "or" string uses commas as separators. Avoid commas in search if you can.
+  const q = raw;
+  return [
+    `title.ilike.%${q}%`,
+    `title_english.ilike.%${q}%`,
+    `title_preferred.ilike.%${q}%`,
+    `title_native.ilike.%${q}%`,
+    `slug.ilike.%${q}%`,
+  ].join(",");
+}
+
 // ========================================
 // Anime catalog helpers
 // ========================================
@@ -31,7 +48,7 @@ export async function getAnimeById(id: string): Promise<SupabaseResult<Anime>> {
     .eq("id", id)
     .maybeSingle();
 
-  return { data: data as Anime | null, error };
+  return { data: (data as Anime | null) ?? null, error };
 }
 
 export async function getAnimeBySlug(
@@ -43,31 +60,48 @@ export async function getAnimeBySlug(
     .eq("slug", slug)
     .maybeSingle();
 
-  return { data: data as Anime | null, error };
+  return { data: (data as Anime | null) ?? null, error };
 }
 
 export type ListAnimeOptions = {
+  /**
+   * Backwards compatible: old callers pass { searchTitle }.
+   * Searches title (and also other title fields + slug, see below).
+   */
   searchTitle?: string;
+
+  /**
+   * Preferred: new callers pass { search }.
+   * Searches title/title_english/title_preferred/title_native/slug.
+   */
+  search?: string;
+
+  /** Max rows to return (default: 200) */
   limit?: number;
 };
 
 export async function listAnime(
   options: ListAnimeOptions = {}
 ): Promise<SupabaseListResult<Anime>> {
-  const { searchTitle, limit } = options;
+  const { searchTitle, search, limit } = options;
+
+  const raw = cleanSearch(search ?? searchTitle);
 
   let query = supabase
     .from("anime")
     .select("*")
     .order("created_at", { ascending: false });
 
-  if (searchTitle && searchTitle.trim().length > 0) {
-    query = query.ilike("title", `%${searchTitle.trim()}%`);
+  if (raw.length > 0) {
+    query = query.or(buildAnimeSearchOr(raw));
   }
 
-  if (typeof limit === "number" && limit > 0) {
-    query = query.limit(limit);
-  }
+  const safeLimit =
+    typeof limit === "number" && Number.isFinite(limit) && limit > 0
+      ? Math.floor(limit)
+      : 200;
+
+  query = query.limit(safeLimit);
 
   const { data, error } = await query;
   return { data: (data as Anime[]) || [], error };
@@ -88,7 +122,7 @@ export async function getAnimeEpisode(
     .eq("episode_number", episodeNumber)
     .maybeSingle();
 
-  return { data: data as AnimeEpisode | null, error };
+  return { data: (data as AnimeEpisode | null) ?? null, error };
 }
 
 // List all episodes for a given anime, ordered by episode_number ascending
@@ -212,5 +246,5 @@ export async function upsertUserAnimeProgress(
     )
     .maybeSingle();
 
-  return { data: data as UserAnimeProgress | null, error };
+  return { data: (data as UserAnimeProgress | null) ?? null, error };
 }
