@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { MessageCircle, Heart, Bookmark } from "lucide-react";
+import ActionRow from "./ActionRow";
 
 export type CommentRowProps = {
   id: string;
@@ -77,26 +77,6 @@ function formatRelativeTime(dateString: string) {
   return `${years}y`;
 }
 
-function ShareArrowIcon({ size = 20 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 2v13" />
-      <path d="m16 6-4-4-4 4" />
-      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-    </svg>
-  );
-}
-
 export default function CommentRow(props: CommentRowProps) {
   const router = useRouter();
   const [isHovered, setIsHovered] = React.useState(false);
@@ -136,31 +116,6 @@ export default function CommentRow(props: CommentRowProps) {
   const nameFontSize = isMain ? "1.05rem" : "0.95rem";
   const contentFontSize = isMain ? "1.1rem" : "1rem";
   const contentFontWeight = 400;
-
-  const iconButtonBase: React.CSSProperties = {
-    border: "none",
-    background: "transparent",
-    cursor: "pointer",
-    padding: "6px",
-    borderRadius: 999,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "background 0.12s ease, transform 0.12s ease, color 0.12s ease",
-    color: "#555",
-  };
-
-  const countStyle: React.CSSProperties = {
-    fontSize: "0.9rem",
-    color: "inherit",
-  };
-
-  const actionSlotStyle: React.CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    gap: "0.35rem",
-    minWidth: 0,
-  };
 
   // Base pill style (no hover baked in)
   const baseOriginPillStyle: React.CSSProperties = {
@@ -583,117 +538,25 @@ export default function CommentRow(props: CommentRowProps) {
 
       {body}
 
-      {/* Action bar */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          maxWidth: "90%",
-          padding: "0.4rem 0 0.8rem 3.4rem",
-          marginLeft: ".3rem",
-          marginRight: "auto",
+      <ActionRow
+        variant={isMain ? "main" : "feed"}
+        iconSize={iconSize}
+        replyCount={replyCount}
+        likeCount={likeCount}
+        likedByMe={likedByMe}
+        onReply={(e: React.MouseEvent<HTMLButtonElement>) => {
+          e.stopPropagation();
+          onReplyClick?.(id, e);
         }}
-      >
-        {/* Reply */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onReplyClick?.(id, e);
-          }}
-          style={{
-            ...iconButtonBase,
-            ...actionSlotStyle,
-            padding: "6px 10px",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-1px)";
-            e.currentTarget.style.color = "#1d9bf0";
-            e.currentTarget.style.background = "#1d9bf01a";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "translateY(0)";
-            e.currentTarget.style.color = "#555";
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          <MessageCircle width={iconSize} height={iconSize} strokeWidth={1.7} />
-          <span style={countStyle}>{replyCount}</span>
-        </button>
-
-        {/* Like */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleLike?.(id, e);
-          }}
-          style={{
-            ...iconButtonBase,
-            ...actionSlotStyle,
-            padding: "6px 10px",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-1px)";
-            e.currentTarget.style.color = "#f91880";
-            e.currentTarget.style.background = "#f918801a";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "translateY(0)";
-            e.currentTarget.style.color = "#555";
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          <Heart
-            width={iconSize}
-            height={iconSize}
-            strokeWidth={1.7}
-            fill={likedByMe ? "currentColor" : "none"}
-          />
-          <span style={countStyle}>{likeCount}</span>
-        </button>
-
-        {/* Bookmark */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onBookmarkClick?.(id, e);
-          }}
-          style={iconButtonBase}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-1px)";
-            e.currentTarget.style.color = "#00ba7c";
-            e.currentTarget.style.background = "#00ba7c1a";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "translateY(0)";
-            e.currentTarget.style.color = "#555";
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          <Bookmark width={iconSize} height={iconSize} strokeWidth={1.7} />
-        </button>
-
-        {/* Share */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onShareClick?.(id, e);
-          }}
-          style={iconButtonBase}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-1px)";
-            e.currentTarget.style.color = "#1d9bf0";
-            e.currentTarget.style.background = "#1d9bf01a";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "translateY(0)";
-            e.currentTarget.style.color = "#555";
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          <ShareArrowIcon size={iconSize} />
-        </button>
-      </div>
+        onLike={(e: React.MouseEvent<HTMLButtonElement>) => {
+          e.stopPropagation();
+          onToggleLike?.(id, e);
+        }}
+        onShare={(e: React.MouseEvent<HTMLButtonElement>) => {
+          e.stopPropagation();
+          onShareClick?.(id, e);
+        }}
+      />
     </div>
   );
 }

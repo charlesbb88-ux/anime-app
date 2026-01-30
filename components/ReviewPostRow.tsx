@@ -3,7 +3,8 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { MessageCircle, Heart, Bookmark } from "lucide-react";
+import { Heart } from "lucide-react";
+import ActionRow from "./ActionRow";
 
 const POSTER_W = 72;
 const POSTER_H = 108;
@@ -20,7 +21,7 @@ export type ReviewPostRowProps = {
   rating: number | null; // reviews.rating: 0..100 (or null)
   containsSpoilers?: boolean;
 
-  // ✅ NEW: author-like snapshot from reviews.author_liked
+  // ✅ author-like snapshot from reviews.author_liked
   authorLiked?: boolean;
 
   displayName: string;
@@ -31,9 +32,13 @@ export type ReviewPostRowProps = {
   originLabel?: string;
   originHref?: string;
 
-  // ✅ episode info (THIS IS WHAT WE USE FOR THE EXTENSION)
+  // ✅ episode info (extension label)
   episodeLabel?: string;
   episodeHref?: string;
+
+  // ✅ manga chapter parity
+  chapterLabel?: string;
+  chapterHref?: string;
 
   posterUrl?: string | null;
 
@@ -154,44 +159,31 @@ function ReviewStarsRow({
   if (nodes.length === 0) return null;
 
   return (
-    <span className="inline-flex items-center gap-[2px]" aria-label={`${hs / 2} stars`}>
+    <span
+      className="inline-flex items-center gap-[2px]"
+      aria-label={`${hs / 2} stars`}
+    >
       {nodes}
     </span>
   );
 }
 
-/* -------------------- Icons -------------------- */
-
-function ShareArrowIcon({ size = 20 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 2v13" />
-      <path d="m16 6-4-4-4 4" />
-      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-    </svg>
-  );
-}
+/* -------------------- Poster box -------------------- */
 
 function PosterBox({
   url,
   title,
   episodeLabel,
   episodeHref,
+  chapterLabel,
+  chapterHref,
 }: {
   url?: string | null;
   title: string;
   episodeLabel?: string;
   episodeHref?: string;
+  chapterLabel?: string;
+  chapterHref?: string;
 }) {
   const [hasError, setHasError] = useState(false);
 
@@ -202,10 +194,13 @@ function PosterBox({
 
   const EXT_H = 22;
 
-  const extensionNode = episodeLabel ? (
-    episodeHref ? (
+  const extLabel = episodeLabel ?? chapterLabel;
+  const extHref = episodeHref ?? chapterHref;
+
+  const extensionNode = extLabel ? (
+    extHref ? (
       <Link
-        href={episodeHref}
+        href={extHref}
         onClick={(e) => e.stopPropagation()}
         style={{ textDecoration: "none" }}
       >
@@ -220,9 +215,9 @@ function PosterBox({
             color: "#333",
             lineHeight: 1,
           }}
-          title={episodeLabel}
+          title={extLabel}
         >
-          {episodeLabel}
+          {extLabel}
         </div>
       </Link>
     ) : (
@@ -237,9 +232,9 @@ function PosterBox({
           color: "#333",
           lineHeight: 1,
         }}
-        title={episodeLabel}
+        title={extLabel}
       >
-        {episodeLabel}
+        {extLabel}
       </div>
     )
   ) : null;
@@ -252,7 +247,7 @@ function PosterBox({
         borderRadius: 6,
         border: "1px solid #000",
         background: "#f5f5f5",
-        paddingBottom: episodeLabel ? EXT_H : 0,
+        paddingBottom: extLabel ? EXT_H : 0,
         position: "relative",
         overflow: "hidden",
       }}
@@ -265,8 +260,8 @@ function PosterBox({
           overflow: "hidden",
           borderTopLeftRadius: 6,
           borderTopRightRadius: 6,
-          borderBottomLeftRadius: episodeLabel ? 0 : 6,
-          borderBottomRightRadius: episodeLabel ? 0 : 6,
+          borderBottomLeftRadius: extLabel ? 0 : 6,
+          borderBottomRightRadius: extLabel ? 0 : 6,
         }}
       >
         {showImage ? (
@@ -300,7 +295,7 @@ function PosterBox({
         )}
       </div>
 
-      {episodeLabel && (
+      {extLabel && (
         <div
           style={{
             position: "absolute",
@@ -328,7 +323,6 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
     rating,
     containsSpoilers = false,
 
-    // ✅ NEW
     authorLiked = false,
 
     displayName,
@@ -342,6 +336,9 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
     episodeLabel,
     episodeHref,
 
+    chapterLabel,
+    chapterHref,
+
     posterUrl,
 
     href,
@@ -351,6 +348,7 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
     onShareClick,
 
     isOwner = false,
+
     replyCount = 0,
     likeCount = 0,
     likedByMe = false,
@@ -372,33 +370,8 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
   const nameFontSize = isMain ? "1.05rem" : "0.95rem";
   const contentFontSize = isMain ? "1.1rem" : "1rem";
 
-  const animeTitle = originLabel ?? "";
+  const title = originLabel ?? "";
   const halfStarsForReview = rating != null ? rating100ToHalfStars(rating) : null;
-
-  const iconButtonBase: React.CSSProperties = {
-    border: "none",
-    background: "transparent",
-    cursor: "pointer",
-    padding: "6px",
-    borderRadius: 999,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "background 0.12s ease, transform 0.12s ease, color 0.12s ease",
-    color: "#555",
-  };
-
-  const countStyle: React.CSSProperties = {
-    fontSize: "0.9rem",
-    color: "inherit",
-  };
-
-  const actionSlotStyle: React.CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    gap: "0.35rem",
-    minWidth: 0,
-  };
 
   const isClickable = !!(href || onRowClick);
   const canHighlight = isClickable && !disableHoverHighlight;
@@ -408,9 +381,7 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
       onRowClick(postId, e);
       return;
     }
-    if (href) {
-      router.push(href);
-    }
+    if (href) router.push(href);
   }
 
   const avatarNode = (
@@ -591,17 +562,21 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
               >
                 <PosterBox
                   url={posterUrl}
-                  title={animeTitle || "?"}
+                  title={title || "?"}
                   episodeLabel={episodeLabel}
                   episodeHref={episodeHref}
+                  chapterLabel={chapterLabel}
+                  chapterHref={chapterHref}
                 />
               </Link>
             ) : (
               <PosterBox
                 url={posterUrl}
-                title={animeTitle || "?"}
+                title={title || "?"}
                 episodeLabel={episodeLabel}
                 episodeHref={episodeHref}
+                chapterLabel={chapterLabel}
+                chapterHref={chapterHref}
               />
             )}
           </div>
@@ -656,7 +631,6 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
                 {formatRelativeTime(createdAt)}
               </small>
 
-              {/* ✅ Optional spoiler chip (doesn't affect layout if false) */}
               {containsSpoilers ? (
                 <>
                   <span style={{ color: "#aaa", fontSize: "0.8rem" }}>·</span>
@@ -699,10 +673,10 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
                   textAlign: "right",
                 }}
               >
-                {animeTitle}
+                {title}
               </span>
 
-              {/* ✅ Stars + author-liked snapshot heart (does NOT touch action bar) */}
+              {/* Stars + author-like snapshot */}
               <div
                 style={{
                   marginTop: 2,
@@ -748,113 +722,25 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
         </div>
       </div>
 
-      {/* Action bar */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          maxWidth: "90%",
-          padding: "0.4rem 0 0.8rem 3.4rem",
-          marginLeft: ".3rem",
-          marginRight: "auto",
+      <ActionRow
+        variant={isMain ? "main" : "feed"}
+        iconSize={iconSize}
+        replyCount={replyCount}
+        likeCount={likeCount}
+        likedByMe={likedByMe}
+        onReply={(e: React.MouseEvent<HTMLButtonElement>) => {
+          e.stopPropagation();
+          onReplyClick?.(postId, e);
         }}
-      >
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onReplyClick?.(postId, e);
-          }}
-          style={{
-            ...iconButtonBase,
-            ...actionSlotStyle,
-            padding: "6px 10px",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-1px)";
-            e.currentTarget.style.color = "#1d9bf0";
-            e.currentTarget.style.background = "#1d9bf01a";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "translateY(0)";
-            e.currentTarget.style.color = "#555";
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          <MessageCircle width={iconSize} height={iconSize} strokeWidth={1.7} />
-          <span style={countStyle}>{replyCount}</span>
-        </button>
-
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleLike?.(postId, e);
-          }}
-          style={{
-            ...iconButtonBase,
-            ...actionSlotStyle,
-            padding: "6px 10px",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-1px)";
-            e.currentTarget.style.color = "#f91880";
-            e.currentTarget.style.background = "#f918801a";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "translateY(0)";
-            e.currentTarget.style.color = "#555";
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          <Heart
-            width={iconSize}
-            height={iconSize}
-            strokeWidth={1.7}
-            fill={likedByMe ? "currentColor" : "none"}
-          />
-          <span style={countStyle}>{likeCount}</span>
-        </button>
-
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onBookmarkClick?.(postId, e);
-          }}
-          style={iconButtonBase}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-1px)";
-            e.currentTarget.style.color = "#00ba7c";
-            e.currentTarget.style.background = "#00ba7c1a";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "translateY(0)";
-            e.currentTarget.style.color = "#555";
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          <Bookmark width={iconSize} height={iconSize} strokeWidth={1.7} />
-        </button>
-
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onShareClick?.(postId, e);
-          }}
-          style={iconButtonBase}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-1px)";
-            e.currentTarget.style.color = "#1d9bf0";
-            e.currentTarget.style.background = "#1d9bf01a";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "translateY(0)";
-            e.currentTarget.style.color = "#555";
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          <ShareArrowIcon size={iconSize} />
-        </button>
-      </div>
+        onLike={(e: React.MouseEvent<HTMLButtonElement>) => {
+          e.stopPropagation();
+          onToggleLike?.(postId, e);
+        }}
+        onShare={(e: React.MouseEvent<HTMLButtonElement>) => {
+          e.stopPropagation();
+          onShareClick?.(postId, e);
+        }}
+      />
     </div>
   );
 }

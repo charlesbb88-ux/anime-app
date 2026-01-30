@@ -2,7 +2,7 @@
 
 import type { NextPage } from "next";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Anime } from "@/lib/types";
 import { listAnime } from "@/lib/anime";
 
@@ -11,52 +11,108 @@ const AnimeListPage: NextPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // ✅ Server-backed search
+  const [query, setQuery] = useState("");
+  const debounceRef = useRef<number | null>(null);
+
+  const load = async (search?: string) => {
+    setIsLoading(true);
+    setLoadError(null);
+
+    const { data, error } = await listAnime({
+      limit: 200,
+      search: search?.trim() ? search.trim() : undefined,
+    });
+
+    if (error) {
+      console.error("Error loading anime list:", error);
+      setAnimeList([]);
+      setLoadError("Failed to load anime catalog.");
+    } else {
+      setAnimeList(data || []);
+      setLoadError(null);
+    }
+
+    setIsLoading(false);
+  };
+
+  // initial load
   useEffect(() => {
     let isCancelled = false;
 
-    const load = async () => {
-      setIsLoading(true);
-      setLoadError(null);
-
-      const { data, error } = await listAnime({
-        limit: 200,
-      });
-
-      if (isCancelled) return;
-
-      if (error) {
-        console.error("Error loading anime list:", error);
-        setAnimeList([]);
-        setLoadError("Failed to load anime catalog.");
-      } else {
-        setAnimeList(data || []);
-        setLoadError(null);
-      }
-
-      setIsLoading(false);
-    };
-
-    load();
+    (async () => {
+      if (!isCancelled) await load(undefined);
+    })();
 
     return () => {
       isCancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // debounced search
+  useEffect(() => {
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+
+    debounceRef.current = window.setTimeout(() => {
+      load(query);
+    }, 250);
+
+    return () => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  const showingLabel = useMemo(() => {
+    const q = query.trim();
+    if (!q) return "Showing latest";
+    return `Results for "${q}"`;
+  }, [query]);
 
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-8">
       <div className="mx-auto flex w-full max-w-4xl flex-col">
-        <header className="mb-6 flex flex-col gap-1">
-          <h1 className="text-2xl font-bold text-gray-900">Anime catalog</h1>
-          <p className="text-sm text-gray-500">
-            All anime imported into your database. This will eventually show
-            everything.
-          </p>
+        <header className="mb-6 flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <h1 className="text-2xl font-bold text-gray-900">Anime catalog</h1>
+            <p className="text-sm text-gray-500">
+              All anime imported into your database. This will eventually show
+              everything.
+            </p>
+          </div>
+
+          {/* ✅ Search bar */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="flex w-full items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
+              <span className="select-none text-gray-400">🔎</span>
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search anime (title, english title, slug)…"
+                className="w-full bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-400"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              {query.trim() && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  className="rounded-md px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100"
+                  aria-label="Clear search"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            <div className="text-xs text-gray-500 sm:whitespace-nowrap">
+              {showingLabel}
+            </div>
+          </div>
         </header>
 
-        {isLoading && (
-          <p className="text-sm text-gray-500">Loading anime…</p>
-        )}
+        {isLoading && <p className="text-sm text-gray-500">Loading anime…</p>}
 
         {!isLoading && loadError && (
           <p className="text-sm text-red-500">{loadError}</p>
@@ -64,7 +120,9 @@ const AnimeListPage: NextPage = () => {
 
         {!isLoading && !loadError && animeList.length === 0 && (
           <p className="text-sm text-gray-500">
-            No anime found yet. Try importing some from the AniList dev page.
+            {query.trim()
+              ? "No matches found."
+              : "No anime found yet. Try importing some from the AniList dev page."}
           </p>
         )}
 
