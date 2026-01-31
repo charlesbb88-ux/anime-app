@@ -3,6 +3,8 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../lib/supabaseClient"; // adjust path if needed
+import FeedShell from "@/components/FeedShell";
+import UserSidebarStatsCard from "@/components/UserSidebarStatsCard";
 
 type TopUserRow = {
   user_id: string;
@@ -43,6 +45,229 @@ function clampText(s: string, max: number) {
   const t = (s ?? "").trim();
   if (t.length <= max) return t;
   return t.slice(0, max - 1) + "…";
+}
+
+function TopUserCard(props: {
+  topUser: TopUserRow | null;
+  loading: boolean;
+  error: string | null;
+}) {
+  const { topUser, loading, error } = props;
+
+  return (
+    <div style={{ padding: "1rem 1.1rem" }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+        <div style={{ fontSize: "0.95rem", fontWeight: 800 }}>Top User</div>
+        <div style={{ fontSize: "0.85rem", color: "#777" }}>This week</div>
+      </div>
+
+      <div style={{ height: 10 }} />
+
+      {loading && <div style={{ fontSize: "0.9rem", color: "#777" }}>Loading…</div>}
+      {!loading && error && <div style={{ fontSize: "0.9rem", color: "#b00000" }}>{error}</div>}
+      {!loading && !error && !topUser && (
+        <div style={{ fontSize: "0.9rem", color: "#777" }}>No activity yet this week.</div>
+      )}
+
+      {!loading && !error && topUser && (
+        <Link href={`/${topUser.username}`} style={{ textDecoration: "none", color: "inherit" }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              textAlign: "center",
+              gap: 5, // now this will actually matter
+            }}
+          >
+
+            {/* big avatar */}
+            <div
+              style={{
+                width: 120,
+                height: 120,
+                borderRadius: 999,
+                background: "#111",
+                border: "2px solid rgba(255,255,255,0.12)",
+                overflow: "hidden",
+                flexShrink: 0,
+              }}
+            >
+              {topUser.avatar_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={topUser.avatar_url}
+                  alt=""
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
+              ) : null}
+            </div>
+
+            {/* username */}
+            <div
+              style={{
+                fontSize: "1.05rem",
+                fontWeight: 900,
+                color: "#000000",
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+                maxWidth: "100%",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+              title={topUser.username}
+            >
+              {topUser.username}
+            </div>
+
+            {/* ✅ stats directly under username */}
+            <UserSidebarStatsCard userId={topUser.user_id} variant="inline" />
+          </div>
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function TopReviewCard(props: {
+  topReview: TopReviewRow | null;
+  loading: boolean;
+  error: string | null;
+}) {
+  const { topReview, loading, error } = props;
+
+  return (
+    <div style={{ padding: "1rem 1.1rem" }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+        <div style={{ fontSize: "0.95rem", fontWeight: 800 }}>Top Review</div>
+        <div style={{ fontSize: "0.85rem", color: "#777" }}>This week</div>
+      </div>
+
+      <div style={{ height: 10 }} />
+
+      {loading && <div style={{ fontSize: "0.9rem", color: "#777" }}>Loading…</div>}
+      {!loading && error && <div style={{ fontSize: "0.9rem", color: "#b00000" }}>{error}</div>}
+      {!loading && !error && !topReview && (
+        <div style={{ fontSize: "0.9rem", color: "#777" }}>No reviews yet this week.</div>
+      )}
+
+      {!loading && !error && topReview && (() => {
+        const isAnime = !!topReview.anime_id;
+
+        const mediaTitle = isAnime ? topReview.anime_title : topReview.manga_title;
+        const mediaSlug = isAnime ? topReview.anime_slug : topReview.manga_slug;
+        const mediaImg = isAnime ? topReview.anime_image_url : topReview.manga_image_url;
+
+        const mediaHref = isAnime ? `/anime/${mediaSlug}` : `/manga/${mediaSlug}`;
+
+        return (
+          <Link
+            href={`/review/${topReview.review_id}`} // change if your review route differs
+            style={{ textDecoration: "none", color: "inherit" }}
+          >
+            <div
+              style={{
+                display: "flex",
+                gap: "0.75rem",
+                cursor: "pointer",
+              }}
+            >
+              {/* media cover */}
+              <div
+                style={{
+                  width: 42,
+                  height: 58,
+                  borderRadius: 8,
+                  background: "#eaeaea",
+                  border: "1px solid #ddd",
+                  overflow: "hidden",
+                  flexShrink: 0,
+                }}
+              >
+                {mediaImg ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={mediaImg}
+                    alt=""
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  />
+                ) : null}
+              </div>
+
+              <div style={{ minWidth: 0, flex: 1 }}>
+                {/* media title */}
+                <div
+                  style={{
+                    fontSize: "0.92rem",
+                    fontWeight: 800,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                  title={mediaTitle ?? ""}
+                >
+                  {mediaTitle ?? (isAnime ? "Anime" : "Manga")}
+                </div>
+
+                {/* author */}
+                <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", marginTop: 4 }}>
+                  <div
+                    style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: 999,
+                      background: "#eaeaea",
+                      border: "1px solid #ddd",
+                      overflow: "hidden",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {topReview.author_avatar_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={topReview.author_avatar_url}
+                        alt=""
+                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                      />
+                    ) : null}
+                  </div>
+
+                  <div style={{ fontSize: "0.82rem", color: "#666" }}>
+                    {topReview.author_username}
+                    {mediaSlug ? (
+                      <>
+                        {" • "}
+                        <span
+                          onClick={(e) => {
+                            e.preventDefault();
+                            window.location.href = mediaHref;
+                          }}
+                          style={{ color: "#111", textDecoration: "underline", cursor: "pointer" }}
+                        >
+                          view
+                        </span>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* snippet */}
+                <div style={{ fontSize: "0.85rem", color: "#333", marginTop: 8, lineHeight: 1.25 }}>
+                  {clampText(topReview.content, 120)}
+                </div>
+
+                {/* metrics */}
+                <div style={{ fontSize: "0.8rem", color: "#666", marginTop: 10 }}>
+                  {topReview.replies_count} replies • {topReview.likes_count} likes
+                </div>
+              </div>
+            </div>
+          </Link>
+        );
+      })()}
+    </div>
+  );
 }
 
 export default function RightSidebar() {
@@ -118,234 +343,13 @@ export default function RightSidebar() {
 
   return (
     <aside style={{ width: "100%", display: "flex", flexDirection: "column", gap: "1rem" }}>
-      {/* ===== TOP USER ===== */}
-      <div
-        style={{
-          padding: "1rem 1.1rem",
-          background: "#ffffff",
-          borderRadius: 10,
-          border: "1px solid #11111111",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-          <div style={{ fontSize: "0.95rem", fontWeight: 800 }}>Top User</div>
-          <div style={{ fontSize: "0.85rem", color: "#777" }}>This week</div>
-        </div>
+      <FeedShell>
+        <TopUserCard topUser={topUser} loading={loadingUser} error={errorUser} />
+      </FeedShell>
 
-        <div style={{ height: 10 }} />
-
-        {loadingUser && <div style={{ fontSize: "0.9rem", color: "#777" }}>Loading…</div>}
-        {!loadingUser && errorUser && <div style={{ fontSize: "0.9rem", color: "#b00000" }}>{errorUser}</div>}
-        {!loadingUser && !errorUser && !topUser && (
-          <div style={{ fontSize: "0.9rem", color: "#777" }}>No activity yet this week.</div>
-        )}
-
-        {!loadingUser && !errorUser && topUser && (
-          <Link href={`/profile/${topUser.username}`} style={{ textDecoration: "none", color: "inherit" }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.85rem",
-                padding: "0.8rem",
-                borderRadius: 10,
-                border: "1px solid #eee",
-                background: "#fafafa",
-                cursor: "pointer",
-              }}
-            >
-              <div
-                style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: 999,
-                  background: "#eaeaea",
-                  border: "1px solid #ddd",
-                  overflow: "hidden",
-                  flexShrink: 0,
-                }}
-              >
-                {topUser.avatar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={topUser.avatar_url}
-                    alt=""
-                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                  />
-                ) : null}
-              </div>
-
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div
-                  style={{
-                    fontSize: "1rem",
-                    fontWeight: 800,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                  title={topUser.username}
-                >
-                  {topUser.username}
-                </div>
-
-                <div style={{ fontSize: "0.82rem", color: "#666", marginTop: 2 }}>
-                  {topUser.reviews_written} reviews • {topUser.responses_received} replies • {topUser.likes_received} likes
-                </div>
-              </div>
-
-              <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <div style={{ fontSize: "0.75rem", color: "#777" }}>Impact</div>
-                <div style={{ fontSize: "1.1rem", fontWeight: 900 }}>{Math.round(Number(topUser.score))}</div>
-              </div>
-            </div>
-          </Link>
-        )}
-      </div>
-
-      {/* ===== TOP REVIEW ===== */}
-      <div
-        style={{
-          padding: "1rem 1.1rem",
-          background: "#ffffff",
-          borderRadius: 10,
-          border: "1px solid #11111111",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-          <div style={{ fontSize: "0.95rem", fontWeight: 800 }}>Top Review</div>
-          <div style={{ fontSize: "0.85rem", color: "#777" }}>This week</div>
-        </div>
-
-        <div style={{ height: 10 }} />
-
-        {loadingReview && <div style={{ fontSize: "0.9rem", color: "#777" }}>Loading…</div>}
-        {!loadingReview && errorReview && <div style={{ fontSize: "0.9rem", color: "#b00000" }}>{errorReview}</div>}
-        {!loadingReview && !errorReview && !topReview && (
-          <div style={{ fontSize: "0.9rem", color: "#777" }}>No reviews yet this week.</div>
-        )}
-
-        {!loadingReview && !errorReview && topReview && (() => {
-          const isAnime = !!topReview.anime_id;
-          const mediaTitle = isAnime ? topReview.anime_title : topReview.manga_title;
-          const mediaSlug = isAnime ? topReview.anime_slug : topReview.manga_slug;
-          const mediaImg = isAnime ? topReview.anime_image_url : topReview.manga_image_url;
-          const mediaHref = isAnime ? `/anime/${mediaSlug}` : `/manga/${mediaSlug}`;
-
-          return (
-            <Link
-              href={`/review/${topReview.review_id}`} // 🔧 change if your review route differs
-              style={{ textDecoration: "none", color: "inherit" }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  gap: "0.75rem",
-                  padding: "0.8rem",
-                  borderRadius: 10,
-                  border: "1px solid #eee",
-                  background: "#fafafa",
-                  cursor: "pointer",
-                }}
-              >
-                {/* media cover */}
-                <div
-                  style={{
-                    width: 42,
-                    height: 58,
-                    borderRadius: 8,
-                    background: "#eaeaea",
-                    border: "1px solid #ddd",
-                    overflow: "hidden",
-                    flexShrink: 0,
-                  }}
-                >
-                  {mediaImg ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={mediaImg}
-                      alt=""
-                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                    />
-                  ) : null}
-                </div>
-
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  {/* media title */}
-                  <div
-                    style={{
-                      fontSize: "0.92rem",
-                      fontWeight: 800,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                    title={mediaTitle ?? ""}
-                  >
-                    {mediaTitle ?? (isAnime ? "Anime" : "Manga")}
-                  </div>
-
-                  {/* author */}
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", marginTop: 4 }}>
-                    <div
-                      style={{
-                        width: 18,
-                        height: 18,
-                        borderRadius: 999,
-                        background: "#eaeaea",
-                        border: "1px solid #ddd",
-                        overflow: "hidden",
-                        flexShrink: 0,
-                      }}
-                    >
-                      {topReview.author_avatar_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={topReview.author_avatar_url}
-                          alt=""
-                          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                        />
-                      ) : null}
-                    </div>
-                    <div style={{ fontSize: "0.82rem", color: "#666" }}>
-                      {topReview.author_username}
-                      {mediaSlug ? (
-                        <>
-                          {" • "}
-                          <span
-                            onClick={(e) => {
-                              e.preventDefault();
-                              window.location.href = mediaHref;
-                            }}
-                            style={{ color: "#111", textDecoration: "underline", cursor: "pointer" }}
-                          >
-                            view
-                          </span>
-                        </>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  {/* snippet */}
-                  <div style={{ fontSize: "0.85rem", color: "#333", marginTop: 8, lineHeight: 1.25 }}>
-                    {clampText(topReview.content, 120)}
-                  </div>
-
-                  {/* metrics */}
-                  <div style={{ fontSize: "0.8rem", color: "#666", marginTop: 10 }}>
-                    {topReview.replies_count} replies • {topReview.likes_count} likes
-                  </div>
-                </div>
-
-                <div style={{ textAlign: "right", flexShrink: 0 }}>
-                  <div style={{ fontSize: "0.75rem", color: "#777" }}>Heat</div>
-                  <div style={{ fontSize: "1.1rem", fontWeight: 900 }}>{Math.round(Number(topReview.score))}</div>
-                </div>
-              </div>
-            </Link>
-          );
-        })()}
-      </div>
+      <FeedShell>
+        <TopReviewCard topReview={topReview} loading={loadingReview} error={errorReview} />
+      </FeedShell>
     </aside>
   );
 }
