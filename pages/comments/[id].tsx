@@ -259,7 +259,7 @@ function ThreadRow(props: ThreadRowProps) {
     <div
       style={{
         display: "flex",
-        alignItems: "flex-start",
+        alignItems: "stretch",
         gap: "0.75rem",
         padding: "0.7rem 0.8rem 0.3rem 0.8rem",
       }}
@@ -271,6 +271,7 @@ function ThreadRow(props: ThreadRowProps) {
           width: avatarWrapperSize,
           display: "flex",
           justifyContent: "center",
+          alignSelf: "stretch",
           marginRight: "0.4rem",
         }}
       >
@@ -279,7 +280,7 @@ function ThreadRow(props: ThreadRowProps) {
             style={{
               position: "absolute",
               top: showConnectorAbove ? -36 : avatarCircleSize / 2,
-              bottom: showConnectorBelow ? -36 : avatarCircleSize / 2,
+              bottom: showConnectorBelow ? -36 : `calc(100% - ${avatarCircleSize / 2}px)`,
               left: "50%",
               transform: "translateX(-50%)",
               borderLeft: "1px solid #e0e0e0",
@@ -1437,6 +1438,20 @@ export default function CommentPage() {
                               onToggleLike={handleTogglePostLike}
                               disableHoverHighlight
                             />
+                            {showConnectorBelow && (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: `calc(0.7rem + 45px)`,
+                                  bottom: -36,
+                                  left: `calc(0.8rem + ${52 / 2}px)`,
+                                  transform: "translateX(-50%)",
+                                  borderLeft: "1px solid #e0e0e0",
+                                  pointerEvents: "none",
+                                  zIndex: 0,
+                                }}
+                              />
+                            )}
 
                             {/* TOP */}
                             <div
