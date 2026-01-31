@@ -1362,7 +1362,7 @@ export default function CommentPage() {
             <>
               {/* THREAD (wrapped like PostPage) */}
               <FeedShell>
-                <div className="mobileMainPostBorders">
+                <div className="threadSectionBorders">
                   {threadItems.map((entry, index) => {
                     const isFirst = index === 0;
                     const isLast = index === threadItems.length - 1;
@@ -1789,9 +1789,23 @@ export default function CommentPage() {
       )}
 
       <style jsx global>{`
+      /* THREAD borders:
+   - top/bottom always
+   - left/right only on non-phone (default) */
+.threadSectionBorders {
+  border-top: 2px solid #000;
+  border-bottom: 2px solid #000;
+  border-left: 1px solid #000;
+  border-right: 1px solid #000;
+}
+
         @media (max-width: 768px) {
           .postSidebar {
             display: none !important;
+            .threadSectionBorders {
+  border-left: none !important;
+  border-right: none !important;
+}
           }
 
           .postMain {
@@ -1807,12 +1821,6 @@ export default function CommentPage() {
           .postPageWrap {
             padding-left: 0 !important;
             padding-right: 0 !important;
-          }
-
-          /* phone-only borders that match your PostPage behavior */
-          .mobileMainPostBorders {
-            border-top: 1px solid #000 !important;
-            border-bottom: 1px solid #000 !important;
           }
 
           .mobileRepliesBottomBorder {
