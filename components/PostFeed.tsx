@@ -7,6 +7,7 @@ import Link from "next/link";
 import { supabase } from "../lib/supabaseClient";
 import { openAuthModal } from "../lib/openAuthModal";
 import CommentRow from "./CommentRow";
+import InfiniteSentinel from "./InfiniteSentinel";
 
 type Post = {
   id: string;
@@ -82,6 +83,9 @@ const TYPO = {
   small: "0.9rem",
 };
 
+const INITIAL_LIMIT = 20;
+const PAGE_SIZE = 20;
+
 type PostFeedProps = {
   animeId?: string;
   animeEpisodeId?: string;
@@ -115,6 +119,11 @@ export default function PostFeed({
 
   const [openMenuPostId, setOpenMenuPostId] = useState<string | null>(null);
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
+
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [cursorCreatedAt, setCursorCreatedAt] = useState<string | null>(null);
+  const [cursorId, setCursorId] = useState<string | null>(null);
 
   const [usernamesById, setUsernamesById] = useState<Record<string, string>>({});
   const [avatarUrlsById, setAvatarUrlsById] = useState<Record<string, string | null>>(
@@ -198,7 +207,7 @@ export default function PostFeed({
   // FETCH FEED
   // -------------------------------
   useEffect(() => {
-    fetchFeed();
+    fetchFeed("initial");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [animeId, animeEpisodeId, mangaId, mangaChapterId]);
 
@@ -286,147 +295,189 @@ export default function PostFeed({
   // ============================================================
   // FETCH FEED (GLOBAL / ANIME / EPISODE / MANGA / CHAPTER)
   // ============================================================
-  async function fetchFeed() {
-    setIsLoadingPosts(true);
+  async function fetchFeed(mode: "initial" | "more" = "initial") {
+    const isInitial = mode === "initial";
+
+    if (isInitial) {
+      setIsLoadingPosts(true);
+      setHasMore(true);
+      setCursorCreatedAt(null);
+      setCursorId(null);
+    } else {
+      if (loadingMore) return;
+      if (!hasMore) return;
+      if (!cursorCreatedAt || !cursorId) return;
+      setLoadingMore(true);
+    }
 
     try {
+      const limit = isInitial ? INITIAL_LIMIT : PAGE_SIZE;
+
       let query = supabase
         .from("posts")
         .select(
           "id, content, created_at, user_id, anime_id, anime_episode_id, manga_id, manga_chapter_id, review_id"
         )
         .order("created_at", { ascending: false })
-        .limit(50);
+        .order("id", { ascending: false })
+        .limit(limit);
 
-      if (animeEpisodeId) {
-        query = query.eq("anime_episode_id", animeEpisodeId);
-      } else if (animeId) {
-        query = query.eq("anime_id", animeId);
-      } else if (mangaChapterId) {
-        query = query.eq("manga_chapter_id", mangaChapterId);
-      } else if (mangaId) {
-        query = query.eq("manga_id", mangaId);
+      // filters (same as you already had)
+      if (animeEpisodeId) query = query.eq("anime_episode_id", animeEpisodeId);
+      else if (animeId) query = query.eq("anime_id", animeId);
+      else if (mangaChapterId) query = query.eq("manga_chapter_id", mangaChapterId);
+      else if (mangaId) query = query.eq("manga_id", mangaId);
+
+      // ✅ keyset pagination: older than the current cursor
+      if (!isInitial && cursorCreatedAt && cursorId) {
+        query = query.or(
+          `created_at.lt.${cursorCreatedAt},and(created_at.eq.${cursorCreatedAt},id.lt.${cursorId})`
+        );
       }
 
-      const [
-        { data: postsData, error: postsError },
-        { data: likesData, error: likesError },
-        { data: commentsData, error: commentsError },
-      ] = await Promise.all([
-        query,
-        supabase.from("likes").select("post_id, user_id"),
-        supabase.from("comments").select("post_id, parent_comment_id"),
-      ]);
-
-      let postList: Post[] = [];
+      const { data: postsData, error: postsError } = await query;
 
       if (postsError) {
         console.error("Error fetching posts:", postsError);
-      } else {
-        postList = (postsData || []) as Post[];
-        setPosts(postList);
+        if (isInitial) setPosts([]);
+        setHasMore(false);
+        return;
       }
 
-      if (!likesError) {
-        const counts: Record<string, number> = {};
-        (likesData || []).forEach((l: Like) => {
-          counts[l.post_id] = (counts[l.post_id] || 0) + 1;
-        });
-        setLikeCounts(counts);
-      }
+      const newPosts = (postsData || []) as Post[];
 
-      if (!commentsError) {
-        const replyMap: Record<string, number> = {};
-        (commentsData || []).forEach((c: CommentMeta) => {
-          if (c.parent_comment_id === null) {
-            replyMap[c.post_id] = (replyMap[c.post_id] || 0) + 1;
-          }
-        });
-        setReplyCounts(replyMap);
-      }
+      // ✅ append / replace
+      const nextPostList = isInitial
+        ? newPosts
+        : (() => {
+          const seen = new Set(posts.map((p) => p.id));
+          const merged = [...posts];
+          for (const p of newPosts) if (!seen.has(p.id)) merged.push(p);
+          return merged;
+        })();
 
-      if (postList.length > 0) {
-        // USER PROFILES
-        const uniqueUserIds = Array.from(new Set(postList.map((p) => p.user_id)));
+      setPosts(nextPostList);
 
-        if (uniqueUserIds.length > 0) {
-          const { data: profilesData, error: profilesError } = await supabase
-            .from("profiles")
-            .select("id, username, avatar_url")
-            .in("id", uniqueUserIds);
+      // ✅ update cursor to the LAST item we have
+      const last = nextPostList[nextPostList.length - 1];
+      setCursorCreatedAt(last?.created_at ?? null);
+      setCursorId(last?.id ?? null);
 
-          if (profilesError) {
-            console.error("Error fetching profiles:", profilesError);
-          } else {
-            const nameMap: Record<string, string> = {};
-            const avatarMap: Record<string, string | null> = {};
+      // ✅ if we got fewer than requested, no more pages
+      if (newPosts.length < limit) setHasMore(false);
 
-            (profilesData || []).forEach((profile: Profile) => {
-              if (profile.username?.trim()) {
-                nameMap[profile.id] = profile.username.trim();
-              }
-              avatarMap[profile.id] = profile.avatar_url ?? null;
+      // ------------------------------------------------------------
+      // Now load metadata/likes/comments for the NEWLY ADDED posts only
+      // ------------------------------------------------------------
+      const newIds = newPosts.map((p) => p.id);
+      const newUserIds = Array.from(new Set(newPosts.map((p) => p.user_id)));
+
+      // likes counts for new posts
+      if (newIds.length > 0) {
+        const { data: likesData, error: likesError } = await supabase
+          .from("likes")
+          .select("post_id, user_id")
+          .in("post_id", newIds);
+
+        if (!likesError) {
+          setLikeCounts((prev) => {
+            const next = { ...prev };
+            (likesData || []).forEach((l: Like) => {
+              next[l.post_id] = (next[l.post_id] || 0) + 1;
             });
-
-            setUsernamesById(nameMap);
-            setAvatarUrlsById(avatarMap);
-          }
+            return next;
+          });
         }
 
-        // ANIME META
-        const uniqueAnimeIds = Array.from(
-          new Set(postList.map((p) => p.anime_id).filter((id): id is string => !!id))
-        );
+        const { data: commentsData, error: commentsError } = await supabase
+          .from("comments")
+          .select("post_id, parent_comment_id")
+          .in("post_id", newIds);
 
-        if (uniqueAnimeIds.length > 0) {
-          const { data: animeRows, error: animeError } = await supabase
-            .from("anime")
-            .select("id, slug, title, title_english, image_url")
-            .in("id", uniqueAnimeIds);
+        if (!commentsError) {
+          setReplyCounts((prev) => {
+            const next = { ...prev };
+            (commentsData || []).forEach((c: CommentMeta) => {
+              if (c.parent_comment_id === null) {
+                next[c.post_id] = (next[c.post_id] || 0) + 1;
+              }
+            });
+            return next;
+          });
+        }
+      }
 
-          if (animeError) {
-            console.error("Error fetching anime metadata:", animeError);
-            setAnimeMetaById({});
-          } else {
-            const metaMap: Record<string, AnimeMeta> = {};
+      // profiles for new users
+      if (newUserIds.length > 0) {
+        const { data: profilesData, error: profilesError } = await supabase
+          .from("profiles")
+          .select("id, username, avatar_url")
+          .in("id", newUserIds);
+
+        if (!profilesError) {
+          setUsernamesById((prev) => {
+            const next = { ...prev };
+            (profilesData || []).forEach((profile: Profile) => {
+              if (profile.username?.trim()) next[profile.id] = profile.username.trim();
+            });
+            return next;
+          });
+
+          setAvatarUrlsById((prev) => {
+            const next = { ...prev };
+            (profilesData || []).forEach((profile: Profile) => {
+              next[profile.id] = profile.avatar_url ?? null;
+            });
+            return next;
+          });
+        }
+      }
+
+      // anime meta for new posts only
+      const uniqueAnimeIds = Array.from(
+        new Set(newPosts.map((p) => p.anime_id).filter((id): id is string => !!id))
+      );
+
+      if (uniqueAnimeIds.length > 0) {
+        const { data: animeRows, error: animeError } = await supabase
+          .from("anime")
+          .select("id, slug, title, title_english, image_url")
+          .in("id", uniqueAnimeIds);
+
+        if (!animeError) {
+          setAnimeMetaById((prev) => {
+            const next = { ...prev };
             (animeRows || []).forEach((row: any) => {
               if (!row.id) return;
-              metaMap[row.id] = {
+              next[row.id] = {
                 slug: row.slug ?? null,
                 titleEnglish: row.title_english ?? null,
                 title: row.title ?? null,
                 imageUrl: row.image_url ?? null,
               };
             });
-            setAnimeMetaById(metaMap);
-          }
-        } else {
-          setAnimeMetaById({});
+            return next;
+          });
         }
+      }
 
-        // EPISODE META
-        const uniqueEpisodeIds = Array.from(
-          new Set(
-            postList
-              .map((p) => p.anime_episode_id)
-              .filter((id): id is string => !!id)
-          )
-        );
+      // episode meta for new posts only
+      const uniqueEpisodeIds = Array.from(
+        new Set(newPosts.map((p) => p.anime_episode_id).filter((id): id is string => !!id))
+      );
 
-        if (uniqueEpisodeIds.length > 0) {
-          const { data: episodeRows, error: episodeError } = await supabase
-            .from("anime_episodes")
-            .select("id, episode_number")
-            .in("id", uniqueEpisodeIds);
+      if (uniqueEpisodeIds.length > 0) {
+        const { data: episodeRows, error: episodeError } = await supabase
+          .from("anime_episodes")
+          .select("id, episode_number")
+          .in("id", uniqueEpisodeIds);
 
-          if (episodeError) {
-            console.error("Error fetching episode metadata:", episodeError);
-            setEpisodeMetaById({});
-          } else {
-            const epMap: Record<string, EpisodeMeta> = {};
+        if (!episodeError) {
+          setEpisodeMetaById((prev) => {
+            const next = { ...prev };
             (episodeRows || []).forEach((row: any) => {
               if (!row.id) return;
-              epMap[row.id] = {
+              next[row.id] = {
                 episodeNumber:
                   typeof row.episode_number === "number"
                     ? row.episode_number
@@ -435,66 +486,56 @@ export default function PostFeed({
                       : null,
               };
             });
-            setEpisodeMetaById(epMap);
-          }
-        } else {
-          setEpisodeMetaById({});
+            return next;
+          });
         }
+      }
 
-        // MANGA META
-        const uniqueMangaIds = Array.from(
-          new Set(postList.map((p) => p.manga_id).filter((id): id is string => !!id))
-        );
+      // manga meta for new posts only
+      const uniqueMangaIds = Array.from(
+        new Set(newPosts.map((p) => p.manga_id).filter((id): id is string => !!id))
+      );
 
-        if (uniqueMangaIds.length > 0) {
-          const { data: mangaRows, error: mangaError } = await supabase
-            .from("manga")
-            .select("id, slug, title, title_english, image_url")
-            .in("id", uniqueMangaIds);
+      if (uniqueMangaIds.length > 0) {
+        const { data: mangaRows, error: mangaError } = await supabase
+          .from("manga")
+          .select("id, slug, title, title_english, image_url")
+          .in("id", uniqueMangaIds);
 
-          if (mangaError) {
-            console.error("Error fetching manga metadata:", mangaError);
-            setMangaMetaById({});
-          } else {
-            const mMap: Record<string, MangaMeta> = {};
+        if (!mangaError) {
+          setMangaMetaById((prev) => {
+            const next = { ...prev };
             (mangaRows || []).forEach((row: any) => {
               if (!row.id) return;
-              mMap[row.id] = {
+              next[row.id] = {
                 slug: row.slug ?? null,
                 titleEnglish: row.title_english ?? null,
                 title: row.title ?? null,
                 imageUrl: row.image_url ?? null,
               };
             });
-            setMangaMetaById(mMap);
-          }
-        } else {
-          setMangaMetaById({});
+            return next;
+          });
         }
+      }
 
-        // CHAPTER META
-        const uniqueChapterIds = Array.from(
-          new Set(
-            postList
-              .map((p) => p.manga_chapter_id)
-              .filter((id): id is string => !!id)
-          )
-        );
+      // chapter meta for new posts only
+      const uniqueChapterIds = Array.from(
+        new Set(newPosts.map((p) => p.manga_chapter_id).filter((id): id is string => !!id))
+      );
 
-        if (uniqueChapterIds.length > 0) {
-          const { data: chapterRows, error: chapterError } = await supabase
-            .from("manga_chapters")
-            .select("id, chapter_number")
-            .in("id", uniqueChapterIds);
+      if (uniqueChapterIds.length > 0) {
+        const { data: chapterRows, error: chapterError } = await supabase
+          .from("manga_chapters")
+          .select("id, chapter_number")
+          .in("id", uniqueChapterIds);
 
-          if (chapterError) {
-            console.error("Error fetching chapter metadata:", chapterError);
-            setChapterMetaById({});
-          } else {
-            const chMap: Record<string, ChapterMeta> = {};
+        if (!chapterError) {
+          setChapterMetaById((prev) => {
+            const next = { ...prev };
             (chapterRows || []).forEach((row: any) => {
               if (!row.id) return;
-              chMap[row.id] = {
+              next[row.id] = {
                 chapterNumber:
                   typeof row.chapter_number === "number"
                     ? row.chapter_number
@@ -503,21 +544,13 @@ export default function PostFeed({
                       : null,
               };
             });
-            setChapterMetaById(chMap);
-          }
-        } else {
-          setChapterMetaById({});
+            return next;
+          });
         }
-      } else {
-        setUsernamesById({});
-        setAvatarUrlsById({});
-        setAnimeMetaById({});
-        setEpisodeMetaById({});
-        setMangaMetaById({});
-        setChapterMetaById({});
       }
     } finally {
-      setIsLoadingPosts(false);
+      if (isInitial) setIsLoadingPosts(false);
+      else setLoadingMore(false);
     }
   }
 
@@ -575,7 +608,7 @@ export default function PostFeed({
     }
 
     setPostContent("");
-    await fetchFeed();
+    await fetchFeed("initial");
 
     if (user?.id) fetchLikedByMe(user.id);
   }
@@ -873,175 +906,193 @@ export default function PostFeed({
             No posts yet.
           </p>
         ) : (
-          posts.map((p) => {
-            const isOwner = user && user.id === p.user_id;
-            const isMenuOpen = openMenuPostId === p.id;
-            const likeCount = likeCounts[p.id] || 0;
-            const liked = !!likedByMe[p.id];
-            const replyCount = replyCounts[p.id] || 0;
+          <>
+            {posts.map((p) => {
+              const isOwner = user && user.id === p.user_id;
+              const isMenuOpen = openMenuPostId === p.id;
+              const likeCount = likeCounts[p.id] || 0;
+              const liked = !!likedByMe[p.id];
+              const replyCount = replyCounts[p.id] || 0;
 
-            const handle = getHandle(p.user_id);
-            const displayName = getDisplayName(p.user_id);
-            const initial = getInitialFromUserId(p.user_id);
+              const handle = getHandle(p.user_id);
+              const displayName = getDisplayName(p.user_id);
+              const initial = getInitialFromUserId(p.user_id);
 
-            const avatarUrl =
-              avatarUrlsById[p.user_id] !== undefined
-                ? avatarUrlsById[p.user_id] || undefined
-                : undefined;
+              const avatarUrl =
+                avatarUrlsById[p.user_id] !== undefined
+                  ? avatarUrlsById[p.user_id] || undefined
+                  : undefined;
 
-            // Pills + poster
-            let originLabel: string | undefined;
-            let originHref: string | undefined;
-            let episodeLabel: string | undefined;
-            let episodeHref: string | undefined;
-            let posterUrl: string | null | undefined;
+              // Pills + poster
+              let originLabel: string | undefined;
+              let originHref: string | undefined;
+              let episodeLabel: string | undefined;
+              let episodeHref: string | undefined;
+              let posterUrl: string | null | undefined;
 
-            // -------------------
-            // ANIME pills
-            // -------------------
-            if (p.anime_id) {
-              const meta = animeMetaById[p.anime_id];
-              if (meta) {
-                const english = meta.titleEnglish?.trim();
-                originLabel =
-                  english && english.length > 0 ? english : meta.title || undefined;
+              // -------------------
+              // ANIME pills
+              // -------------------
+              if (p.anime_id) {
+                const meta = animeMetaById[p.anime_id];
+                if (meta) {
+                  const english = meta.titleEnglish?.trim();
+                  originLabel =
+                    english && english.length > 0 ? english : meta.title || undefined;
 
-                if (meta.slug) originHref = `/anime/${meta.slug}`;
-                posterUrl = meta.imageUrl ?? null;
+                  if (meta.slug) originHref = `/anime/${meta.slug}`;
+                  posterUrl = meta.imageUrl ?? null;
 
-                if (p.anime_episode_id) {
-                  const epMeta = episodeMetaById[p.anime_episode_id];
+                  if (p.anime_episode_id) {
+                    const epMeta = episodeMetaById[p.anime_episode_id];
 
-                  if (epMeta && epMeta.episodeNumber != null) {
-                    episodeLabel = `Ep ${epMeta.episodeNumber}`;
-                    if (meta.slug) {
-                      episodeHref = `/anime/${meta.slug}/episode/${epMeta.episodeNumber}`;
-                    }
-                  } else {
-                    const asNum = Number(p.anime_episode_id);
-                    if (!Number.isNaN(asNum) && Number.isFinite(asNum)) {
-                      episodeLabel = `Ep ${asNum}`;
+                    if (epMeta && epMeta.episodeNumber != null) {
+                      episodeLabel = `Ep ${epMeta.episodeNumber}`;
                       if (meta.slug) {
-                        episodeHref = `/anime/${meta.slug}/episode/${asNum}`;
+                        episodeHref = `/anime/${meta.slug}/episode/${epMeta.episodeNumber}`;
+                      }
+                    } else {
+                      const asNum = Number(p.anime_episode_id);
+                      if (!Number.isNaN(asNum) && Number.isFinite(asNum)) {
+                        episodeLabel = `Ep ${asNum}`;
+                        if (meta.slug) {
+                          episodeHref = `/anime/${meta.slug}/episode/${asNum}`;
+                        }
                       }
                     }
                   }
                 }
               }
-            }
 
-            // -------------------
-            // MANGA pills (only if NOT an anime post)
-            // -------------------
-            if (!p.anime_id && p.manga_id) {
-              const meta = mangaMetaById[p.manga_id];
-              if (meta) {
-                const english = meta.titleEnglish?.trim();
-                originLabel =
-                  english && english.length > 0 ? english : meta.title || undefined;
+              // -------------------
+              // MANGA pills (only if NOT an anime post)
+              // -------------------
+              if (!p.anime_id && p.manga_id) {
+                const meta = mangaMetaById[p.manga_id];
+                if (meta) {
+                  const english = meta.titleEnglish?.trim();
+                  originLabel =
+                    english && english.length > 0 ? english : meta.title || undefined;
 
-                if (meta.slug) originHref = `/manga/${meta.slug}`;
-                posterUrl = meta.imageUrl ?? null;
+                  if (meta.slug) originHref = `/manga/${meta.slug}`;
+                  posterUrl = meta.imageUrl ?? null;
 
-                if (p.manga_chapter_id) {
-                  const chMeta = chapterMetaById[p.manga_chapter_id];
+                  if (p.manga_chapter_id) {
+                    const chMeta = chapterMetaById[p.manga_chapter_id];
 
-                  if (chMeta && chMeta.chapterNumber != null) {
-                    episodeLabel = `Ch ${chMeta.chapterNumber}`;
-                    if (meta.slug) {
-                      episodeHref = `/manga/${meta.slug}/chapter/${chMeta.chapterNumber}`;
-                    }
-                  } else {
-                    const asNum = Number(p.manga_chapter_id);
-                    if (!Number.isNaN(asNum) && Number.isFinite(asNum)) {
-                      episodeLabel = `Ch ${asNum}`;
+                    if (chMeta && chMeta.chapterNumber != null) {
+                      episodeLabel = `Ch ${chMeta.chapterNumber}`;
                       if (meta.slug) {
-                        episodeHref = `/manga/${meta.slug}/chapter/${asNum}`;
+                        episodeHref = `/manga/${meta.slug}/chapter/${chMeta.chapterNumber}`;
+                      }
+                    } else {
+                      const asNum = Number(p.manga_chapter_id);
+                      if (!Number.isNaN(asNum) && Number.isFinite(asNum)) {
+                        episodeLabel = `Ch ${asNum}`;
+                        if (meta.slug) {
+                          episodeHref = `/manga/${meta.slug}/chapter/${asNum}`;
+                        }
                       }
                     }
                   }
                 }
               }
-            }
 
-            const review = reviewsByPostId[p.id];
+              const review = reviewsByPostId[p.id];
 
-            return review ? (
-              <ReviewPostRow
-                key={p.id}
-                postId={p.id}
-                reviewId={review.id}
-                userId={p.user_id}
-                createdAt={p.created_at}
-                content={(review.content ?? p.content) as string}
-                rating={review.rating}
-                containsSpoilers={!!review.contains_spoilers}
-                // ✅ NEW: pass snapshot heart state to ReviewPostRow
-                authorLiked={!!review.author_liked}
-                displayName={displayName}
-                initial={initial}
-                username={handle ?? undefined}
-                avatarUrl={avatarUrl ?? null}
-                originLabel={originLabel}
-                originHref={originHref}
-                episodeLabel={episodeLabel}
-                episodeHref={episodeHref}
-                posterUrl={posterUrl ?? null}
-                href={`/posts/${p.id}`}
-                isOwner={!!isOwner}
-                replyCount={replyCount}
-                likeCount={likeCount}
-                likedByMe={liked}
-                onRowClick={openPostFromIcon}
-                onReplyClick={openPostFromIcon}
-                onToggleLike={toggleLike}
-                onEdit={(id, e) => {
-                  const post = posts.find((x) => x.id === id);
-                  if (post) handleEditPost(post, e);
-                }}
-                onDelete={(id, e) => {
-                  const post = posts.find((x) => x.id === id);
-                  if (post) handleDeletePost(post, e);
-                }}
-                isMenuOpen={isMenuOpen}
-                onToggleMenu={toggleMenu}
-              />
-            ) : (
-              <CommentRow
-                key={p.id}
-                id={p.id}
-                userId={p.user_id}
-                createdAt={p.created_at}
-                content={p.content}
-                displayName={displayName}
-                initial={initial}
-                username={handle ?? undefined}
-                avatarUrl={avatarUrl}
-                isOwner={!!isOwner}
-                href={`/posts/${p.id}`}
-                replyCount={replyCount}
-                likeCount={likeCount}
-                likedByMe={liked}
-                onRowClick={openPostFromIcon}
-                onReplyClick={openPostFromIcon}
-                onToggleLike={toggleLike}
-                onEdit={(id, e) => {
-                  const post = posts.find((x) => x.id === id);
-                  if (post) handleEditPost(post, e);
-                }}
-                onDelete={(id, e) => {
-                  const post = posts.find((x) => x.id === id);
-                  if (post) handleDeletePost(post, e);
-                }}
-                isMenuOpen={isMenuOpen}
-                onToggleMenu={toggleMenu}
-                originLabel={originLabel}
-                originHref={originHref}
-                episodeLabel={episodeLabel}
-                episodeHref={episodeHref}
-              />
-            );
-          })
+              return review ? (
+                <ReviewPostRow
+                  key={p.id}
+                  postId={p.id}
+                  reviewId={review.id}
+                  userId={p.user_id}
+                  createdAt={p.created_at}
+                  content={(review.content ?? p.content) as string}
+                  rating={review.rating}
+                  containsSpoilers={!!review.contains_spoilers}
+                  authorLiked={!!review.author_liked}
+                  displayName={displayName}
+                  initial={initial}
+                  username={handle ?? undefined}
+                  avatarUrl={avatarUrl ?? null}
+                  originLabel={originLabel}
+                  originHref={originHref}
+                  episodeLabel={episodeLabel}
+                  episodeHref={episodeHref}
+                  posterUrl={posterUrl ?? null}
+                  href={`/posts/${p.id}`}
+                  isOwner={!!isOwner}
+                  replyCount={replyCount}
+                  likeCount={likeCount}
+                  likedByMe={liked}
+                  onRowClick={openPostFromIcon}
+                  onReplyClick={openPostFromIcon}
+                  onToggleLike={toggleLike}
+                  onEdit={(id, e) => {
+                    const post = posts.find((x) => x.id === id);
+                    if (post) handleEditPost(post, e);
+                  }}
+                  onDelete={(id, e) => {
+                    const post = posts.find((x) => x.id === id);
+                    if (post) handleDeletePost(post, e);
+                  }}
+                  isMenuOpen={isMenuOpen}
+                  onToggleMenu={toggleMenu}
+                />
+              ) : (
+                <CommentRow
+                  key={p.id}
+                  id={p.id}
+                  userId={p.user_id}
+                  createdAt={p.created_at}
+                  content={p.content}
+                  displayName={displayName}
+                  initial={initial}
+                  username={handle ?? undefined}
+                  avatarUrl={avatarUrl}
+                  isOwner={!!isOwner}
+                  href={`/posts/${p.id}`}
+                  replyCount={replyCount}
+                  likeCount={likeCount}
+                  likedByMe={liked}
+                  onRowClick={openPostFromIcon}
+                  onReplyClick={openPostFromIcon}
+                  onToggleLike={toggleLike}
+                  onEdit={(id, e) => {
+                    const post = posts.find((x) => x.id === id);
+                    if (post) handleEditPost(post, e);
+                  }}
+                  onDelete={(id, e) => {
+                    const post = posts.find((x) => x.id === id);
+                    if (post) handleDeletePost(post, e);
+                  }}
+                  isMenuOpen={isMenuOpen}
+                  onToggleMenu={toggleMenu}
+                  originLabel={originLabel}
+                  originHref={originHref}
+                  episodeLabel={episodeLabel}
+                  episodeHref={episodeHref}
+                />
+              );
+            })}
+
+            <InfiniteSentinel
+              disabled={isLoadingPosts || loadingMore || !hasMore}
+              onVisible={() => fetchFeed("more")}
+            />
+
+            {loadingMore && (
+              <div style={{ padding: "0.75rem 0", fontSize: TYPO.small, color: "#666" }}>
+                Loading more…
+              </div>
+            )}
+
+            {!hasMore && posts.length > 0 && (
+              <div style={{ padding: "0.75rem 0", fontSize: TYPO.small, color: "#666" }}>
+                You’re caught up.
+              </div>
+            )}
+          </>
         )}
       </div>
     </>
