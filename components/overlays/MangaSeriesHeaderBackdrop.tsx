@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
+import { FALLBACK_BACKDROP_SRC } from "@/lib/fallbacks";
 
 function normalizeBackdropUrl(url: string) {
     if (!url) return url;
@@ -103,7 +104,16 @@ export default function MangaSeriesHeaderBackdrop({
                     style={{ objectPosition: "50% 20%" }} // ✅ MATCH MangaMediaHeaderLayout
                 />
             ) : (
-                <div className="h-full w-full bg-black" />
+                <Image
+                    src={FALLBACK_BACKDROP_SRC}
+                    alt=""
+                    width={1920}
+                    height={1080}
+                    priority
+                    sizes="100vw"
+                    className="h-full w-full object-cover"
+                    style={{ objectPosition: "50% 13%" }}
+                />
             )}
 
             {showOverlay ? (
