@@ -4,6 +4,7 @@
 
 const ANILIST_URL = "https://graphql.anilist.co";
 const PER_PAGE = 50;
+const FALLBACK_BACKDROP_SRC = "/fallbacks/hero-fallback.png";
 
 async function fetchPage(page) {
   const res = await fetch(ANILIST_URL, {
