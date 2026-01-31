@@ -1,6 +1,7 @@
+// pages/comments/[id].tsx (or wherever your CommentPage lives)
 "use client";
 
-import { useEffect, useState, useRef, type CSSProperties } from "react";
+import React, { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { MessageCircle, Heart, Bookmark } from "lucide-react";
@@ -9,12 +10,35 @@ import CommentRow from "../../components/CommentRow";
 import LeftSidebar from "../../components/LeftSidebar";
 import RightSidebar from "../../components/RightSidebar";
 import { openAuthModal } from "../../lib/openAuthModal";
+import PostContextHeaderLayout from "@/components/PostContextHeaderLayout";
+import FeedShell from "@/components/FeedShell";
+
+/* ---------------------- types ---------------------- */
 
 type Post = {
   id: string;
   content: string;
   created_at: string;
   user_id: string;
+
+  // ✅ match PostPage so PostContextHeaderLayout can render consistently
+  anime_id: string | null;
+  anime_episode_id: string | null;
+  manga_id: string | null;
+  manga_chapter_id: string | null;
+  review_id: string | null;
+};
+
+type ReviewRow = {
+  id: string;
+  rating: number | null;
+  contains_spoilers: boolean | null;
+  author_liked: boolean | null;
+
+  anime_id: string | null;
+  anime_episode_id: string | null;
+  manga_id: string | null;
+  manga_chapter_id: string | null;
 };
 
 type Comment = {
@@ -42,14 +66,15 @@ type Profile = {
   avatar_url: string | null;
 };
 
-// ---- Layout + typography tokens (MATCH POST/HOME) ----
+/* ---------------------- layout tokens (MATCH POST PAGE) ---------------------- */
+
 const LAYOUT = {
-  pageMaxWidth: "80rem",
-  pagePaddingY: "2rem",
-  pagePaddingX: "1.5rem",
+  pageMaxWidth: "72rem",
+  pagePaddingY: ".2rem",
+  pagePaddingX: "1rem",
   columnGap: "1rem",
-  mainWidth: "41rem",
-  sidebarWidth: "19rem",
+  mainWidth: "36rem",
+  sidebarWidth: "16rem",
 };
 
 const TYPO = {
@@ -57,7 +82,7 @@ const TYPO = {
   small: "0.9rem",
 };
 
-// ---------- Helpers ----------
+/* ---------------------- helpers ---------------------- */
 
 function formatRelativeTime(dateString: string) {
   const target = new Date(dateString).getTime();
@@ -103,7 +128,7 @@ function ShareArrowIcon({ size = 16 }: { size?: number }) {
   );
 }
 
-// ---------- ThreadRow (top section) ----------
+/* ---------------------- ThreadRow (top section) ---------------------- */
 
 type ThreadRowProps = {
   id: string;
@@ -210,9 +235,7 @@ function ThreadRow(props: ThreadRowProps) {
       onRowClick(id, e);
       return;
     }
-    if (href) {
-      router.push(href);
-    }
+    if (href) router.push(href);
   }
 
   const avatarBubble = (
@@ -298,7 +321,6 @@ function ThreadRow(props: ThreadRowProps) {
           />
         )}
 
-        {/* avatar bubble (clickable to profile if username exists) */}
         {avatarWithOptionalLink}
       </div>
 
@@ -518,11 +540,7 @@ function ThreadRow(props: ThreadRowProps) {
             e.currentTarget.style.background = "transparent";
           }}
         >
-          <MessageCircle
-            width={iconSize}
-            height={iconSize}
-            strokeWidth={1.7}
-          />
+          <MessageCircle width={iconSize} height={iconSize} strokeWidth={1.7} />
           <span style={countStyle}>{replyCount}</span>
         </button>
 
@@ -607,7 +625,7 @@ function ThreadRow(props: ThreadRowProps) {
   );
 }
 
-// ---------- Main Page ----------
+/* ---------------------- page ---------------------- */
 
 export default function CommentPage() {
   const router = useRouter();
@@ -616,6 +634,8 @@ export default function CommentPage() {
   const [user, setUser] = useState<any>(null);
 
   const [post, setPost] = useState<Post | null>(null);
+  const [reviewRow, setReviewRow] = useState<ReviewRow | null>(null);
+
   const [mainComment, setMainComment] = useState<Comment | null>(null);
   const [ancestors, setAncestors] = useState<Comment[]>([]);
   const [replies, setReplies] = useState<Comment[]>([]);
@@ -635,11 +655,9 @@ export default function CommentPage() {
   const [commentLikeCounts, setCommentLikeCounts] = useState<
     Record<string, number>
   >({});
-
   const [commentLikedByMe, setCommentLikedByMe] = useState<
     Record<string, boolean>
   >({});
-
   const [commentReplyCounts, setCommentReplyCounts] = useState<
     Record<string, number>
   >({});
@@ -648,17 +666,13 @@ export default function CommentPage() {
   const [postLikedByMe, setPostLikedByMe] = useState(false);
   const [postReplyCount, setPostReplyCount] = useState(0);
 
-  // map of user_id -> canonical handle (no @)
   const [usernamesById, setUsernamesById] = useState<Record<string, string>>(
     {}
   );
-
-  // map of user_id -> avatar_url
   const [avatarUrlsById, setAvatarUrlsById] = useState<
     Record<string, string | null>
   >({});
 
-  // current user avatar + username for reply composer
   const [currentUserAvatarUrl, setCurrentUserAvatarUrl] = useState<
     string | null
   >(null);
@@ -666,7 +680,7 @@ export default function CommentPage() {
     null
   );
 
-  // ---------- auth ----------
+  /* ---------- auth ---------- */
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -684,7 +698,6 @@ export default function CommentPage() {
     };
   }, []);
 
-  // load current user's avatar + username for reply composer
   useEffect(() => {
     if (!user || !user.id) {
       setCurrentUserAvatarUrl(null);
@@ -708,16 +721,14 @@ export default function CommentPage() {
 
       setCurrentUserAvatarUrl(data?.avatar_url ?? null);
       const uname =
-        data?.username && data.username.trim()
-          ? data.username.trim()
-          : null;
+        data?.username && data.username.trim() ? data.username.trim() : null;
       setCurrentUserUsername(uname);
     }
 
     loadSelfProfile();
   }, [user]);
 
-  // ---------- close menu on outside click ----------
+  /* ---------- close menu on outside click ---------- */
 
   useEffect(() => {
     if (!openMenuCommentId) return;
@@ -730,7 +741,7 @@ export default function CommentPage() {
     return () => document.removeEventListener("click", handleDocumentClick);
   }, [openMenuCommentId]);
 
-  // ---------- load context ----------
+  /* ---------- load context ---------- */
 
   useEffect(() => {
     if (!id) return;
@@ -745,9 +756,7 @@ export default function CommentPage() {
     // main comment
     const { data: commentData, error: commentError } = await supabase
       .from("comments")
-      .select(
-        "id, post_id, user_id, content, created_at, parent_comment_id"
-      )
+      .select("id, post_id, user_id, content, created_at, parent_comment_id")
       .eq("id", commentId)
       .single();
 
@@ -760,21 +769,45 @@ export default function CommentPage() {
     const main = commentData as Comment;
     setMainComment(main);
 
-    // post
+    // post (✅ select the same fields as PostPage so layout/backdrop matches)
     const { data: postData, error: postError } = await supabase
       .from("posts")
-      .select("id, content, created_at, user_id")
+      .select(
+        "id, content, created_at, user_id, anime_id, anime_episode_id, manga_id, manga_chapter_id, review_id"
+      )
       .eq("id", main.post_id)
       .single();
 
     if (postError || !postData) {
       console.error("Error loading post:", postError);
+      setPost(null);
+      setReviewRow(null);
       setLoading(false);
       return;
     }
 
     const postRecord = postData as Post;
     setPost(postRecord);
+
+    // review row (only if post is a review post) so PostContextHeaderLayout matches PostPage
+    if (postRecord.review_id) {
+      const { data: r, error: rErr } = await supabase
+        .from("reviews")
+        .select(
+          "id, rating, contains_spoilers, author_liked, anime_id, anime_episode_id, manga_id, manga_chapter_id"
+        )
+        .eq("id", postRecord.review_id)
+        .single();
+
+      if (rErr) {
+        console.error("Error loading review row:", rErr);
+        setReviewRow(null);
+      } else {
+        setReviewRow(r as ReviewRow);
+      }
+    } else {
+      setReviewRow(null);
+    }
 
     // post likes
     const { data: postLikes, error: postLikesError } = await supabase
@@ -789,9 +822,7 @@ export default function CommentPage() {
     } else {
       const likes = (postLikes || []) as PostLike[];
       setPostLikeCount(likes.length);
-      setPostLikedByMe(
-        user ? likes.some((l) => l.user_id === user.id) : false
-      );
+      setPostLikedByMe(user ? likes.some((l) => l.user_id === user.id) : false);
     }
 
     // post reply count (root-level comments)
@@ -815,9 +846,7 @@ export default function CommentPage() {
     while (currentParentId) {
       const { data: parentData, error: parentError } = await supabase
         .from("comments")
-        .select(
-          "id, post_id, user_id, content, created_at, parent_comment_id"
-        )
+        .select("id, post_id, user_id, content, created_at, parent_comment_id")
         .eq("id", currentParentId)
         .single();
 
@@ -935,9 +964,7 @@ export default function CommentPage() {
 
     const { data, error } = await supabase
       .from("comments")
-      .select(
-        "id, post_id, user_id, content, created_at, parent_comment_id"
-      )
+      .select("id, post_id, user_id, content, created_at, parent_comment_id")
       .eq("parent_comment_id", commentId)
       .order("created_at", { ascending: true });
 
@@ -954,7 +981,7 @@ export default function CommentPage() {
     return list;
   }
 
-  // ---------- textarea auto-grow ----------
+  /* ---------- textarea auto-grow ---------- */
 
   function autoGrow(el: HTMLTextAreaElement) {
     el.style.height = "auto";
@@ -964,7 +991,7 @@ export default function CommentPage() {
     el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
   }
 
-  // ---------- add reply (to main comment) ----------
+  /* ---------- add reply (to main comment) ---------- */
 
   async function handleAddReply() {
     if (!user || !mainComment) return;
@@ -999,7 +1026,7 @@ export default function CommentPage() {
     await loadCommentAndContext(mainComment.id);
   }
 
-  // ---------- edit / delete ----------
+  /* ---------- edit / delete ---------- */
 
   async function handleEditComment(id: string, e: any) {
     e.stopPropagation();
@@ -1072,12 +1099,10 @@ export default function CommentPage() {
 
     setOpenMenuCommentId(null);
 
+    // if main comment deleted, go back to post
     if (mainComment && c.id === mainComment.id) {
-      if (post) {
-        router.push(`/posts/${post.id}`);
-      } else {
-        router.push("/");
-      }
+      if (post) router.push(`/posts/${post.id}`);
+      else router.push("/");
       return;
     }
 
@@ -1086,7 +1111,7 @@ export default function CommentPage() {
     }
   }
 
-  // ---------- like toggle for comments ----------
+  /* ---------- like toggle for comments ---------- */
 
   async function toggleCommentLike(commentId: string, e: any) {
     e.stopPropagation();
@@ -1134,7 +1159,7 @@ export default function CommentPage() {
     }
   }
 
-  // ---------- like toggle for origin post ----------
+  /* ---------- like toggle for origin post ---------- */
 
   async function handleTogglePostLike(postId: string, e: any) {
     e.stopPropagation();
@@ -1176,7 +1201,7 @@ export default function CommentPage() {
     }
   }
 
-  // ---------- menu helper ----------
+  /* ---------- menu helper ---------- */
 
   function toggleCommentMenu(commentId: string, e: any) {
     e.stopPropagation();
@@ -1185,7 +1210,7 @@ export default function CommentPage() {
     );
   }
 
-  // ---------- navigation helpers ----------
+  /* ---------- navigation helpers ---------- */
 
   function openCommentFromIcon(commentId: string, e: any) {
     e.stopPropagation();
@@ -1208,7 +1233,7 @@ export default function CommentPage() {
     }
   }
 
-  // ---------- identity helpers (handles + @display) ----------
+  /* ---------- identity helpers ---------- */
 
   function getHandle(userId: string): string | null {
     const u = usernamesById[userId];
@@ -1223,17 +1248,13 @@ export default function CommentPage() {
 
   function getDisplayName(userId: string): string {
     const handle = getHandle(userId);
-    if (handle) {
-      return `@${handle}`;
-    }
+    if (handle) return `@${handle}`;
     return `User-${userId.slice(0, 4)}`;
   }
 
   function getInitial(userId: string): string {
     const handle = getHandle(userId);
-    if (handle) {
-      return handle.charAt(0).toUpperCase();
-    }
+    if (handle) return handle.charAt(0).toUpperCase();
     return getDisplayName(userId).charAt(0).toUpperCase();
   }
 
@@ -1251,9 +1272,7 @@ export default function CommentPage() {
 
   function handleReplyInputChange(e: any) {
     setReplyInput(e.target.value);
-    if (replyTextareaRef.current) {
-      autoGrow(replyTextareaRef.current);
-    }
+    if (replyTextareaRef.current) autoGrow(replyTextareaRef.current);
   }
 
   function handleReplyBlur() {
@@ -1266,18 +1285,18 @@ export default function CommentPage() {
     }
   }
 
-  // ---------- thread items ----------
+  /* ---------- thread items ---------- */
 
   const threadItems =
     post && mainComment
       ? [
-          { type: "post" as const, item: post },
-          ...ancestors.map((c) => ({ type: "comment" as const, item: c })),
-          { type: "comment" as const, item: mainComment },
-        ]
+        { type: "post" as const, item: post },
+        ...ancestors.map((c) => ({ type: "comment" as const, item: c })),
+        { type: "comment" as const, item: mainComment },
+      ]
       : [];
 
-  // ---------- back link ----------
+  /* ---------- back link ---------- */
 
   function handleBackClick(
     e: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement>
@@ -1289,14 +1308,12 @@ export default function CommentPage() {
       return;
     }
 
-    if (post) {
-      router.push(`/posts/${post.id}`);
-    } else {
-      router.push("/");
-    }
+    if (post) router.push(`/posts/${post.id}`);
+    else router.push("/");
   }
 
-  // composer avatar node
+  /* ---------- composer avatar node ---------- */
+
   const composerAvatarNode = (
     <div
       style={{
@@ -1332,175 +1349,142 @@ export default function CommentPage() {
     </div>
   );
 
-  return (
+  /* ---------------------- page body (MATCH POST PAGE LAYOUT) ---------------------- */
+
+  const pageBody = (
     <div
+      className="postPageWrap"
       style={{
-        minHeight: "100vh",
-        background: "#f5f5f5",
-        fontFamily: "system-ui, sans-serif",
+        maxWidth: LAYOUT.pageMaxWidth,
+        margin: "0 auto",
+        padding: `${LAYOUT.pagePaddingY} ${LAYOUT.pagePaddingX}`,
       }}
     >
       <div
+        className="postLayoutRow"
         style={{
-          maxWidth: LAYOUT.pageMaxWidth,
-          margin: "0 auto",
-          padding: `${LAYOUT.pagePaddingY} ${LAYOUT.pagePaddingX}`,
+          display: "flex",
+          justifyContent: "center",
+          gap: LAYOUT.columnGap,
         }}
       >
-        {/* ONE FLEX ROW: left | center | right — same as PostPage/Home */}
-        <div
+        {/* LEFT SIDEBAR */}
+        <aside
+          className="postSidebar"
           style={{
-            display: "flex",
-            justifyContent: "center",
-            gap: LAYOUT.columnGap,
+            flex: `0 0 ${LAYOUT.sidebarWidth}`,
+            maxWidth: LAYOUT.sidebarWidth,
+            position: "sticky",
+            top: "1.5rem",
+            alignSelf: "flex-start",
+            height: "fit-content",
           }}
         >
-          {/* LEFT SIDEBAR (sticky) */}
-          <aside
-            style={{
-              flex: `0 0 ${LAYOUT.sidebarWidth}`,
-              maxWidth: LAYOUT.sidebarWidth,
-              position: "sticky",
-              top: "1.5rem",
-              alignSelf: "flex-start",
-              height: "fit-content",
-            }}
-          >
-            <LeftSidebar />
-          </aside>
+          <LeftSidebar />
+        </aside>
 
-          {/* CENTER COLUMN – thread + replies */}
-          <main
-            style={{
-              flex: `0 0 ${LAYOUT.mainWidth}`,
-              maxWidth: LAYOUT.mainWidth,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "0.6rem",
-              }}
-            >
-              <a
-                href={post ? `/posts/${post.id}` : "/"}
-                onClick={handleBackClick}
-                style={{ fontSize: TYPO.small, cursor: "pointer" }}
-              >
-                ← Back
-              </a>
-              {post && (
-                <Link
-                  href={`/posts/${post.id}`}
-                  style={{ fontSize: TYPO.small, color: "#555" }}
-                >
-                  View post
-                </Link>
-              )}
-            </div>
+        {/* CENTER */}
+        <main
+          className="postMain"
+          style={{
+            flex: `0 0 ${LAYOUT.mainWidth}`,
+            maxWidth: LAYOUT.mainWidth,
+          }}
+        >
 
-            {loading || !post || !mainComment ? (
-              <p style={{ marginTop: "1rem" }}>Loading thread…</p>
-            ) : (
-              <>
-                {/* TOP: thread */}
-                <section style={{ marginBottom: "0.85rem" }}>
-                  <div
-                    style={{
-                      border: "1px solid #11111111",
-                      borderRadius: 0,
-                      background: "#ffffff",
-                    }}
-                  >
-                    {threadItems.map((entry, index) => {
-                      const isFirst = index === 0;
-                      const isLast = index === threadItems.length - 1;
+          {loading || !post || !mainComment ? (
+            <p style={{ marginTop: "1rem" }}>Loading thread…</p>
+          ) : (
+            <>
+              {/* THREAD (wrapped like PostPage) */}
+              <FeedShell>
+                <div className="mobileMainPostBorders">
+                  {threadItems.map((entry, index) => {
+                    const isFirst = index === 0;
+                    const isLast = index === threadItems.length - 1;
 
-                      const showConnectorAbove = !isFirst;
-                      const showConnectorBelow = !isLast;
+                    const showConnectorAbove = !isFirst;
+                    const showConnectorBelow = !isLast;
 
-                      if (entry.type === "post") {
-                        const p = entry.item as Post;
-                        const handle = getHandle(p.user_id);
-                        const avatarUrl = getAvatarUrl(p.user_id);
-                        return (
-                          <ThreadRow
-                            key={`post-${p.id}`}
-                            id={p.id}
-                            userId={p.user_id}
-                            createdAt={p.created_at}
-                            content={p.content}
-                            displayName={getDisplayName(p.user_id)}
-                            initial={getInitial(p.user_id)}
-                            username={handle ?? undefined}
-                            avatarUrl={avatarUrl}
-                            href={`/posts/${p.id}`}
-                            showConnectorAbove={showConnectorAbove}
-                            showConnectorBelow={showConnectorBelow}
-                            isOwner={false}
-                            replyCount={postReplyCount}
-                            likeCount={postLikeCount}
-                            likedByMe={postLikedByMe}
-                            onToggleLike={handleTogglePostLike}
-                          />
-                        );
-                      }
-
-                      const c = entry.item as Comment;
-                      const isOwner = !!(user && user.id === c.user_id);
-                      const isMainRow = mainComment && c.id === mainComment.id;
-                      const handle = getHandle(c.user_id);
-                      const avatarUrl = getAvatarUrl(c.user_id);
+                    if (entry.type === "post") {
+                      const p = entry.item as Post;
+                      const handle = getHandle(p.user_id);
+                      const avatarUrl = getAvatarUrl(p.user_id);
 
                       return (
                         <ThreadRow
-                          key={c.id}
-                          id={c.id}
-                          userId={c.user_id}
-                          createdAt={c.created_at}
-                          content={c.content}
-                          displayName={getDisplayName(c.user_id)}
-                          initial={getInitial(c.user_id)}
+                          key={`post-${p.id}`}
+                          id={p.id}
+                          userId={p.user_id}
+                          createdAt={p.created_at}
+                          content={p.content}
+                          displayName={getDisplayName(p.user_id)}
+                          initial={getInitial(p.user_id)}
                           username={handle ?? undefined}
                           avatarUrl={avatarUrl}
-                          isMain={!!isMainRow}
-                          isOwner={isOwner}
-                          href={isMainRow ? undefined : `/comments/${c.id}`}
-                          replyCount={
-                            isMainRow
-                              ? replies.length
-                              : commentReplyCounts[c.id] || 0
-                          }
-                          likeCount={commentLikeCounts[c.id] || 0}
-                          likedByMe={!!commentLikedByMe[c.id]}
-                          onReplyClick={
-                            isMainRow ? handleMainReplyClick : handleReplyClick
-                          }
-                          onToggleLike={toggleCommentLike}
-                          onEdit={handleEditComment}
-                          onDelete={handleDeleteComment}
-                          isMenuOpen={openMenuCommentId === c.id}
-                          onToggleMenu={toggleCommentMenu}
+                          href={`/posts/${p.id}`}
                           showConnectorAbove={showConnectorAbove}
                           showConnectorBelow={showConnectorBelow}
+                          isOwner={false}
+                          replyCount={postReplyCount}
+                          likeCount={postLikeCount}
+                          likedByMe={postLikedByMe}
+                          onToggleLike={handleTogglePostLike}
                         />
                       );
-                    })}
-                  </div>
-                </section>
+                    }
 
-                {/* BOTTOM: composer + replies */}
+                    const c = entry.item as Comment;
+                    const isOwner = !!(user && user.id === c.user_id);
+                    const isMainRow = mainComment && c.id === mainComment.id;
+                    const handle = getHandle(c.user_id);
+                    const avatarUrl = getAvatarUrl(c.user_id);
+
+                    return (
+                      <ThreadRow
+                        key={c.id}
+                        id={c.id}
+                        userId={c.user_id}
+                        createdAt={c.created_at}
+                        content={c.content}
+                        displayName={getDisplayName(c.user_id)}
+                        initial={getInitial(c.user_id)}
+                        username={handle ?? undefined}
+                        avatarUrl={avatarUrl}
+                        isMain={!!isMainRow}
+                        isOwner={isOwner}
+                        href={isMainRow ? undefined : `/comments/${c.id}`}
+                        replyCount={
+                          isMainRow
+                            ? replies.length
+                            : commentReplyCounts[c.id] || 0
+                        }
+                        likeCount={commentLikeCounts[c.id] || 0}
+                        likedByMe={!!commentLikedByMe[c.id]}
+                        onReplyClick={
+                          isMainRow ? handleMainReplyClick : handleReplyClick
+                        }
+                        onToggleLike={toggleCommentLike}
+                        onEdit={handleEditComment}
+                        onDelete={handleDeleteComment}
+                        isMenuOpen={openMenuCommentId === c.id}
+                        onToggleMenu={toggleCommentMenu}
+                        showConnectorAbove={showConnectorAbove}
+                        showConnectorBelow={showConnectorBelow}
+                      />
+                    );
+                  })}
+                </div>
+              </FeedShell>
+
+              {/* COMPOSER + REPLIES (wrapped like PostPage) */}
+              <div style={{ marginTop: "0.75rem" }} />
+              <FeedShell>
                 {user ? (
-                  <div
-                    style={{
-                      marginTop: "0.4rem",
-                    }}
-                  >
+                  <div>
                     <div
                       style={{
-                        border: "1px solid #11111111",
+                        border: "1px solid #000000",
                         borderRadius: 0,
                         background: "#ffffff",
                       }}
@@ -1515,7 +1499,6 @@ export default function CommentPage() {
                             : "0.35rem 0.75rem",
                         }}
                       >
-                        {/* avatar – clickable to profile if username exists */}
                         {currentUserUsername ? (
                           <Link
                             href={`/${currentUserUsername}`}
@@ -1531,7 +1514,6 @@ export default function CommentPage() {
                           composerAvatarNode
                         )}
 
-                        {/* textarea */}
                         <div style={{ flex: 1 }}>
                           <textarea
                             id="comment-reply-input"
@@ -1540,9 +1522,7 @@ export default function CommentPage() {
                             onChange={handleReplyInputChange}
                             onFocus={() => setReplyActive(true)}
                             onBlur={handleReplyBlur}
-                            placeholder={
-                              !replyActive ? "Post your reply" : ""
-                            }
+                            placeholder={!replyActive ? "Post your reply" : ""}
                             rows={1}
                             style={{
                               width: "100%",
@@ -1561,7 +1541,6 @@ export default function CommentPage() {
                           />
                         </div>
 
-                        {/* inline Reply button when collapsed */}
                         {isCollapsed && (
                           <button
                             onClick={handleAddReply}
@@ -1582,7 +1561,6 @@ export default function CommentPage() {
                         )}
                       </div>
 
-                      {/* under-text Reply button when expanded / typing */}
                       {!isCollapsed && (
                         <div
                           style={{
@@ -1612,17 +1590,35 @@ export default function CommentPage() {
                     </div>
                   </div>
                 ) : (
-                  <p style={{ color: "#666", marginTop: "0.6rem" }}>
+                  <p
+                    style={{
+                      color: "#666",
+                      background: "#fff",
+                      border: "1px solid #000000",
+                      borderTop: "2px solid #000000",
+                      padding: "0.65rem 0.75rem",
+                      margin: 0,
+                    }}
+                  >
                     Log in to reply.
                   </p>
                 )}
 
                 {/* Replies list */}
-                <section style={{ marginTop: 0 }}>
+                <section className="mobileRepliesBottomBorder" style={{ marginTop: 0 }}>
                   {repliesLoading ? (
-                    <p>Loading replies…</p>
+                    <p style={{ marginTop: "0.6rem" }}>Loading replies…</p>
                   ) : replies.length === 0 ? (
-                    <p style={{ fontSize: "0.9rem", color: "#666" }}>
+                    <p
+                      style={{
+                        color: "#666",
+                        background: "#fff",
+                        border: "1px solid #000000",
+                        borderTop: "1px solid #000000",
+                        padding: "0.65rem 0.75rem",
+                        margin: 0,
+                      }}
+                    >
                       No replies yet.
                     </p>
                   ) : (
@@ -1660,25 +1656,75 @@ export default function CommentPage() {
                     </div>
                   )}
                 </section>
-              </>
-            )}
-          </main>
+              </FeedShell>
+            </>
+          )}
+        </main>
 
-          {/* RIGHT SIDEBAR (sticky) */}
-          <aside
-            style={{
-              flex: `0 0 ${LAYOUT.sidebarWidth}`,
-              maxWidth: LAYOUT.sidebarWidth,
-              position: "sticky",
-              top: "1.5rem",
-              alignSelf: "flex-start",
-              height: "fit-content",
-            }}
-          >
-            <RightSidebar />
-          </aside>
-        </div>
+        {/* RIGHT SIDEBAR */}
+        <aside
+          className="postSidebar"
+          style={{
+            flex: `0 0 ${LAYOUT.sidebarWidth}`,
+            maxWidth: LAYOUT.sidebarWidth,
+            position: "sticky",
+            top: "1.5rem",
+            alignSelf: "flex-start",
+            height: "fit-content",
+          }}
+        >
+          <RightSidebar />
+        </aside>
       </div>
     </div>
   );
+
+  /* ---------------------- wrap with same backdrop system as PostPage ---------------------- */
+
+  return (
+    <div style={{ minHeight: "100vh", fontFamily: "system-ui, sans-serif" }}>
+      {post ? (
+        <PostContextHeaderLayout post={post} review={reviewRow}>
+          {pageBody}
+        </PostContextHeaderLayout>
+      ) : (
+        pageBody
+      )}
+
+      <style jsx global>{`
+        @media (max-width: 768px) {
+          .postSidebar {
+            display: none !important;
+          }
+
+          .postMain {
+            flex: 1 1 auto !important;
+            max-width: 100% !important;
+          }
+
+          .postLayoutRow {
+            justify-content: flex-start !important;
+          }
+
+          /* edge-to-edge on phones, same as PostPage */
+          .postPageWrap {
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+          }
+
+          /* phone-only borders that match your PostPage behavior */
+          .mobileMainPostBorders {
+            border-top: 1px solid #000 !important;
+            border-bottom: 1px solid #000 !important;
+          }
+
+          .mobileRepliesBottomBorder {
+            border-bottom: 1px solid #000 !important;
+          }
+        }
+      `}</style>
+    </div>
+  );
 }
+
+(CommentPage as any).hideHeader = true;
