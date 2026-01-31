@@ -4,9 +4,10 @@
 import React, { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import { MessageCircle, Heart, Bookmark } from "lucide-react";
+import ActionRow from "../../components/ActionRow";
 import { supabase } from "../../lib/supabaseClient";
 import CommentRow from "../../components/CommentRow";
+import ReviewPostRow from "../../components/ReviewPostRow";
 import LeftSidebar from "../../components/LeftSidebar";
 import RightSidebar from "../../components/RightSidebar";
 import { openAuthModal } from "../../lib/openAuthModal";
@@ -39,6 +40,20 @@ type ReviewRow = {
   anime_episode_id: string | null;
   manga_id: string | null;
   manga_chapter_id: string | null;
+};
+
+type AnimeRow = {
+  id: string;
+  slug: string | null;
+  title: string | null;
+  image_url: string | null;
+};
+
+type MangaRow = {
+  id: string;
+  slug: string | null;
+  title: string | null;
+  image_url: string | null;
 };
 
 type Comment = {
@@ -108,26 +123,6 @@ function formatRelativeTime(dateString: string) {
   return `${years}y`;
 }
 
-function ShareArrowIcon({ size = 16 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 2v13" />
-      <path d="m16 6-4-4-4 4" />
-      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-    </svg>
-  );
-}
-
 /* ---------------------- ThreadRow (top section) ---------------------- */
 
 type ThreadRowProps = {
@@ -154,7 +149,6 @@ type ThreadRowProps = {
 
   onReplyClick?: (id: string, e: any) => void;
   onToggleLike?: (id: string, e: any) => void;
-  onBookmarkClick?: (id: string, e: any) => void;
   onShareClick?: (id: string, e: any) => void;
   onEdit?: (id: string, e: any) => void;
   onDelete?: (id: string, e: any) => void;
@@ -185,7 +179,6 @@ function ThreadRow(props: ThreadRowProps) {
     showConnectorBelow = false,
     onReplyClick,
     onToggleLike,
-    onBookmarkClick,
     onShareClick,
     onEdit,
     onDelete,
@@ -200,31 +193,6 @@ function ThreadRow(props: ThreadRowProps) {
 
   const nameFontSize = isMain ? "1.05rem" : "0.95rem";
   const contentFontSize = isMain ? "1.1rem" : "1rem";
-
-  const iconButtonBase: CSSProperties = {
-    border: "none",
-    background: "transparent",
-    cursor: "pointer",
-    padding: "4px",
-    borderRadius: 999,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    transition:
-      "background 0.12s ease, transform 0.12s ease, color 0.12s ease",
-  };
-
-  const countStyle: CSSProperties = {
-    fontSize: "0.9rem",
-    color: "inherit",
-  };
-
-  const actionSlotStyle: CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    gap: "0.25rem",
-    minWidth: "0",
-  };
 
   const isClickable = !!(href || onRowClick);
   const [isHovered, setIsHovered] = useState(false);
@@ -506,121 +474,25 @@ function ThreadRow(props: ThreadRowProps) {
 
       {body}
 
-      {/* full action bar */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          maxWidth: "90%",
-          padding: "0.35rem 0 0.65rem 3.25rem",
-          marginLeft: ".25rem",
-          marginRight: "auto",
+      <ActionRow
+        variant={isMain ? "main" : "feed"}
+        iconSize={iconSize}
+        replyCount={replyCount}
+        likeCount={likeCount}
+        likedByMe={likedByMe}
+        onReply={(e: React.MouseEvent<HTMLButtonElement>) => {
+          e.stopPropagation();
+          onReplyClick?.(id, e);
         }}
-      >
-        {/* Reply */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onReplyClick?.(id, e);
-          }}
-          style={{
-            ...iconButtonBase,
-            ...actionSlotStyle,
-            padding: "4px 10px",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-1px)";
-            e.currentTarget.style.color = "#1d9bf0";
-            e.currentTarget.style.background = "#1d9bf01a";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "translateY(0)";
-            e.currentTarget.style.color = "#555";
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          <MessageCircle width={iconSize} height={iconSize} strokeWidth={1.7} />
-          <span style={countStyle}>{replyCount}</span>
-        </button>
-
-        {/* Like */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleLike?.(id, e);
-          }}
-          style={{
-            ...iconButtonBase,
-            ...actionSlotStyle,
-            padding: "4px 10px",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-1px)";
-            e.currentTarget.style.color = "#f91880";
-            e.currentTarget.style.background = "#f918801a";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "translateY(0)";
-            e.currentTarget.style.color = "#555";
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          <Heart
-            width={iconSize}
-            height={iconSize}
-            strokeWidth={1.7}
-            fill={likedByMe ? "currentColor" : "none"}
-          />
-          <span style={countStyle}>{likeCount}</span>
-        </button>
-
-        {/* Bookmark */}
-        <div style={actionSlotStyle}>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onBookmarkClick?.(id, e);
-            }}
-            style={iconButtonBase}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = "translateY(-1px)";
-              e.currentTarget.style.color = "#00ba7c";
-              e.currentTarget.style.background = "#00ba7c1a";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = "translateY(0)";
-              e.currentTarget.style.color = "#555";
-              e.currentTarget.style.background = "transparent";
-            }}
-          >
-            <Bookmark width={iconSize} height={iconSize} strokeWidth={1.7} />
-          </button>
-        </div>
-
-        {/* Share */}
-        <div style={actionSlotStyle}>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onShareClick?.(id, e);
-            }}
-            style={iconButtonBase}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = "translateY(-1px)";
-              e.currentTarget.style.color = "#1d9bf0";
-              e.currentTarget.style.background = "#1d9bf01a";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = "translateY(0)";
-              e.currentTarget.style.color = "#555";
-              e.currentTarget.style.background = "transparent";
-            }}
-          >
-            <ShareArrowIcon size={iconSize} />
-          </button>
-        </div>
-      </div>
+        onLike={(e: React.MouseEvent<HTMLButtonElement>) => {
+          e.stopPropagation();
+          onToggleLike?.(id, e);
+        }}
+        onShare={(e: React.MouseEvent<HTMLButtonElement>) => {
+          e.stopPropagation();
+          onShareClick?.(id, e);
+        }}
+      />
     </div>
   );
 }
@@ -635,6 +507,12 @@ export default function CommentPage() {
 
   const [post, setPost] = useState<Post | null>(null);
   const [reviewRow, setReviewRow] = useState<ReviewRow | null>(null);
+
+  // ✅ extra bits so the root review post looks like PostPage
+  const [reviewAnime, setReviewAnime] = useState<AnimeRow | null>(null);
+  const [reviewManga, setReviewManga] = useState<MangaRow | null>(null);
+  const [episodeNum, setEpisodeNum] = useState<number | null>(null);
+  const [chapterNum, setChapterNum] = useState<number | null>(null);
 
   const [mainComment, setMainComment] = useState<Comment | null>(null);
   const [ancestors, setAncestors] = useState<Comment[]>([]);
@@ -753,6 +631,12 @@ export default function CommentPage() {
   async function loadCommentAndContext(commentId: string) {
     setLoading(true);
 
+    // reset review visuals each load
+    setReviewAnime(null);
+    setReviewManga(null);
+    setEpisodeNum(null);
+    setChapterNum(null);
+
     // main comment
     const { data: commentData, error: commentError } = await supabase
       .from("comments")
@@ -789,7 +673,7 @@ export default function CommentPage() {
     const postRecord = postData as Post;
     setPost(postRecord);
 
-    // review row (only if post is a review post) so PostContextHeaderLayout matches PostPage
+    // review row + origin media + ep/ch labels (only if post is a review post)
     if (postRecord.review_id) {
       const { data: r, error: rErr } = await supabase
         .from("reviews")
@@ -799,11 +683,91 @@ export default function CommentPage() {
         .eq("id", postRecord.review_id)
         .single();
 
-      if (rErr) {
+      if (rErr || !r) {
         console.error("Error loading review row:", rErr);
         setReviewRow(null);
       } else {
-        setReviewRow(r as ReviewRow);
+        const rr = r as ReviewRow;
+        setReviewRow(rr);
+
+        const effectiveAnimeId = rr.anime_id ?? postRecord.anime_id;
+        const effectiveMangaId = rr.manga_id ?? postRecord.manga_id;
+
+        const effectiveEpisodeId =
+          rr.anime_episode_id ?? postRecord.anime_episode_id;
+        const effectiveChapterId =
+          rr.manga_chapter_id ?? postRecord.manga_chapter_id;
+
+        // origin anime/manga (poster/title/slug)
+        if (effectiveAnimeId) {
+          const { data: a, error: aErr } = await supabase
+            .from("anime")
+            .select("id, slug, title, image_url")
+            .eq("id", effectiveAnimeId)
+            .single();
+
+          if (aErr) {
+            console.error("Error loading review anime:", aErr);
+          } else {
+            setReviewAnime(a as AnimeRow);
+          }
+        } else if (effectiveMangaId) {
+          const { data: m, error: mErr } = await supabase
+            .from("manga")
+            .select("id, slug, title, image_url")
+            .eq("id", effectiveMangaId)
+            .single();
+
+          if (mErr) {
+            console.error("Error loading review manga:", mErr);
+          } else {
+            setReviewManga(m as MangaRow);
+          }
+        }
+
+        // episode number (optional)
+        if (effectiveEpisodeId) {
+          const { data: ep, error: epErr } = await supabase
+            .from("anime_episodes")
+            .select("episode_number")
+            .eq("id", effectiveEpisodeId)
+            .single();
+
+          if (epErr) {
+            console.error("Error loading episode_number:", epErr);
+          } else {
+            const nRaw = (ep as any)?.episode_number;
+            const n =
+              typeof nRaw === "number"
+                ? nRaw
+                : nRaw != null
+                  ? Number(nRaw)
+                  : null;
+            setEpisodeNum(Number.isFinite(n as any) ? (n as number) : null);
+          }
+        }
+
+        // chapter number (optional)
+        if (effectiveChapterId) {
+          const { data: ch, error: chErr } = await supabase
+            .from("manga_chapters")
+            .select("chapter_number")
+            .eq("id", effectiveChapterId)
+            .single();
+
+          if (chErr) {
+            console.error("Error loading chapter_number:", chErr);
+          } else {
+            const nRaw = (ch as any)?.chapter_number;
+            const n =
+              typeof nRaw === "number"
+                ? nRaw
+                : nRaw != null
+                  ? Number(nRaw)
+                  : null;
+            setChapterNum(Number.isFinite(n as any) ? (n as number) : null);
+          }
+        }
       }
     } else {
       setReviewRow(null);
@@ -884,7 +848,7 @@ export default function CommentPage() {
         console.error("Error loading reply counts:", replyError);
       } else {
         const replyMap: Record<string, number> = {};
-        (replyRows || []).forEach((row) => {
+        (replyRows || []).forEach((row: any) => {
           if (row.parent_comment_id) {
             replyMap[row.parent_comment_id] =
               (replyMap[row.parent_comment_id] || 0) + 1;
@@ -1391,7 +1355,6 @@ export default function CommentPage() {
             maxWidth: LAYOUT.mainWidth,
           }}
         >
-
           {loading || !post || !mainComment ? (
             <p style={{ marginTop: "1rem" }}>Loading thread…</p>
           ) : (
@@ -1411,6 +1374,126 @@ export default function CommentPage() {
                       const handle = getHandle(p.user_id);
                       const avatarUrl = getAvatarUrl(p.user_id);
 
+                      // ✅ if the root post is a review, render it like PostPage does
+                      if (p.review_id) {
+                        const originTitle =
+                          reviewAnime?.title ?? reviewManga?.title ?? "";
+                        const posterUrl =
+                          reviewAnime?.image_url ?? reviewManga?.image_url ?? null;
+
+                        const originHref =
+                          reviewAnime?.slug
+                            ? `/anime/${reviewAnime.slug}`
+                            : reviewAnime?.id
+                              ? `/anime/${reviewAnime.id}`
+                              : reviewManga?.slug
+                                ? `/manga/${reviewManga.slug}`
+                                : reviewManga?.id
+                                  ? `/manga/${reviewManga.id}`
+                                  : undefined;
+
+                        const episodeLabel =
+                          episodeNum != null ? `Ep ${episodeNum}` : undefined;
+                        const episodeHref =
+                          reviewAnime?.slug && episodeNum != null
+                            ? `/anime/${reviewAnime.slug}/episode/${episodeNum}`
+                            : undefined;
+
+                        const chapterLabel =
+                          chapterNum != null ? `Ch ${chapterNum}` : undefined;
+                        const chapterHref =
+                          reviewManga?.slug && chapterNum != null
+                            ? `/manga/${reviewManga.slug}/chapter/${chapterNum}`
+                            : undefined;
+
+                        return (
+                          <div style={{ position: "relative", background: "#fff" }}>
+                            <ReviewPostRow
+                              key={`post-${p.id}`}
+                              postId={p.id}
+                              reviewId={p.review_id}
+                              userId={p.user_id}
+                              createdAt={p.created_at}
+                              content={p.content}
+                              rating={reviewRow?.rating ?? null}
+                              containsSpoilers={!!reviewRow?.contains_spoilers}
+                              authorLiked={!!reviewRow?.author_liked}
+                              displayName={getDisplayName(p.user_id)}
+                              username={handle ?? undefined}
+                              avatarUrl={avatarUrl ?? null}
+                              initial={getInitial(p.user_id)}
+                              originLabel={originTitle}
+                              originHref={originHref}
+                              episodeLabel={episodeLabel}
+                              episodeHref={episodeHref}
+                              chapterLabel={chapterLabel}
+                              chapterHref={chapterHref}
+                              posterUrl={posterUrl}
+                              href={`/posts/${p.id}`}
+                              isOwner={false}
+                              replyCount={postReplyCount}
+                              likeCount={postLikeCount}
+                              likedByMe={postLikedByMe}
+                              onToggleLike={handleTogglePostLike}
+                              disableHoverHighlight
+                            />
+
+                            {/* TOP */}
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: 0,
+                                left: 0,
+                                right: 0,
+                                height: 1,
+                                background: "#fff",
+                                pointerEvents: "none",
+                              }}
+                            />
+
+                            {/* BOTTOM */}
+                            <div
+                              style={{
+                                position: "absolute",
+                                bottom: 0,
+                                left: 0,
+                                right: 0,
+                                height: 1,
+                                background: "#fff",
+                                pointerEvents: "none",
+                              }}
+                            />
+
+                            {/* LEFT */}
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: 0,
+                                bottom: 0,
+                                left: 0,
+                                width: 1,
+                                background: "#fff",
+                                pointerEvents: "none",
+                              }}
+                            />
+
+                            {/* RIGHT */}
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: 0,
+                                bottom: 0,
+                                right: 0,
+                                width: 1,
+                                background: "#fff",
+                                pointerEvents: "none",
+                              }}
+                            />
+                          </div>
+                        );
+                      }
+
+                      // normal post stays as-is
                       return (
                         <ThreadRow
                           key={`post-${p.id}`}
@@ -1455,15 +1538,11 @@ export default function CommentPage() {
                         isOwner={isOwner}
                         href={isMainRow ? undefined : `/comments/${c.id}`}
                         replyCount={
-                          isMainRow
-                            ? replies.length
-                            : commentReplyCounts[c.id] || 0
+                          isMainRow ? replies.length : commentReplyCounts[c.id] || 0
                         }
                         likeCount={commentLikeCounts[c.id] || 0}
                         likedByMe={!!commentLikedByMe[c.id]}
-                        onReplyClick={
-                          isMainRow ? handleMainReplyClick : handleReplyClick
-                        }
+                        onReplyClick={isMainRow ? handleMainReplyClick : handleReplyClick}
                         onToggleLike={toggleCommentLike}
                         onEdit={handleEditComment}
                         onDelete={handleDeleteComment}
@@ -1605,7 +1684,10 @@ export default function CommentPage() {
                 )}
 
                 {/* Replies list */}
-                <section className="mobileRepliesBottomBorder" style={{ marginTop: 0 }}>
+                <section
+                  className="mobileRepliesBottomBorder"
+                  style={{ marginTop: 0 }}
+                >
                   {repliesLoading ? (
                     <p style={{ marginTop: "0.6rem" }}>Loading replies…</p>
                   ) : replies.length === 0 ? (
