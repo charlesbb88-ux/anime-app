@@ -5,6 +5,7 @@ import LeftSidebar from "../components/LeftSidebar";
 import RightSidebar from "../components/RightSidebar";
 import PostFeed from "../components/PostFeed";
 import UsernameGate from "../components/UsernameGate";
+import FeedShell from "../components/FeedShell";
 
 const LAYOUT = {
   pageMaxWidth: "72rem",
@@ -101,7 +102,13 @@ export default function Home() {
                   }
               }
             >
-              <PostFeed />
+              {isPhone ? (
+                <PostFeed />
+              ) : (
+                <FeedShell>
+                  <PostFeed />
+                </FeedShell>
+              )}
             </main>
 
             {!isPhone && (
