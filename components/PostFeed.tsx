@@ -1086,12 +1086,6 @@ export default function PostFeed({
                 Loading more…
               </div>
             )}
-
-            {!hasMore && posts.length > 0 && (
-              <div style={{ padding: "0.75rem 0", fontSize: TYPO.small, color: "#666" }}>
-                You’re caught up.
-              </div>
-            )}
           </>
         )}
       </div>
