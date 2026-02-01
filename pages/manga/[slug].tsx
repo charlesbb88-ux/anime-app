@@ -369,7 +369,11 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
   // ------------------------
   // MAIN MANGA PAGE CONTENT
   // ------------------------
-  return (
+  // ------------------------
+  // MAIN MANGA PAGE CONTENT
+  // ------------------------
+
+  const desktopView = (
     <>
       <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
         {/* Backdrop (from SSR public.manga_covers) */}
@@ -582,14 +586,12 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
 
                 {/* LEFT SIDE: reserve space so text never goes under ActionBox */}
                 <div className="min-w-0 pr-[270px] pl-1">
-                  {/* ✅ Secondary title now lives here so it wraps before ActionBox */}
                   {showSecondaryTitle && secondaryTitle && (
                     <h2 className="mt-0 text-xl font-semibold leading-snug text-gray-500">
                       {secondaryTitle}
                     </h2>
                   )}
 
-                  {/* Synopsis */}
                   {typeof m.description === "string" && m.description.trim() && (
                     <div className="mt-6 mb-3">
                       <p className="whitespace-pre-line text-base text-black">
@@ -598,7 +600,6 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                     </div>
                   )}
 
-                  {/* Chapter Navigator */}
                   {slug && (
                     <div className="mt-10 min-w-0 overflow-hidden">
                       <ChapterNavigator
@@ -609,7 +610,6 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                     </div>
                   )}
 
-                  {/* Feed */}
                   <div className="mt-6">
                     <FeedShell>
                       <PostFeed key={feedNonce} mangaId={manga.id} />
@@ -618,8 +618,6 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                 </div>
               </div>
 
-              {/* (Optional) keep this if you want to see your test state somewhere.
-                  leaving untouched: reviewSaveMsg exists but is not rendered in your current file */}
               {reviewSaveMsg ? null : null}
             </div>
           </div>
@@ -635,8 +633,37 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
           </Link>
         </div>
       </div>
+    </>
+  );
 
-      {/* ✅ Global log modal (manga series) + refresh confirmation on success */}
+  const phoneView = (
+    <MangaPhoneLayout
+      slug={slug}
+      manga={manga}
+      backdropUrl={backdropUrl}
+      tags={tags}
+      tagsLoading={tagsLoading}
+      showSpoilers={showSpoilers}
+      setShowSpoilers={setShowSpoilers}
+      cleanSynopsis={cleanSynopsis}
+      actionBoxNonce={actionBoxNonce}
+      chapterLogsNonce={chapterLogsNonce}
+      onOpenLog={() => setLogOpen(true)}
+      onShowActivity={() => router.push(`/manga/${manga.slug}/activity`)}
+      onOpenLogForChapter={(chapterId) => {
+        setSelectedChapterId(chapterId);
+        setLogOpen(true);
+      }}
+      feedNonce={feedNonce}
+      reviewSaveMsg={reviewSaveMsg}
+    />
+  );
+
+  return (
+    <>
+      <ResponsiveSwitch desktop={desktopView} phone={phoneView} />
+
+      {/* ✅ Global log modal stays OUTSIDE so behavior is identical everywhere */}
       <GlobalLogModal
         open={logOpen}
         onClose={() => {

@@ -57,7 +57,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // load all episodes for this anime
     const { data: eps, error: eEps } = await supabaseAdmin
-      .from("anime_episode")
+      .from("anime_episodes")
       .select("id, anime_id, season_number, season_episode_number")
       .eq("anime_id", animeId);
 
