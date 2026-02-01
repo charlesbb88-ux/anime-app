@@ -1,15 +1,20 @@
 param(
-  [string]$BaseUrl = "http://localhost:3000",
-  [int]$SeriesBatch = 5,
-  [int]$EpisodeBatch = 2,
-  [string]$AdminSecret = ""
+    [string]$BaseUrl = "http://localhost:3000",
+    [int]$SeriesBatch = 5,
+    [int]$EpisodeBatch = 2,
+    [string]$AdminSecret = ""
 )
 
 function Invoke-Api {
-  param([string]$Url)
-  $headers = @{}
-  if ($AdminSecret -ne "") { $headers["x-admin-secret"] = $AdminSecret }
-  return Invoke-RestMethod -Method GET -Uri $Url -Headers $headers
+    param([string]$Url)
+    $headers = @{}
+    if ($AdminSecret -ne "") {
+        $headers["x-admin-secret"] = $AdminSecret
+        $headers["X-Admin-Secret"] = $AdminSecret   # some middleware is case-sensitive
+        $headers["authorization"] = "Bearer $AdminSecret"  # if you ever switched styles
+        $headers["Authorization"] = "Bearer $AdminSecret"
+    }
+    return Invoke-RestMethod -Method GET -Uri $Url -Headers $headers
 }
 
 Write-Host "Fetching totals..."
@@ -28,25 +33,25 @@ $seriesProcessed = 0
 $seriesInserted = 0
 
 while ($true) {
-  $url = "$BaseUrl/api/admin/import-tmdb-series-artwork?limit=$SeriesBatch"
-  if ($seriesCursor -ne "") { $url += "&cursor=$seriesCursor" }
+    $url = "$BaseUrl/api/admin/import-tmdb-series-artwork?limit=$SeriesBatch"
+    if ($seriesCursor -ne "") { $url += "&cursor=$seriesCursor" }
 
-  $resp = Invoke-Api $url
+    $resp = Invoke-Api $url
 
-  if ($resp.done -eq $true) { break }
+    if ($resp.done -eq $true) { break }
 
-  $seriesProcessed += [int]$resp.processed
-  $seriesInserted += [int]$resp.inserted
-  $seriesCursor = $resp.nextCursor
+    $seriesProcessed += [int]$resp.processed
+    $seriesInserted += [int]$resp.inserted
+    $seriesCursor = $resp.nextCursor
 
-  $remaining = $totalAnime - $seriesProcessed
-  if ($remaining -lt 0) { $remaining = 0 }
+    $remaining = $totalAnime - $seriesProcessed
+    if ($remaining -lt 0) { $remaining = 0 }
 
-  $pct = 0
-  if ($totalAnime -gt 0) { $pct = [int](($seriesProcessed / $totalAnime) * 100) }
+    $pct = 0
+    if ($totalAnime -gt 0) { $pct = [int](($seriesProcessed / $totalAnime) * 100) }
 
-  Write-Progress -Activity "Series artwork" -Status "$seriesProcessed / $totalAnime (left: $remaining) | inserted: $seriesInserted" -PercentComplete $pct
-  Write-Host ("Series batch: processed {0}, inserted {1}, cursor {2}" -f $resp.processed, $resp.inserted, $resp.nextCursor)
+    Write-Progress -Activity "Series artwork" -Status "$seriesProcessed / $totalAnime (left: $remaining) | inserted: $seriesInserted" -PercentComplete $pct
+    Write-Host ("Series batch: processed {0}, inserted {1}, cursor {2}" -f $resp.processed, $resp.inserted, $resp.nextCursor)
 }
 
 Write-Progress -Activity "Series artwork" -Completed
@@ -62,31 +67,31 @@ $epAnimeProcessed = 0
 $epInserted = 0
 
 while ($true) {
-  $url = "$BaseUrl/api/admin/import-tmdb-episode-stills?limit=$EpisodeBatch"
-  if ($epCursor -ne "") { $url += "&cursor=$epCursor" }
+    $url = "$BaseUrl/api/admin/import-tmdb-episode-stills?limit=$EpisodeBatch"
+    if ($epCursor -ne "") { $url += "&cursor=$epCursor" }
 
-  $resp = Invoke-Api $url
+    $resp = Invoke-Api $url
 
-  if ($resp.done -eq $true) { break }
+    if ($resp.done -eq $true) { break }
 
-  $epAnimeProcessed += [int]$resp.processedAnime
-  $epInserted += [int]$resp.inserted
-  $epCursor = $resp.nextCursor
+    $epAnimeProcessed += [int]$resp.processedAnime
+    $epInserted += [int]$resp.inserted
+    $epCursor = $resp.nextCursor
 
-  $remaining = $totalAnime - $epAnimeProcessed
-  if ($remaining -lt 0) { $remaining = 0 }
+    $remaining = $totalAnime - $epAnimeProcessed
+    if ($remaining -lt 0) { $remaining = 0 }
 
-  $pct = 0
-  if ($totalAnime -gt 0) { $pct = [int](($epAnimeProcessed / $totalAnime) * 100) }
+    $pct = 0
+    if ($totalAnime -gt 0) { $pct = [int](($epAnimeProcessed / $totalAnime) * 100) }
 
-  Write-Progress -Activity "Episode stills (by anime)" -Status "$epAnimeProcessed / $totalAnime (left: $remaining) | inserted: $epInserted" -PercentComplete $pct
-  Write-Host ("Episode batch: processedAnime {0}, inserted {1}, cursor {2}" -f $resp.processedAnime, $resp.inserted, $resp.nextCursor)
+    Write-Progress -Activity "Episode stills (by anime)" -Status "$epAnimeProcessed / $totalAnime (left: $remaining) | inserted: $epInserted" -PercentComplete $pct
+    Write-Host ("Episode batch: processedAnime {0}, inserted {1}, cursor {2}" -f $resp.processedAnime, $resp.inserted, $resp.nextCursor)
 
-  foreach ($a in $resp.perAnime) {
-    if ($a.skippedUnmappableEpisodes -gt 0) {
-      Write-Host ("  WARN animeId {0}: skipped {1} episodes missing season_number/season_episode_number" -f $a.animeId, $a.skippedUnmappableEpisodes)
+    foreach ($a in $resp.perAnime) {
+        if ($a.skippedUnmappableEpisodes -gt 0) {
+            Write-Host ("  WARN animeId {0}: skipped {1} episodes missing season_number/season_episode_number" -f $a.animeId, $a.skippedUnmappableEpisodes)
+        }
     }
-  }
 }
 
 Write-Progress -Activity "Episode stills (by anime)" -Completed

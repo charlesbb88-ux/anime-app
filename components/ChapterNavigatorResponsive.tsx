@@ -1,6 +1,16 @@
+// components/ChapterNavigatorResponsive.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
+import ChapterNavigator from "@/components/ChapterNavigator";
+import ChapterNavigatorMobile from "@/components/ChapterNavigatorMobile";
+
+type Props = {
+  slug: string;
+  totalChapters?: number | null;
+  currentChapterNumber?: number | null;
+  className?: string;
+};
 
 const PHONE_MAX_WIDTH_PX = 767;
 
@@ -8,18 +18,14 @@ function useIsPhone() {
   const [isPhone, setIsPhone] = useState(false);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
     const mq = window.matchMedia(`(max-width: ${PHONE_MAX_WIDTH_PX}px)`);
     const update = () => setIsPhone(mq.matches);
-
     update();
 
     if (typeof mq.addEventListener === "function") {
       mq.addEventListener("change", update);
       return () => mq.removeEventListener("change", update);
     } else {
-      // older Safari
       mq.addListener(update);
       return () => mq.removeListener(update);
     }
@@ -28,10 +34,9 @@ function useIsPhone() {
   return isPhone;
 }
 
-export default function ResponsiveSwitch(props: {
-  desktop: React.ReactNode;
-  phone: React.ReactNode;
-}) {
+export default function ChapterNavigatorResponsive(props: Props) {
   const isPhone = useIsPhone();
-  return <>{isPhone ? props.phone : props.desktop}</>;
+
+  if (isPhone) return <ChapterNavigatorMobile {...props} />;
+  return <ChapterNavigator {...props} />;
 }

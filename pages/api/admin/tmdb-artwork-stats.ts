@@ -15,7 +15,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // total episodes that are mappable to TMDB episode endpoint
   const { count: totalEpisodes, error: e2 } = await supabaseAdmin
-    .from("anime_episode")
+    .from("anime_episodes")
     .select("id", { count: "exact", head: true })
     .not("season_number", "is", null)
     .not("season_episode_number", "is", null);
