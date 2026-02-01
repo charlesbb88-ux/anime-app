@@ -21,6 +21,9 @@ import { pickEnglishTitle } from "@/lib/pickEnglishTitle";
 
 import FeedShell from "@/components/FeedShell";
 
+import ResponsiveSwitch from "@/components/ResponsiveSwitch";
+import MangaPhoneLayout from "@/components/manga/MangaPhoneLayout";
+
 type Manga = {
   id: string;
   title: string;
