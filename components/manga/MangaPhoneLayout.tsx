@@ -346,7 +346,7 @@ export default function MangaPhoneLayout(props: {
                     />
 
                     {/* Feed */}
-                    <div className="mt-6">
+                    <div className="mt-6 -mx-4 border-y-[1px] border-black">
                         <FeedShell>
                             <PostFeed key={feedNonce} mangaId={manga.id} />
                         </FeedShell>
