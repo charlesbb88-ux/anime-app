@@ -10,6 +10,9 @@ import { supabase } from "@/lib/supabaseClient";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import MangaMediaHeaderLayout from "@/components/layouts/MangaMediaHeaderLayout";
 
+import ResponsiveSwitch from "@/components/ResponsiveSwitch";
+import MangaActivityPhoneLayout from "@/components/manga/MangaActivityPhoneLayout";
+
 const CARD_CLASS = "bg-black p-4 text-neutral-100";
 
 function postHref(postId: string) {
@@ -237,6 +240,8 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
   const [posterUrl, setPosterUrl] = useState<string | null>(null);
   const [pageTitle, setPageTitle] = useState<string>("Your activity");
 
+  const [mangaId, setMangaId] = useState<string | null>(null);
+
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -296,6 +301,7 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
 
       const mangaTitle = getMangaDisplayTitle(manga);
       setPageTitle(`Your activity · ${mangaTitle}`);
+      setMangaId(String(manga.id));
       setPosterUrl(manga?.image_url ?? null);
 
       // ✅ Pull series activity + ALL chapter activity for this manga
@@ -694,7 +700,7 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
     );
   }
 
-  return (
+  const desktopView = (
     <MangaMediaHeaderLayout
       backdropUrl={backdropUrl}
       posterUrl={posterUrl}
@@ -966,6 +972,23 @@ const MangaActivityPage: NextPage<MangaActivityPageProps> = ({ initialBackdropUr
       </div>
     </MangaMediaHeaderLayout>
   );
+
+  const phoneView = (
+    <MangaActivityPhoneLayout
+      mangaId={mangaId ?? ""}
+      posterUrl={posterUrl}
+      pageTitle={pageTitle}
+      items={items}
+      error={error}
+      feedLimit={feedLimit}
+      loadingMore={loadingMore}
+      onLoadMore={() => setFeedLimit((n) => n + 20)}
+      slugHref={slug ? `/manga/${slug}` : "/"}
+      reviewIdToPostId={reviewIdToPostId}
+    />
+  );
+
+  return <ResponsiveSwitch desktop={desktopView} phone={phoneView} />;
 };
 
 (MangaActivityPage as any).headerTransparent = true;
