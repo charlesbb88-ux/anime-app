@@ -1,16 +1,18 @@
 "use client";
 
 import type { Dispatch, SetStateAction } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 
-import MangaMetaBox from "@/components/manga/MangaMetaBox";
-import MangaQuickLogBox from "@/components/manga/MangaQuickLogBox";
+import MangaQuickLogBoxMobile from "@/components/manga/MangaQuickLogBoxMobile";
 import ChapterNavigatorMobile from "@/components/ChapterNavigatorMobile";
 import PostFeed from "@/components/PostFeed";
-import MangaActionBox from "@/components/actions/MangaActionBox";
+import MangaActionBoxMobile from "@/components/actions/MangaActionBoxMobile";
 import EnglishTitle from "@/components/EnglishTitle";
 import FeedShell from "@/components/FeedShell";
+import MangaInfoDropdownMobile from "@/components/manga/MangaInfoDropdownMobile";
+
 
 type Manga = {
     id: string;
@@ -94,17 +96,93 @@ export default function MangaPhoneLayout(props: {
 
     const m: any = manga;
 
-    const hasGenres = Array.isArray(m.genres) && m.genres.length > 0;
-    const genres: string[] = m.genres || [];
-
-    const spoilerTags = tags.filter(
-        (t) => t.is_general_spoiler === true || t.is_media_spoiler === true
-    );
-    const spoilerCount = spoilerTags.length;
-
     // poster clamp (safe, local, predictable)
     const POSTER_W = 110; // px
     const POSTER_H = 165; // px (≈ 2:3)
+
+    // Title -> Synopsis gap is `mt-1` => 4px
+    const SYNOPSIS_TOP_GAP_PX = 4;
+
+    // Give it a little breathing room so it doesn’t feel too tight visually
+    // (tweak 8–14 if you ever want)
+    const SYNOPSIS_BREATH_PX = 26;
+
+    // ==========
+    // Synopsis clamp-to-poster-bottom behavior (accounts for title height)
+    // ==========
+    const [synopsisExpanded, setSynopsisExpanded] = useState(false);
+    const [synopsisCanExpand, setSynopsisCanExpand] = useState(false);
+
+    const synopsisRef = useRef<HTMLDivElement | null>(null);
+    const titleRef = useRef<HTMLDivElement | null>(null);
+
+    const [synopsisClampPx, setSynopsisClampPx] = useState<number>(POSTER_H - 2);
+
+    const synopsisText = useMemo(() => {
+        if (typeof m.description !== "string") return "";
+        const s = m.description.trim();
+        if (!s) return "";
+        return cleanSynopsis(s);
+    }, [m.description, cleanSynopsis]);
+
+    // Re-measure after render & when text/expanded changes
+    const useIsoLayoutEffect =
+        typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+    // Shared toggle so title + synopsis can both trigger expand/collapse
+    const toggleSynopsis = () => {
+        if (!synopsisCanExpand) return;
+        setSynopsisExpanded((v) => !v);
+    };
+
+    useIsoLayoutEffect(() => {
+        const synEl = synopsisRef.current;
+        const titleEl = titleRef.current;
+        if (!synEl || !titleEl) return;
+
+        const measure = () => {
+            // How tall is the title block right now (1 line, 2 lines, etc)?
+            const titleH = Math.round(titleEl.getBoundingClientRect().height);
+
+            // Available synopsis height so that (title + gap + synopsis) ends at poster bottom,
+            // plus a little "breathing room" so it doesn't feel cramped.
+            const clampPx = Math.max(
+                24, // don’t let it go to 0 if title is insanely tall
+                POSTER_H - titleH - SYNOPSIS_TOP_GAP_PX + SYNOPSIS_BREATH_PX
+            );
+
+            setSynopsisClampPx(clampPx);
+
+            if (synopsisExpanded) {
+                // If expanded, we still want the click behavior (so user can collapse)
+                setSynopsisCanExpand(true);
+                return;
+            }
+
+            const overflows = synEl.scrollHeight > clampPx + 1;
+            setSynopsisCanExpand(overflows);
+        };
+
+        measure();
+
+        // Keep it responsive if fonts/layout change.
+        // Observe BOTH title and synopsis because title wrapping changes clamp.
+        let ro: ResizeObserver | null = null;
+        if (typeof ResizeObserver !== "undefined") {
+            ro = new ResizeObserver(() => measure());
+            ro.observe(titleEl);
+            ro.observe(synEl);
+        }
+
+        return () => {
+            if (ro) ro.disconnect();
+        };
+    }, [POSTER_H, synopsisText, synopsisExpanded]);
+
+    // If manga changes, collapse by default
+    useEffect(() => {
+        setSynopsisExpanded(false);
+    }, [manga?.id]);
 
     return (
         <>
@@ -156,7 +234,22 @@ export default function MangaPhoneLayout(props: {
 
                         {/* Title + description (NO actions here on mobile) */}
                         <div className="min-w-0 flex-1">
-                            <div className="-mt-1">
+                            {/* Title: clicking this should also expand/collapse synopsis */}
+                            <div
+                                className="-mt-1"
+                                ref={titleRef}
+                                role={synopsisCanExpand ? "button" : undefined}
+                                tabIndex={synopsisCanExpand ? 0 : -1}
+                                onClick={toggleSynopsis}
+                                onKeyDown={(e) => {
+                                    if (!synopsisCanExpand) return;
+                                    if (e.key === "Enter" || e.key === " ") toggleSynopsis();
+                                }}
+                                style={{
+                                    cursor: synopsisCanExpand ? "pointer" : "default",
+                                    userSelect: synopsisCanExpand ? "none" : "auto",
+                                }}
+                            >
                                 <EnglishTitle
                                     as="h1"
                                     className="text-[22px] font-bold leading-tight"
@@ -170,11 +263,41 @@ export default function MangaPhoneLayout(props: {
                                 />
                             </div>
 
-                            {typeof m.description === "string" && m.description.trim() && (
+                            {!!synopsisText && (
                                 <div className="mt-1">
-                                    <p className="whitespace-pre-line text-sm text-black">
-                                        {cleanSynopsis(m.description)}
-                                    </p>
+                                    <div
+                                        ref={synopsisRef}
+                                        role={synopsisCanExpand ? "button" : undefined}
+                                        tabIndex={synopsisCanExpand ? 0 : -1}
+                                        onClick={toggleSynopsis}
+                                        onKeyDown={(e) => {
+                                            if (!synopsisCanExpand) return;
+                                            if (e.key === "Enter" || e.key === " ") toggleSynopsis();
+                                        }}
+                                        className={synopsisCanExpand ? "cursor-pointer select-none" : ""}
+                                        style={{
+                                            position: "relative",
+                                            maxHeight: synopsisExpanded ? "none" : `${synopsisClampPx}px`,
+                                            overflow: synopsisExpanded ? "visible" : "hidden",
+                                        }}
+                                    >
+                                        <p className="whitespace-pre-line text-sm text-black">
+                                            {synopsisText}
+                                        </p>
+
+                                        {!synopsisExpanded && synopsisCanExpand && (
+                                            <>
+                                                {/* Fade matching site bg */}
+                                                <div
+                                                    className="pointer-events-none absolute inset-x-0 bottom-0 h-10"
+                                                    style={{
+                                                        background:
+                                                            "linear-gradient(to bottom, rgba(223,228,233,0), var(--site-bg))",
+                                                    }}
+                                                />
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -193,154 +316,34 @@ export default function MangaPhoneLayout(props: {
 
                     {/* =========================
               FULL-WIDTH ROW: actions + chapter nav
-              (this is the key change)
               ========================= */}
                     <div className="mt-4 w-full">
                         {/* Actions full width */}
                         <div className="flex w-full flex-col items-start gap-2">
-                            <MangaActionBox
+                            <MangaActionBoxMobile
                                 key={actionBoxNonce}
                                 mangaId={manga.id}
                                 onOpenLog={onOpenLog}
                                 onShowActivity={onShowActivity}
                             />
 
-                            <MangaQuickLogBox
+                            <MangaQuickLogBoxMobile
                                 mangaId={manga.id}
                                 totalChapters={manga.total_chapters}
                                 refreshToken={chapterLogsNonce}
                                 onOpenLog={(chapterId) => onOpenLogForChapter(chapterId ?? null)}
                             />
+
+
                         </div>
                     </div>
-
-                    {/* Genres */}
-                    {hasGenres && (
-                        <div className="mt-4">
-                            <h2 className="mb-1 text-sm font-semibold text-black-300">
-                                Genres
-                            </h2>
-                            <div className="flex flex-wrap gap-2">
-                                {genres.map((g) => (
-                                    <span
-                                        key={g}
-                                        className="rounded-full bg-black px-3 py-1 text-xs text-gray-100"
-                                    >
-                                        {g}
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Tags */}
-                    {tags.length > 0 && (
-                        <div className="mt-5">
-                            <div className="mb-1 flex items-center gap-2">
-                                <h2 className="text-base font-semibold text-black-300">Tags</h2>
-                                {tagsLoading && (
-                                    <span className="text-[10px] uppercase tracking-wide text-gray-500">
-                                        Loading…
-                                    </span>
-                                )}
-                            </div>
-
-                            <div className="flex flex-col gap-1">
-                                <div className="flex w-full flex-col gap-1">
-                                    {tags.map((tag) => {
-                                        const isSpoiler =
-                                            tag.is_general_spoiler === true ||
-                                            tag.is_media_spoiler === true;
-
-                                        if (isSpoiler && !showSpoilers) return null;
-
-                                        let percent: number | null = null;
-                                        if (typeof tag.rank === "number") {
-                                            percent = Math.max(0, Math.min(100, Math.round(tag.rank)));
-                                        }
-
-                                        return (
-                                            <div key={tag.id} className="group relative inline-flex">
-                                                <span
-                                                    className="
-                            relative inline-flex w-full items-center justify-between
-                            rounded-full border border-gray-700 bg-gray-900/80
-                            px-3 py-[3px] text-[13px] font-medium
-                            whitespace-nowrap overflow-hidden
-                          "
-                                                >
-                                                    {percent !== null && (
-                                                        <span
-                                                            className="pointer-events-none absolute inset-y-0 left-0 bg-blue-500/20"
-                                                            style={{ width: `${percent}%` }}
-                                                        />
-                                                    )}
-
-                                                    <span
-                                                        className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"
-                                                            }`}
-                                                    >
-                                                        {tag.name}
-                                                    </span>
-
-                                                    {percent !== null && (
-                                                        <span className="relative text-[11px] font-semibold text-gray-200">
-                                                            {percent}%
-                                                        </span>
-                                                    )}
-                                                </span>
-
-                                                {tag.description && (
-                                                    <div
-                                                        className="
-                              pointer-events-none absolute left-0 top-full z-20 mt-1 w-64
-                              rounded-md bg-black px-3 py-2 text-xs text-gray-100 shadow-lg
-                              opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0
-                              transition duration-200 delay-150
-                            "
-                                                    >
-                                                        {tag.description}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-
-                            {spoilerCount > 0 && (
-                                <button
-                                    type="button"
-                                    onClick={() => setShowSpoilers((prev) => !prev)}
-                                    className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
-                                >
-                                    {showSpoilers
-                                        ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
-                                        }`
-                                        : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
-                                        }`}
-                                </button>
-                            )}
-                        </div>
-                    )}
-
-                    {/* Meta box */}
-                    <div className="mt-6">
-                        <MangaMetaBox
-                            titleEnglish={manga.title_english}
-                            titlePreferred={manga.title_preferred}
-                            titleNative={manga.title_native}
-                            totalVolumes={manga.total_volumes}
-                            totalChapters={manga.total_chapters}
-                            format={m.format}
-                            status={m.status}
-                            startDate={m.start_date}
-                            endDate={m.end_date}
-                            season={m.season}
-                            seasonYear={m.season_year}
-                            averageScore={m.average_score}
-                        />
-                    </div>
+                    <MangaInfoDropdownMobile
+                        manga={manga}
+                        tags={tags}
+                        tagsLoading={tagsLoading}
+                        showSpoilers={showSpoilers}
+                        setShowSpoilers={setShowSpoilers}
+                    />
 
                     {/* Feed */}
                     <div className="mt-6">
