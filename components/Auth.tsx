@@ -7,22 +7,22 @@ export default function Auth() {
   const [message, setMessage] = useState("");
 
   async function handleLogin() {
-  setMessage("");
+    setMessage("");
 
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options: {
-      emailRedirectTo: "http://localhost:3000",
-    },
-  });
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
 
-  if (error) {
-    console.error("Supabase auth error:", error);
-    setMessage(error.message);
-  } else {
-    setMessage("Check your inbox for the login link.");
+    if (error) {
+      console.error("Supabase auth error:", error);
+      setMessage(error.message);
+    } else {
+      setMessage("Check your inbox for the login link.");
+    }
   }
-}
 
 
   return (
