@@ -26,6 +26,9 @@ import FeedShell from "@/components/FeedShell";
 
 import MangaChapterSummary from "@/components/manga/MangaChapterSummary";
 
+import ResponsiveSwitch from "@/components/ResponsiveSwitch";
+import MangaChapterPhoneLayout from "@/components/manga/MangaChapterPhoneLayout";
+
 import { buildChapterNavGroups } from "@/lib/chapterNavigation";
 import type { NavGroup } from "@/lib/chapterNavigation";
 
@@ -562,7 +565,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
   const spoilerTags = tags.filter((t) => t.is_general_spoiler === true || t.is_media_spoiler === true);
   const spoilerCount = spoilerTags.length;
 
-  return (
+    const desktopView = (
     <>
       <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
         {/* Backdrop (same as manga page) */}
@@ -593,7 +596,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
             {/* LEFT COLUMN */}
             <div className="flex-shrink-0 w-56">
               {/* Poster */}
-              {(chapterPosterUrl || (manga as any).image_url) ? (
+              {chapterPosterUrl || (manga as any).image_url ? (
                 <img
                   src={chapterPosterUrl ?? (manga as any).image_url}
                   alt={manga?.title ?? slugString}
@@ -665,8 +668,9 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                               )}
 
                               <span
-                                className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"
-                                  }`}
+                                className={`relative ${
+                                  isSpoiler ? "text-red-400" : "text-gray-100"
+                                }`}
                               >
                                 {tag.name}
                               </span>
@@ -731,7 +735,6 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
 
             {/* RIGHT COLUMN */}
             <div className="min-w-100 flex-1">
-              {/* ROW 1 — TITLE (same as manga page) */}
               <div className="mb-0 pl-1">
                 <EnglishTitle
                   as="h1"
@@ -746,9 +749,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                 />
               </div>
 
-              {/* ROW 2 — LEFT CONTENT + ActionBox pinned top-right (same as manga page) */}
               <div className="relative w-full">
-                {/* RIGHT SIDE: ActionBox pinned */}
                 <div className="absolute right-0 top-6 flex flex-col items-end gap-2">
                   <MangaActionBox
                     key={actionBoxNonce}
@@ -769,19 +770,15 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                   />
                 </div>
 
-                {/* LEFT SIDE: reserve space so text never goes under ActionBox */}
                 <div className="min-w-0 pr-[270px] pl-1">
-                  {/* Chapter number (acts like the manga page's "secondary title" slot) */}
                   <h2 className="mt-0 text-xl font-semibold leading-snug text-black">
                     Chapter {chapterNum}
                   </h2>
                   {chapterError && <p className="mt-1 text-xs text-red-500">{chapterError}</p>}
 
-                  {/* Synopsis area (chapter pages: community summary OR the full composer goes here) */}
                   <div className="mt-6 mb-3 min-h-[55px]">
                     {chapter && (
                       <>
-                        {/* If summary exists: show text + icon (inline) */}
                         {communityTopSummary ? (
                           <div>
                             {communityTopSummary.contains_spoilers && (
@@ -802,7 +799,6 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                             </p>
                           </div>
                         ) : (
-                          /* If no summary exists: show the full box */
                           <MangaChapterSummary
                             chapterId={chapter.id}
                             onTopSummary={setCommunityTopSummary}
@@ -812,7 +808,6 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                     )}
                   </div>
 
-                  {/* Chapter Navigator (same spot as manga page) */}
                   <div className="mt-10 min-w-0 overflow-hidden">
                     <ChapterNavigator
                       slug={slugString}
@@ -821,7 +816,6 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                     />
                   </div>
 
-                  {/* Back link (small, like manga page “Back home” row) */}
                   <div className="mt-1">
                     <Link
                       href={`/manga/${slugString}`}
@@ -831,7 +825,6 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                     </Link>
                   </div>
 
-                  {/* Feed (match manga page: always inside FeedShell) */}
                   <div className="mt-6">
                     <FeedShell>
                       {manga?.id && chapter?.id ? (
@@ -848,13 +841,43 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
           </div>
         </div>
 
-        {/* bottom links row (same vibe as manga page) */}
         <div className="mt-3 flex items-center gap-4">
           <Link href={`/manga/${slugString}/art`} className="text-sm text-blue-500 hover:underline">
             Art
           </Link>
         </div>
       </div>
+    </>
+  );
+
+  const phoneView = (
+    <MangaChapterPhoneLayout
+      slug={slugString}
+      chapterNum={chapterNum}
+      manga={manga as any}
+      chapter={chapter as any}
+      backdropUrl={backdropUrl}
+      chapterPosterUrl={chapterPosterUrl}
+      tags={tags}
+      tagsLoading={tagsLoading}
+      showSpoilers={showSpoilers}
+      setShowSpoilers={setShowSpoilers}
+      actionBoxNonce={actionBoxNonce}
+      chapterLogsNonce={0}
+      onOpenLog={() => setLogOpen(true)}
+      onShowActivity={() => router.push(`/manga/${slugString}/chapter/${chapterNum}/activity`)}
+      onOpenLogForChapter={() => setLogOpen(true)}
+      feedNonce={feedNonce}
+      communityTopSummary={communityTopSummary}
+      setCommunityTopSummary={setCommunityTopSummary}
+      chapterError={chapterError}
+      cleanSynopsis={cleanSynopsis}
+    />
+  );
+
+  return (
+    <>
+      <ResponsiveSwitch desktop={desktopView} phone={phoneView} />
 
       <GlobalLogModal
         open={logOpen}
@@ -864,7 +887,6 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
         mangaId={manga?.id ?? null}
         mangaChapterId={chapter?.id ?? null}
         onSuccess={async () => {
-          // refresh feed + actionbox like manga page
           setFeedNonce((n) => n + 1);
           setActionBoxNonce((n) => n + 1);
         }}
