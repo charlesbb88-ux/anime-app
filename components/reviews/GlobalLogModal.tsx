@@ -2,6 +2,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import GlobalLogModalPhone from "@/components/reviews/GlobalLogModalPhone";
+
 import {
   createAnimeEpisodeLog,
   createAnimeSeriesLog,
@@ -92,6 +94,25 @@ function formatWatchedOn(d: Date) {
     day: "numeric",
     year: "numeric",
   });
+}
+
+// For <input type="date" />
+function toDateInputValue(d: Date) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// Use noon UTC so the date never "shifts" for users in negative timezones.
+function dateInputToLoggedAtISO(dateStr: string) {
+  // dateStr = "YYYY-MM-DD"
+  return `${dateStr}T12:00:00.000Z`;
+}
+
+function dateInputToDisplayDate(dateStr: string) {
+  // interpret as noon UTC for stable display too
+  return new Date(`${dateStr}T12:00:00.000Z`);
 }
 
 // Map half-stars (1..10) to rating 0..100 in 10-point steps.
@@ -195,8 +216,8 @@ export default function GlobalLogModal({
   // “Log in Journal” checkbox
   const [logWatchToActivity, setLogWatchToActivity] = useState<boolean>(false);
 
-  // freeze a "watched on" date label
-  const [watchedOnLabel, setWatchedOnLabel] = useState<string>("");
+  // NEW: user-chosen date (YYYY-MM-DD) used for logged_at
+  const [loggedOnDate, setLoggedOnDate] = useState<string>("");
 
   // Rating mark (half-stars 1..10)
   const [hoverHalfStars, setHoverHalfStars] = useState<number | null>(null);
@@ -235,7 +256,6 @@ export default function GlobalLogModal({
   }, [saving, target, animeEpisodeId, animeId, mangaChapterId, mangaId]);
 
   // ✅ IMPORTANT: only show the checkbox/like/stars if the modal has a valid target combo.
-  // This prevents “it looks clickable but Save is disabled” confusion.
   const showLikeAndStars = canSubmit;
   const showJournalCheckbox = canSubmit;
 
@@ -251,10 +271,10 @@ export default function GlobalLogModal({
     // - Series: default OFF
     if (isEpisodeLikeTarget) {
       setLogWatchToActivity(true);
-      setWatchedOnLabel(formatWatchedOn(new Date()));
+      setLoggedOnDate(toDateInputValue(new Date()));
     } else {
       setLogWatchToActivity(false);
-      setWatchedOnLabel("");
+      setLoggedOnDate("");
     }
 
     setHoverHalfStars(null);
@@ -267,8 +287,8 @@ export default function GlobalLogModal({
 
   function handleToggleJournal(checked: boolean) {
     setLogWatchToActivity(checked);
-    if (checked) setWatchedOnLabel(formatWatchedOn(new Date()));
-    else setWatchedOnLabel("");
+    if (checked) setLoggedOnDate(toDateInputValue(new Date()));
+    else setLoggedOnDate("");
   }
 
   function setRatingHalfStars(nextHalfStars: number) {
@@ -300,6 +320,10 @@ export default function GlobalLogModal({
       // Like is only TRUE if explicitly set true. If untouched (null), treat as false for payload fields.
       const snapshotLiked = likeChoice === true;
       const snapshotRating = reviewRating;
+
+      // If user chose a date, turn it into ISO for logged_at
+      const loggedAtIso =
+        logWatchToActivity && loggedOnDate ? dateInputToLoggedAtISO(loggedOnDate) : undefined;
 
       /* ==========================
          ANIME EPISODE
@@ -345,6 +369,8 @@ export default function GlobalLogModal({
             anime_id: animeId,
             anime_episode_id: animeEpisodeId,
             visibility: visibility ?? undefined,
+
+            logged_at: loggedAtIso,
 
             rating: snapshotRating,
             liked: snapshotLiked,
@@ -404,6 +430,8 @@ export default function GlobalLogModal({
           const { error } = await createAnimeSeriesLog({
             anime_id: animeId,
             visibility: visibility ?? undefined,
+
+            logged_at: loggedAtIso,
 
             rating: snapshotRating,
             liked: snapshotLiked,
@@ -465,6 +493,8 @@ export default function GlobalLogModal({
             manga_chapter_id: mangaChapterId,
             visibility: visibility ?? undefined,
 
+            logged_at: loggedAtIso,
+
             rating: snapshotRating,
             liked: snapshotLiked,
             review_id: reviewId,
@@ -524,6 +554,8 @@ export default function GlobalLogModal({
             manga_id: mangaId,
             visibility: visibility ?? undefined,
 
+            logged_at: loggedAtIso,
+
             rating: snapshotRating,
             liked: snapshotLiked,
             review_id: reviewId,
@@ -550,53 +582,49 @@ export default function GlobalLogModal({
     likeChoice === null ? "text-zinc-500" : likeChoice ? "text-red-400" : "text-zinc-400";
   const heartFill = likeChoice === true ? "fill-current" : "";
 
+  const watchedLabelDate =
+    logWatchToActivity && loggedOnDate ? formatWatchedOn(dateInputToDisplayDate(loggedOnDate)) : "";
+
   const checkboxLabel =
-    logWatchToActivity && watchedOnLabel ? `Logged on ${watchedOnLabel}` : "Log in Journal";
+    logWatchToActivity && watchedLabelDate ? `Logged on ${watchedLabelDate}` : "Log in Journal";
 
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center" aria-modal="true" role="dialog">
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/60"
-        onClick={onClose}
-        aria-label="Close modal"
-      />
-
-      <div
-        className="relative z-10 w-[94vw] max-w-[860px] rounded-xl bg-zinc-900 p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <div className="text-sm text-zinc-400">Log / Review</div>
-            <div className="text-lg font-semibold text-white">{title ?? "Log"}</div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800"
-          >
-            Close
-          </button>
+  const desktopView = (
+    <div
+      className="relative z-10 h-full w-full bg-zinc-900 p-4 shadow-xl sm:h-auto sm:w-[94vw] sm:max-w-[860px] sm:rounded-xl sm:p-5"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <div className="text-sm text-zinc-400">Log / Review</div>
+          <div className="text-lg font-semibold text-white">{title ?? "Log"}</div>
         </div>
 
-        <form onSubmit={handleSubmit} className="grid grid-cols-[220px_1fr] gap-5">
-          <div className="flex justify-center">
-            {posterUrl ? (
-              <img
-                src={posterUrl}
-                alt={title ?? "Poster"}
-                className="h-[320px] w-[220px] rounded-[2px] object-cover"
-              />
-            ) : (
-              <div className="h-[320px] w-[220px] rounded-[2px] object-cover" />
-            )}
-          </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800"
+        >
+          Close
+        </button>
+      </div>
 
-          <div className="flex flex-col gap-4">
-            {/* Log checkbox */}
-            {showJournalCheckbox ? (
+      <form onSubmit={handleSubmit} className="grid grid-cols-[220px_1fr] gap-5">
+        <div className="flex justify-center">
+          {posterUrl ? (
+            <img
+              src={posterUrl}
+              alt={title ?? "Poster"}
+              className="h-[320px] w-[220px] rounded-[2px] object-cover"
+            />
+          ) : (
+            <div className="h-[320px] w-[220px] rounded-[2px] object-cover" />
+          )}
+        </div>
+
+        <div className="flex flex-col gap-4">
+          {/* Log checkbox + date picker */}
+          {showJournalCheckbox ? (
+            <div className="flex flex-col gap-2">
               <label className="flex items-center gap-2 text-sm text-zinc-200">
                 <input
                   type="checkbox"
@@ -606,137 +634,207 @@ export default function GlobalLogModal({
                 />
                 {checkboxLabel}
               </label>
-            ) : null}
 
-            {/* Review box */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-200">Review</label>
-              <textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                rows={9}
-                placeholder="Write your thoughts..."
-                disabled={saving}
-                className={[
-                  "min-h-[220px] w-full resize-none rounded-md border border-zinc-700 bg-zinc-950/40 px-3 py-2 text-sm text-white outline-none focus:border-zinc-500",
-                  saving ? "opacity-60" : "",
-                ].join(" ")}
-              />
+              {logWatchToActivity ? (
+                <div className="flex items-center gap-2 pl-6">
+                  <span className="text-xs text-zinc-400">Watched on</span>
+                  <input
+                    type="date"
+                    value={loggedOnDate}
+                    onChange={(e) => setLoggedOnDate(e.target.value)}
+                    disabled={saving}
+                    max={toDateInputValue(new Date())}
+                    className={[
+                      "rounded-md border border-zinc-700 bg-zinc-950/40 px-2 py-1 text-sm text-white outline-none focus:border-zinc-500",
+                      saving ? "opacity-60" : "",
+                    ].join(" ")}
+                  />
+                </div>
+              ) : null}
             </div>
+          ) : null}
 
-            {/* Like (heart) */}
-            {showLikeAndStars ? (
-              <div className="flex justify-center">
-                <button
-                  type="button"
-                  onClick={toggleLike}
-                  disabled={saving}
-                  aria-pressed={likeChoice === true}
-                  className={[
-                    "rounded-md px-2 py-1",
-                    saving
-                      ? "opacity-60 cursor-not-allowed"
-                      : "hover:bg-white/5 active:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/10",
-                  ].join(" ")}
-                  title={
-                    likeChoice === null
-                      ? "Like"
-                      : likeChoice
-                        ? "Will like on save"
-                        : "Will remove like on save"
-                  }
-                >
-                  <Heart className={["h-7 w-7", heartColor, heartFill].join(" ")} />
-                </button>
-              </div>
-            ) : null}
+          {/* Review box */}
+          <div>
+            <label className="mb-1 block text-sm font-medium text-zinc-200">Review</label>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              rows={9}
+              placeholder="Write your thoughts..."
+              disabled={saving}
+              className={[
+                "min-h-[220px] w-full resize-none rounded-md border border-zinc-700 bg-zinc-950/40 px-3 py-2 text-sm text-white outline-none focus:border-zinc-500",
+                saving ? "opacity-60" : "",
+              ].join(" ")}
+            />
+          </div>
 
-            {/* Stars */}
-            {showLikeAndStars ? (
-              <div className="pt-1">
-                <div className="mb-1 text-center text-xs font-semibold text-zinc-300">
-                  {halfStars == null ? "Rate" : "Rated"}
-                </div>
-
-                <div
-                  className="flex justify-center gap-[8px]"
-                  onMouseLeave={() => setHoverHalfStars(null)}
-                >
-                  {Array.from({ length: 5 }).map((_, i) => {
-                    const starIndex = i + 1;
-                    const filled = computeStarFillPercent(shownHalfStars, starIndex);
-
-                    return (
-                      <div key={starIndex} className="relative">
-                        <StarVisual filledPercent={filled} dim={saving} size={34} />
-
-                        <button
-                          type="button"
-                          disabled={saving}
-                          className="absolute inset-y-0 left-0 w-1/2"
-                          onMouseEnter={() => setHoverHalfStars(starIndex * 2 - 1)}
-                          onFocus={() => setHoverHalfStars(starIndex * 2 - 1)}
-                          onClick={() => setRatingHalfStars(starIndex * 2 - 1)}
-                          aria-label={`Rate ${starIndex - 0.5} stars`}
-                          title={`Rate ${starIndex - 0.5} stars`}
-                        />
-
-                        <button
-                          type="button"
-                          disabled={saving}
-                          className="absolute inset-y-0 right-0 w-1/2"
-                          onMouseEnter={() => setHoverHalfStars(starIndex * 2)}
-                          onFocus={() => setHoverHalfStars(starIndex * 2)}
-                          onClick={() => setRatingHalfStars(starIndex * 2)}
-                          aria-label={`Rate ${starIndex} stars`}
-                          title={`Rate ${starIndex} stars`}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
-
-            <label className="flex items-center gap-2 text-sm text-zinc-200">
-              <input
-                type="checkbox"
-                checked={containsSpoilers}
-                onChange={(e) => setContainsSpoilers(e.target.checked)}
-                disabled={saving}
-                className="h-4 w-4"
-              />
-              Contains spoilers
-            </label>
-
-            {error ? (
-              <div className="rounded-md border border-red-900/40 bg-red-950/30 px-3 py-2 text-sm text-red-200">
-                {error}
-              </div>
-            ) : null}
-
-            <div className="mt-2 flex items-center justify-end gap-2">
+          {/* Like (heart) */}
+          {showLikeAndStars ? (
+            <div className="flex justify-center">
               <button
                 type="button"
-                onClick={onClose}
-                className="rounded-md border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
+                onClick={toggleLike}
+                disabled={saving}
+                aria-pressed={likeChoice === true}
+                className={[
+                  "rounded-md px-2 py-1",
+                  saving
+                    ? "opacity-60 cursor-not-allowed"
+                    : "hover:bg-white/5 active:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/10",
+                ].join(" ")}
+                title={
+                  likeChoice === null
+                    ? "Like"
+                    : likeChoice
+                      ? "Will like on save"
+                      : "Will remove like on save"
+                }
               >
-                Cancel
-              </button>
-
-              <button
-                type="submit"
-                disabled={!canSubmit}
-                className={`rounded-md px-3 py-2 text-sm text-white ${
-                  canSubmit ? "bg-emerald-600 hover:bg-emerald-500" : "bg-zinc-700 opacity-60"
-                }`}
-              >
-                {saving ? "Saving..." : "Save"}
+                <Heart className={["h-7 w-7", heartColor, heartFill].join(" ")} />
               </button>
             </div>
+          ) : null}
+
+          {/* Stars */}
+          {showLikeAndStars ? (
+            <div className="pt-1">
+              <div className="mb-1 text-center text-xs font-semibold text-zinc-300">
+                {halfStars == null ? "Rate" : "Rated"}
+              </div>
+
+              <div
+                className="flex justify-center gap-[8px]"
+                onMouseLeave={() => setHoverHalfStars(null)}
+              >
+                {Array.from({ length: 5 }).map((_, i) => {
+                  const starIndex = i + 1;
+                  const filled = computeStarFillPercent(shownHalfStars, starIndex);
+
+                  return (
+                    <div key={starIndex} className="relative">
+                      <StarVisual filledPercent={filled} dim={saving} size={34} />
+
+                      <button
+                        type="button"
+                        disabled={saving}
+                        className="absolute inset-y-0 left-0 w-1/2"
+                        onMouseEnter={() => setHoverHalfStars(starIndex * 2 - 1)}
+                        onFocus={() => setHoverHalfStars(starIndex * 2 - 1)}
+                        onClick={() => setRatingHalfStars(starIndex * 2 - 1)}
+                        aria-label={`Rate ${starIndex - 0.5} stars`}
+                        title={`Rate ${starIndex - 0.5} stars`}
+                      />
+
+                      <button
+                        type="button"
+                        disabled={saving}
+                        className="absolute inset-y-0 right-0 w-1/2"
+                        onMouseEnter={() => setHoverHalfStars(starIndex * 2)}
+                        onFocus={() => setHoverHalfStars(starIndex * 2)}
+                        onClick={() => setRatingHalfStars(starIndex * 2)}
+                        aria-label={`Rate ${starIndex} stars`}
+                        title={`Rate ${starIndex} stars`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          <label className="flex items-center gap-2 text-sm text-zinc-200">
+            <input
+              type="checkbox"
+              checked={containsSpoilers}
+              onChange={(e) => setContainsSpoilers(e.target.checked)}
+              disabled={saving}
+              className="h-4 w-4"
+            />
+            Contains spoilers
+          </label>
+
+          {error ? (
+            <div className="rounded-md border border-red-900/40 bg-red-950/30 px-3 py-2 text-sm text-red-200">
+              {error}
+            </div>
+          ) : null}
+
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
+            >
+              Cancel
+            </button>
+
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className={`rounded-md px-3 py-2 text-sm text-white ${canSubmit ? "bg-emerald-600 hover:bg-emerald-500" : "bg-zinc-700 opacity-60"
+                }`}
+            >
+              {saving ? "Saving..." : "Save"}
+            </button>
           </div>
-        </form>
+        </div>
+      </form>
+    </div>
+  );
+
+  const phoneView = (
+    <GlobalLogModalPhone
+      title={title}
+      posterUrl={posterUrl}
+      content={content}
+      setContent={setContent}
+      containsSpoilers={containsSpoilers}
+      setContainsSpoilers={setContainsSpoilers}
+      showJournalCheckbox={showJournalCheckbox}
+      logWatchToActivity={logWatchToActivity}
+      checkboxLabel={checkboxLabel}
+      handleToggleJournal={handleToggleJournal}
+      // NEW (phone needs to render the date input too)
+      loggedOnDate={loggedOnDate}
+      setLoggedOnDate={setLoggedOnDate}
+      maxLoggedOnDate={toDateInputValue(new Date())}
+      showLikeAndStars={showLikeAndStars}
+      likeChoice={likeChoice}
+      toggleLike={toggleLike}
+      heartColor={heartColor}
+      heartFill={heartFill}
+      saving={saving}
+      error={error}
+      shownHalfStars={shownHalfStars}
+      halfStars={halfStars}
+      setHoverHalfStars={setHoverHalfStars}
+      setRatingHalfStars={setRatingHalfStars}
+      computeStarFillPercent={computeStarFillPercent}
+      StarVisual={StarVisual}
+      canSubmit={canSubmit}
+      onClose={onClose}
+      handleSubmit={handleSubmit}
+    />
+  );
+
+  return (
+    <div className="fixed inset-0 z-[9999]" aria-modal="true" role="dialog">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/60"
+        onClick={onClose}
+        aria-label="Close modal"
+      />
+
+      {/* desktop */}
+      <div className="absolute inset-0 hidden items-center justify-center sm:flex">
+        {desktopView}
       </div>
+
+      {/* phone */}
+      <div className="sm:hidden">{phoneView}</div>
     </div>
   );
 }
