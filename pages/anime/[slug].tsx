@@ -5,6 +5,7 @@ import type { NextPage, GetServerSideProps } from "next";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import Image from "next/image";
+import FeedShell from "@/components/FeedShell";
 
 import { getAnimeBySlug } from "@/lib/anime";
 import type { Anime } from "@/lib/types";
@@ -380,7 +381,7 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                 <img
                   src={anime.image_url}
                   alt={anime.title}
-                  className="h-84 w-56 rounded-md object-cover border-2 border-black/100"
+                  className="h-84 w-56 rounded-md object-cover border-3 border-black/100"
                 />
               ) : (
                 <div className="flex h-64 w-56 items-center justify-center rounded-lg bg-gray-800 text-4xl font-bold text-gray-200">
@@ -515,14 +516,14 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
 
             <div className="min-w-100 flex-1">
               {/* ROW 1 — TITLE (full width, can be tall) */}
-              <h1 className="mb-2 text-4xl font-bold leading-tight">
-                {anime.title}
-              </h1>
+              <div className="mb-0 pl-1">
+                <h1 className="text-4xl font-bold leading-tight">{anime.title}</h1>
+              </div>
 
               {/* ROW 2 — LEFT CONTENT + ActionBox pinned top-right */}
               <div className="relative w-full">
                 {/* RIGHT SIDE: ActionBox (pinned, won't move) */}
-                <div className="absolute right-0 top-1 flex flex-col items-end">
+                <div className="absolute right-0 top-6 flex flex-col items-end gap-2">
                   <ActionBox
                     key={actionBoxNonce}
                     animeId={anime.id}
@@ -542,7 +543,7 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                 </div>
 
                 {/* LEFT SIDE: reserve space so text never goes under ActionBox */}
-                <div className="min-w-0 pr-[260px]">
+                <div className="min-w-0 pr-[270px] pl-1">
                   {/* ✅ SYNOPSIS goes here (between poster and actionbox) */}
                   {typeof a.description === "string" && a.description.trim() && (
                     <div className="mt-6 mb-3">
@@ -567,7 +568,9 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
 
                   {/* ✅ Feed */}
                   <div className="mt-6">
-                    <PostFeed key={feedNonce} animeId={anime.id} />
+                    <FeedShell>
+                      <PostFeed key={feedNonce} animeId={anime.id} />
+                    </FeedShell>
                   </div>
 
                 </div>
