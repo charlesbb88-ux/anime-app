@@ -45,6 +45,20 @@ function easeOutCubic(t: number) {
   return 1 - Math.pow(1 - t, 3);
 }
 
+function findChapterIndex(nums: number[], target: number) {
+  const EPS = 1e-6;
+  for (let i = 0; i < nums.length; i++) {
+    if (Math.abs(nums[i] - target) < EPS) return i;
+  }
+  return -1;
+}
+
+function isSameChapterNumber(a: number | null, b: number) {
+  if (typeof a !== "number") return false;
+  const EPS = 1e-6;
+  return Math.abs(a - b) < EPS;
+}
+
 function isNumericLike(s: string) {
   return /^(\d+)(\.\d+)?$/.test(String(s).trim());
 }
@@ -114,6 +128,7 @@ export default function ChapterNavigator({
   // ---------------------------------------
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const rafScrollRef = useRef<number | null>(null);
+  const didInitialCenterRef = useRef(false);
 
   const snappingRef = useRef(false);
   const animRef = useRef<number | null>(null);
@@ -599,27 +614,44 @@ export default function ChapterNavigator({
     }, 130);
   }
 
-  // initial centering
+  // initial centering (re-run when currentSafe becomes available)
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
     if (!viewportW) return;
     if (chapterCount <= 0) return;
 
-    let idx = 0;
-    if (currentSafe) {
-      const found = displayChapters.indexOf(currentSafe);
-      if (found >= 0) idx = found;
+    // If we're on the series page, don't force centering; also allow future re-center
+    if (!currentSafe) {
+      didInitialCenterRef.current = false;
+      return;
     }
 
-    idx = clamp(idx, 0, getMaxIndexFromCount(chapterCount));
-    const target = idx * STEP + CARD_W / 2 - viewportW / 2;
+    // Avoid fighting user scroll if we've already centered once
+    if (didInitialCenterRef.current) return;
 
-    stopAnim();
-    el.scrollLeft = Math.max(0, target);
-    setScrollLeft(el.scrollLeft);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug, viewportW, selectedVolume, chapterCount]);
+    let idx = findChapterIndex(displayChapters, currentSafe);
+    if (idx < 0) return; // wait until displayChapters actually contains current
+
+    idx = clamp(idx, 0, getMaxIndexFromCount(chapterCount));
+
+    // rAF ensures widths/layout are final
+    requestAnimationFrame(() => {
+      const vw = el.clientWidth || viewportW || 0;
+      const target = idx * STEP + CARD_W / 2 - vw / 2;
+
+      stopAnim();
+      el.scrollLeft = Math.max(0, target);
+      setScrollLeft(el.scrollLeft);
+      didInitialCenterRef.current = true;
+    });
+  }, [
+    viewportW,
+    chapterCount,
+    selectedVolume,
+    currentSafe,
+    displayChapters.join("|"),
+  ]);
 
   // ---------------------------------------
   // virtualization window
@@ -1141,12 +1173,13 @@ export default function ChapterNavigator({
               const imageUrl = chapterCoverByNumber[n] ?? null;
 
               const metaLine = `CH${pad2(n)}`;
-              const isActive = currentSafe === n;
+              const hasSelectedChapter = typeof currentSafe === "number";
+              const isActive = isSameChapterNumber(currentSafe, n);
 
               return (
                 <Link
                   key={n}
-                  href={`${chapterBase}/${n}`}
+                  href={`${chapterBase}/${String(n)}`}
                   scroll={false}
                   onClick={(e) => {
                     if (dragRef.current.blockNextClick) {
@@ -1162,7 +1195,7 @@ export default function ChapterNavigator({
                     cardSize,
 
                     // make non-active slightly quieter
-                    !isActive ? "opacity-80 hover:opacity-100" : "",
+                    hasSelectedChapter && !isActive ? "opacity-80 hover:opacity-100" : "",
 
                     // active treatment
                     isActive

@@ -45,6 +45,14 @@ function isNumericLike(s: string) {
     return /^(\d+)(\.\d+)?$/.test(String(s).trim());
 }
 
+function findChapterIndex(nums: number[], target: number) {
+    const EPS = 1e-6;
+    for (let i = 0; i < nums.length; i++) {
+        if (Math.abs(nums[i] - target) < EPS) return i;
+    }
+    return -1;
+}
+
 function normVol(v: any): string | null {
     const s0 = String(v ?? "").trim();
     if (!s0) return null;
@@ -105,6 +113,7 @@ export default function ChapterNavigatorMobile({
     className,
 }: Props) {
     const scrollerRef = useRef<HTMLDivElement | null>(null);
+    const didInitialCenterRef = useRef(false);
 
     const [viewportW, setViewportW] = useState(0);
     const [scrollLeft, setScrollLeft] = useState(0);
@@ -480,29 +489,40 @@ export default function ChapterNavigatorMobile({
         };
     }, [chapterCount, displayChapters, viewportW, scrollLeft]);
 
-    // initial scroll to current (no animation)
+    // initial scroll to current (re-run when currentSafe becomes available)
     useEffect(() => {
         const el = scrollerRef.current;
         if (!el) return;
         if (!viewportW) return;
         if (chapterCount <= 0) return;
 
-        let idx = 0;
-        if (currentSafe) {
-            const found = displayChapters.indexOf(currentSafe);
-            if (found >= 0) idx = found;
+        if (!currentSafe) {
+            didInitialCenterRef.current = false;
+            return;
         }
+
+        if (didInitialCenterRef.current) return;
+
+        let idx = findChapterIndex(displayChapters, currentSafe);
+        if (idx < 0) idx = 0;
 
         idx = clamp(idx, 0, Math.max(0, chapterCount - 1));
 
-        // keep your centering, but DO NOT use snap (snap is what makes it “stop quick”)
-        const target = idx * STEP + CARD_W / 2 - viewportW / 2;
-        el.scrollLeft = Math.max(0, target);
+        requestAnimationFrame(() => {
+            const target = idx * STEP + CARD_W / 2 - viewportW / 2;
+            el.scrollLeft = Math.max(0, target);
 
-        liveScrollLeftRef.current = el.scrollLeft;
-        setScrollLeft(el.scrollLeft);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [slug, viewportW, selectedVolume, chapterCount]);
+            liveScrollLeftRef.current = el.scrollLeft;
+            setScrollLeft(el.scrollLeft);
+            didInitialCenterRef.current = true;
+        });
+    }, [
+        viewportW,
+        chapterCount,
+        selectedVolume,
+        currentSafe,
+        displayChapters.join("|"),
+    ]);
 
     // meta fetch
     useEffect(() => {
@@ -669,6 +689,7 @@ export default function ChapterNavigatorMobile({
                             const imageUrl = chapterCoverByNumber[n] ?? null;
 
                             const metaLine = `CH${pad2(n)}`;
+                            const hasSelectedChapter = typeof currentSafe === "number";
                             const isActive = currentSafe === n;
 
                             return (
@@ -684,7 +705,7 @@ export default function ChapterNavigatorMobile({
                                         cardSize,
 
                                         // make non-active quieter so current pops
-                                        !isActive ? "opacity-80" : "opacity-100",
+                                        hasSelectedChapter && !isActive ? "opacity-80" : "opacity-100",
 
                                         // active treatment
                                         isActive
