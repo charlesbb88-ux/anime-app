@@ -146,8 +146,8 @@ export default function ChapterNavigator({
   // ---------------------------------------
   const propTotal =
     typeof totalChapters === "number" &&
-    Number.isFinite(totalChapters) &&
-    totalChapters > 0
+      Number.isFinite(totalChapters) &&
+      totalChapters > 0
       ? Math.floor(totalChapters)
       : null;
 
@@ -506,8 +506,8 @@ export default function ChapterNavigator({
         const rawVol = key.startsWith("vol:")
           ? key.slice(4)
           : key.startsWith("vol-")
-          ? key.slice(4)
-          : key;
+            ? key.slice(4)
+            : key;
 
         const v = normVol(rawVol);
         const cover = v ? coverUrlByVolume[v] ?? null : null;
@@ -1160,7 +1160,20 @@ export default function ChapterNavigator({
                     cardBase,
                     cardHover,
                     cardSize,
-                    isActive ? "ring-black/15 bg-white" : "",
+
+                    // make non-active slightly quieter
+                    !isActive ? "opacity-80 hover:opacity-100" : "",
+
+                    // active treatment
+                    isActive
+                      ? [
+                        "opacity-100",
+                        "ring-2 ring-sky-400",          // strong accent outline
+                        "shadow-lg shadow-sky-500/20",  // soft glow
+                        "scale-[1.03]",                 // subtle zoom
+                        "z-[2]",                        // sit above neighbors
+                      ].join(" ")
+                      : "",
                   ].join(" ")}
                   style={{
                     contentVisibility: "auto",
@@ -1183,8 +1196,17 @@ export default function ChapterNavigator({
 
                     <div className="absolute inset-x-0 bottom-0">
                       <div className="bg-black/70 backdrop-blur-[2px] px-3 py-2">
-                        <div className="text-[11px] font-semibold text-white/80">
-                          {metaLine}
+                        <div className="flex items-center justify-between">
+                          <div className="text-[11px] font-semibold text-white/80">{metaLine}</div>
+
+                          {isActive ? (
+                            <div className="flex items-center gap-1">
+                              <span className="h-1.5 w-1.5 rounded-full bg-sky-400 shadow-[0_0_0_3px_rgba(56,189,248,0.18)]" />
+                              <span className="text-[10px] font-bold tracking-wide text-sky-300">
+                                CURRENT
+                              </span>
+                            </div>
+                          ) : null}
                         </div>
 
                         <div
