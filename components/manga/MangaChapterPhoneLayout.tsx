@@ -3,6 +3,7 @@
 "use client";
 
 import type { Dispatch, SetStateAction } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 
@@ -111,10 +112,106 @@ export default function MangaChapterPhoneLayout(props: {
     communityTopSummary,
     setCommunityTopSummary,
     chapterError,
+    cleanSynopsis,
   } = props;
 
-  const POSTER_W = 110;
-  const POSTER_H = 165;
+  // poster clamp (safe, local, predictable)
+  const POSTER_W = 110; // px
+  const POSTER_H = 165; // px (≈ 2:3)
+
+  // Title/Chapter -> Summary gap: we use mt-2 => 8px
+  const SUMMARY_TOP_GAP_PX = 8;
+
+  // A little breathing room so the clamp doesn't feel cramped
+  const SUMMARY_BREATH_PX = 26;
+
+  // ==========
+  // Summary clamp-to-poster-bottom behavior (accounts for title+chapter block height)
+  // ==========
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
+  const [summaryCanExpand, setSummaryCanExpand] = useState(false);
+
+  const summaryRef = useRef<HTMLDivElement | null>(null);
+  const headerRef = useRef<HTMLDivElement | null>(null);
+
+  const [summaryClampPx, setSummaryClampPx] = useState<number>(POSTER_H - 2);
+
+  // Only clamp/expand when we actually have a top community summary to display.
+  // (When it's not present we render MangaChapterSummary, which is interactive and shouldn't be clamped.)
+  const summaryText = useMemo(() => {
+    if (!communityTopSummary) return "";
+    if (typeof communityTopSummary.content !== "string") return "";
+    const s = communityTopSummary.content.trim();
+    if (!s) return "";
+    return cleanSynopsis(s);
+  }, [communityTopSummary, cleanSynopsis]);
+
+  // Re-measure after render & when text/expanded changes
+  const useIsoLayoutEffect =
+    typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+  const toggleSummary = () => {
+    if (!summaryCanExpand) return;
+    setSummaryExpanded((v) => !v);
+  };
+
+  useIsoLayoutEffect(() => {
+    // Only run the clamping logic for the "top summary paragraph" view
+    if (!summaryText) {
+      setSummaryCanExpand(false);
+      return;
+    }
+
+    const sumEl = summaryRef.current;
+    const headEl = headerRef.current;
+    if (!sumEl || !headEl) return;
+
+    const measure = () => {
+      // How tall is the header block right now (title + chapter number + optional error)?
+      const headerH = Math.round(headEl.getBoundingClientRect().height);
+
+      // Available summary height so (header + gap + summary) ends at poster bottom,
+      // plus some breathing room.
+      const clampPx = Math.max(
+        24,
+        POSTER_H - headerH - SUMMARY_TOP_GAP_PX + SUMMARY_BREATH_PX
+      );
+
+      setSummaryClampPx(clampPx);
+
+      if (summaryExpanded) {
+        // If expanded, keep clickable so user can collapse.
+        setSummaryCanExpand(true);
+        return;
+      }
+
+      const overflows = sumEl.scrollHeight > clampPx + 1;
+      setSummaryCanExpand(overflows);
+    };
+
+    measure();
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => measure());
+      ro.observe(headEl);
+      ro.observe(sumEl);
+    }
+
+    return () => {
+      if (ro) ro.disconnect();
+    };
+  }, [POSTER_H, summaryText, summaryExpanded]);
+
+  // If chapter changes, collapse by default
+  useEffect(() => {
+    setSummaryExpanded(false);
+  }, [chapter?.id]);
+
+  // If the top summary disappears/reappears, reset expansion state safely
+  useEffect(() => {
+    if (!summaryText) setSummaryExpanded(false);
+  }, [summaryText]);
 
   return (
     <>
@@ -151,6 +248,7 @@ export default function MangaChapterPhoneLayout(props: {
                   src={chapterPosterUrl ?? manga.image_url ?? ""}
                   alt={manga.title}
                   className="h-full w-full object-cover"
+                  style={{ display: "block" }}
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-3xl font-bold text-gray-200">
@@ -161,28 +259,44 @@ export default function MangaChapterPhoneLayout(props: {
 
             {/* Title + Chapter + Summary */}
             <div className="min-w-0 flex-1">
-              <EnglishTitle
-                as="h1"
-                className="text-[22px] font-bold leading-tight"
-                titles={{
-                  title_english: manga.title_english,
-                  title_preferred: manga.title_preferred,
-                  title: manga.title,
-                  title_native: manga.title_native,
+              {/* Header block: clicking should also expand/collapse (only when expandable) */}
+              <div
+                ref={headerRef}
+                role={summaryCanExpand ? "button" : undefined}
+                tabIndex={summaryCanExpand ? 0 : -1}
+                onClick={toggleSummary}
+                onKeyDown={(e) => {
+                  if (!summaryCanExpand) return;
+                  if (e.key === "Enter" || e.key === " ") toggleSummary();
                 }}
-                fallback={manga.title ?? manga.title_native ?? "Untitled"}
-              />
+                style={{
+                  cursor: summaryCanExpand ? "pointer" : "default",
+                  userSelect: summaryCanExpand ? "none" : "auto",
+                }}
+              >
+                <EnglishTitle
+                  as="h1"
+                  className="text-[22px] font-bold leading-tight"
+                  titles={{
+                    title_english: manga.title_english,
+                    title_preferred: manga.title_preferred,
+                    title: manga.title,
+                    title_native: manga.title_native,
+                  }}
+                  fallback={manga.title ?? manga.title_native ?? "Untitled"}
+                />
 
-              {/* ✅ Chapter number directly under title */}
-              <h2 className="mt-0 text-[17px] font-semibold text-black/80">
-                Chapter {chapterNum}
-              </h2>
+                {/* Chapter number directly under title */}
+                <h2 className="mt-0 text-[17px] font-semibold text-black/80">
+                  Chapter {chapterNum}
+                </h2>
 
-              {chapterError && (
-                <p className="mt-1 text-xs text-red-500">{chapterError}</p>
-              )}
+                {chapterError && (
+                  <p className="mt-1 text-xs text-red-500">{chapterError}</p>
+                )}
+              </div>
 
-              {/* Chapter summary (replaces series description slot) */}
+              {/* Chapter summary slot */}
               <div className="mt-2 min-h-[55px]">
                 {chapter && (
                   <>
@@ -194,18 +308,47 @@ export default function MangaChapterPhoneLayout(props: {
                           </div>
                         )}
 
-                        <p className="whitespace-pre-line text-sm text-black">
-                          {communityTopSummary.content}
-                          <span className="inline-flex align-baseline ml-2">
-                            <MangaChapterSummary
-                              chapterId={chapter.id}
-                              onTopSummary={setCommunityTopSummary}
-                              mode="icon"
+                        {/* ✅ CLAMP + FADE + CLICK-TO-EXPAND (matches the manga page behavior) */}
+                        <div
+                          ref={summaryRef}
+                          role={summaryCanExpand ? "button" : undefined}
+                          tabIndex={summaryCanExpand ? 0 : -1}
+                          onClick={toggleSummary}
+                          onKeyDown={(e) => {
+                            if (!summaryCanExpand) return;
+                            if (e.key === "Enter" || e.key === " ") toggleSummary();
+                          }}
+                          className={summaryCanExpand ? "cursor-pointer select-none" : ""}
+                          style={{
+                            position: "relative",
+                            maxHeight: summaryExpanded ? "none" : `${summaryClampPx}px`,
+                            overflow: summaryExpanded ? "visible" : "hidden",
+                          }}
+                        >
+                          <p className="whitespace-pre-line text-sm text-black">
+                            {summaryText}
+                            <span className="inline-flex align-baseline ml-2">
+                              <MangaChapterSummary
+                                chapterId={chapter.id}
+                                onTopSummary={setCommunityTopSummary}
+                                mode="icon"
+                              />
+                            </span>
+                          </p>
+
+                          {!summaryExpanded && summaryCanExpand && (
+                            <div
+                              className="pointer-events-none absolute inset-x-0 bottom-0 h-10"
+                              style={{
+                                background:
+                                  "linear-gradient(to bottom, rgba(223,228,233,0), var(--site-bg))",
+                              }}
                             />
-                          </span>
-                        </p>
+                          )}
+                        </div>
                       </div>
                     ) : (
+                      // No top summary yet: render the normal component (don't clamp this)
                       <MangaChapterSummary
                         chapterId={chapter.id}
                         onTopSummary={setCommunityTopSummary}
@@ -228,7 +371,10 @@ export default function MangaChapterPhoneLayout(props: {
           </div>
 
           <div className="mt-1">
-            <Link href={`/manga/${slug}`} className="text-xs text-black hover:underline">
+            <Link
+              href={`/manga/${slug}`}
+              className="text-xs text-black hover:underline"
+            >
               ← Back to manga main page
             </Link>
           </div>
@@ -265,7 +411,11 @@ export default function MangaChapterPhoneLayout(props: {
           <div className="mt-6 -mx-4 border-y border-black">
             <FeedShell>
               {manga.id && chapter?.id ? (
-                <PostFeed key={feedNonce} mangaId={manga.id} mangaChapterId={chapter.id} />
+                <PostFeed
+                  key={feedNonce}
+                  mangaId={manga.id}
+                  mangaChapterId={chapter.id}
+                />
               ) : (
                 <p className="text-sm text-gray-500">Loading discussion…</p>
               )}
@@ -273,7 +423,10 @@ export default function MangaChapterPhoneLayout(props: {
           </div>
 
           <div className="mt-4 flex items-center gap-4">
-            <Link href={`/manga/${slug}/art`} className="text-sm text-blue-500 hover:underline">
+            <Link
+              href={`/manga/${slug}/art`}
+              className="text-sm text-blue-500 hover:underline"
+            >
               Art
             </Link>
           </div>
