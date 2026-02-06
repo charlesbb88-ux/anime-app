@@ -16,20 +16,20 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { createAnimeSeriesReview } from "@/lib/reviews";
 
 import EpisodeNavigator from "@/components/EpisodeNavigator";
-
 import CharacterNavigator from "@/components/CharacterNavigator";
-
 import PostFeed from "../../components/PostFeed";
 
 // ✅ Global Log modal
 import GlobalLogModal from "@/components/reviews/GlobalLogModal";
 
 import AnimeMetaBox from "@/components/anime/AnimeMetaBox";
-
 import AnimeQuickLogBox from "@/components/anime/AnimeQuickLogBox";
 
 // ✅ Letterboxd-style action box (reusable)
 import ActionBox from "@/components/actions/ActionBox";
+
+import ResponsiveSwitch from "@/components/ResponsiveSwitch";
+import AnimePhoneLayout from "@/components/anime/AnimePhoneLayout";
 
 type AnimeTag = {
   id: number;
@@ -346,7 +346,7 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
   // ------------------------
   // MAIN ANIME PAGE CONTENT
   // ------------------------
-  return (
+  const desktopView = (
     <>
       <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
         {/* Backdrop (from SSR public.anime_artwork) */}
@@ -371,7 +371,6 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
           </div>
         )}
 
-
         {/* Top section */}
         <div className="-mt-5 relative z-10 px-3">
           <div className="mb-8 flex flex-row gap-7">
@@ -392,7 +391,9 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
               {/* Genres (moved here) */}
               {hasGenres && (
                 <div className="mt-4">
-                  <h2 className="mb-1 text-sm font-semibold text-black-300">Genres</h2>
+                  <h2 className="mb-1 text-sm font-semibold text-black-300">
+                    Genres
+                  </h2>
                   <div className="flex flex-wrap gap-2">
                     {genres.map((g) => (
                       <span
@@ -418,7 +419,9 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                 </div>
 
                 {!tagsLoading && tags.length === 0 ? (
-                  <p className="text-sm text-gray-500">No tags imported yet for this anime.</p>
+                  <p className="text-sm text-gray-500">
+                    No tags imported yet for this anime.
+                  </p>
                 ) : (
                   <>
                     <div className="flex flex-col gap-1">
@@ -431,7 +434,10 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
 
                           let percent: number | null = null;
                           if (typeof tag.rank === "number") {
-                            percent = Math.max(0, Math.min(100, Math.round(tag.rank)));
+                            percent = Math.max(
+                              0,
+                              Math.min(100, Math.round(tag.rank))
+                            );
                           }
 
                           return (
@@ -452,8 +458,9 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                                 )}
 
                                 <span
-                                  className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"
-                                    }`}
+                                  className={`relative ${
+                                    isSpoiler ? "text-red-400" : "text-gray-100"
+                                  }`}
                                 >
                                   {tag.name}
                                 </span>
@@ -490,14 +497,18 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                         className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
                       >
                         {showSpoilers
-                          ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`
-                          : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`
-                        }
+                          ? `Hide ${spoilerCount} spoiler tag${
+                              spoilerCount === 1 ? "" : "s"
+                            }`
+                          : `Show ${spoilerCount} spoiler tag${
+                              spoilerCount === 1 ? "" : "s"
+                            }`}
                       </button>
                     )}
                   </>
                 )}
               </div>
+
               <div className="mt-4">
                 <AnimeMetaBox
                   titleEnglish={a.title_english}
@@ -509,7 +520,9 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                   endDate={a.end_date}
                   season={a.season}
                   seasonYear={a.season_year}
-                  averageScore={typeof a.average_score === "number" ? a.average_score : null}
+                  averageScore={
+                    typeof a.average_score === "number" ? a.average_score : null
+                  }
                 />
               </div>
             </div>
@@ -544,7 +557,7 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
 
                 {/* LEFT SIDE: reserve space so text never goes under ActionBox */}
                 <div className="min-w-0 pr-[270px] pl-1">
-                  {/* ✅ SYNOPSIS goes here (between poster and actionbox) */}
+                  {/* ✅ SYNOPSIS goes here */}
                   {typeof a.description === "string" && a.description.trim() && (
                     <div className="mt-6 mb-3">
                       <p className="whitespace-pre-line text-base text-black">
@@ -572,7 +585,6 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                       <PostFeed key={feedNonce} animeId={anime.id} />
                     </FeedShell>
                   </div>
-
                 </div>
               </div>
               {/* EVERYTHING BELOW stays the same */}
@@ -580,6 +592,35 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
           </div>
         </div>
       </div>
+    </>
+  );
+
+  const phoneView = (
+    <AnimePhoneLayout
+      slug={slug}
+      anime={anime as any}
+      backdropUrl={backdropUrl}
+      tags={tags}
+      tagsLoading={tagsLoading}
+      showSpoilers={showSpoilers}
+      setShowSpoilers={setShowSpoilers}
+      cleanSynopsis={cleanSynopsis}
+      actionBoxNonce={actionBoxNonce}
+      episodeLogsNonce={episodeLogsNonce}
+      onOpenLog={() => setLogOpen(true)}
+      onShowActivity={() => router.push(`/anime/${anime.slug}/activity`)}
+      onOpenLogForEpisode={(episodeId) => {
+        setSelectedEpisodeId(episodeId);
+        setLogOpen(true);
+      }}
+      feedNonce={feedNonce}
+      reviewSaveMsg={reviewSaveMsg}
+    />
+  );
+
+  return (
+    <>
+      <ResponsiveSwitch desktop={desktopView} phone={phoneView} />
 
       <GlobalLogModal
         open={logOpen}
@@ -595,6 +636,7 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
           if (selectedEpisodeId) {
             setEpisodeLogsNonce((n) => n + 1);
           }
+
           const {
             data: { user },
             error: userError,
@@ -610,10 +652,7 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
 
           if (!error) setMySeriesLogCount(count ?? 0);
 
-          // ✅ Refresh ActionBox immediately (watched/liked/watchlist/rating)
           setActionBoxNonce((n) => n + 1);
-
-          // ✅ NEW: Refresh PostFeed immediately (so the new review shows without reload)
           setFeedNonce((n) => n + 1);
         }}
       />
@@ -650,14 +689,13 @@ export const getServerSideProps: GetServerSideProps<AnimePageProps> = async (ctx
     .from("anime_artwork")
     .select("url, is_primary, vote, width")
     .eq("anime_id", animeRow.id)
-    .in("kind", ["backdrop", "3"]) // ✅ supports both new + legacy kinds
-    .limit(50); // cap so you don’t pull thousands if something goes crazy
+    .in("kind", ["backdrop", "3"])
+    .limit(50);
 
   if (artErr || !arts || arts.length === 0) {
     return { props: { initialBackdropUrl: null } };
   }
 
-  // Optional: prefer better ones first (primary/vote/width)
   const sorted = [...arts].sort((a: any, b: any) => {
     const ap = a.is_primary ? 1 : 0;
     const bp = b.is_primary ? 1 : 0;
@@ -672,7 +710,6 @@ export const getServerSideProps: GetServerSideProps<AnimePageProps> = async (ctx
     return bw - aw;
   });
 
-  // Pick randomly from the top N (so it’s random but not ugly/low-res)
   const topN = sorted.slice(0, Math.min(12, sorted.length));
   const pick = topN[Math.floor(Math.random() * topN.length)];
 
