@@ -92,7 +92,7 @@ export default function EpisodeNavigator({
 
   const current =
     typeof currentEpisodeNumber === "number" &&
-    Number.isFinite(currentEpisodeNumber)
+      Number.isFinite(currentEpisodeNumber)
       ? currentEpisodeNumber
       : null;
 
@@ -512,47 +512,47 @@ export default function EpisodeNavigator({
   }
 
   function onWheel(e: React.WheelEvent<HTMLDivElement>) {
-  const el = scrollerRef.current;
-  if (!el) return;
+    const el = scrollerRef.current;
+    if (!el) return;
 
-  // Map vertical wheel to horizontal (unless user is holding shift)
-  const mostlyVertical = Math.abs(e.deltaY) > Math.abs(e.deltaX);
+    // Map vertical wheel to horizontal (unless user is holding shift)
+    const mostlyVertical = Math.abs(e.deltaY) > Math.abs(e.deltaX);
 
-  // --- detect "max speed" wheel blasts ---
-  // Trackpads / tilt wheels can throw huge deltas; treat those as "fast".
-  const dx = mostlyVertical && !e.shiftKey ? e.deltaY : e.deltaX;
-  const fast = Math.abs(dx) >= 80; // knob: raise/lower if needed
+    // --- detect "max speed" wheel blasts ---
+    // Trackpads / tilt wheels can throw huge deltas; treat those as "fast".
+    const dx = mostlyVertical && !e.shiftKey ? e.deltaY : e.deltaX;
+    const fast = Math.abs(dx) >= 80; // knob: raise/lower if needed
 
-  // If we are in a snap animation:
-  // - do NOT preventDefault (let inertia happen)
-  // - but stop the animation if user is actively scrolling fast
-  if (snappingRef.current && fast) {
-    stopAnim();
-  }
+    // If we are in a snap animation:
+    // - do NOT preventDefault (let inertia happen)
+    // - but stop the animation if user is actively scrolling fast
+    if (snappingRef.current && fast) {
+      stopAnim();
+    }
 
-  // Convert vertical to horizontal scroll
-  if (mostlyVertical && !e.shiftKey) {
-    e.preventDefault();
-    el.scrollLeft += e.deltaY;
-  }
+    // Convert vertical to horizontal scroll
+    if (mostlyVertical && !e.shiftKey) {
+      e.preventDefault();
+      el.scrollLeft += e.deltaY;
+    }
 
-  // If the wheel is going fast, DO NOT snap.
-  // Just clear any pending snap timer and return.
-  if (fast) {
+    // If the wheel is going fast, DO NOT snap.
+    // Just clear any pending snap timer and return.
+    if (fast) {
+      if ((onWheel as any)._t) window.clearTimeout((onWheel as any)._t);
+      return;
+    }
+
+    // If the wheel is slow, schedule a snap after it settles.
     if ((onWheel as any)._t) window.clearTimeout((onWheel as any)._t);
-    return;
+    (onWheel as any)._t = window.setTimeout(() => {
+      if (dragRef.current.isDown) return;
+      if (snappingRef.current) return;
+
+      const idx = getNearestCardIndex();
+      scrollToCardIndex(idx, 220);
+    }, 160); // slightly longer = less likely to fight inertia
   }
-
-  // If the wheel is slow, schedule a snap after it settles.
-  if ((onWheel as any)._t) window.clearTimeout((onWheel as any)._t);
-  (onWheel as any)._t = window.setTimeout(() => {
-    if (dragRef.current.isDown) return;
-    if (snappingRef.current) return;
-
-    const idx = getNearestCardIndex();
-    scrollToCardIndex(idx, 220);
-  }, 160); // slightly longer = less likely to fight inertia
-}
 
   // ---------------- IntersectionObserver (observe REAL <a> nodes) ----------------
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -673,7 +673,20 @@ export default function EpisodeNavigator({
                     cardBase,
                     cardHover,
                     cardSize,
-                    isActive ? "ring-black/15 bg-white" : "",
+
+                    // make non-active slightly quieter
+                    currentSafe && !isActive ? "opacity-80 hover:opacity-100" : "",
+
+                    // active treatment (match ChapterNavigator)
+                    isActive
+                      ? [
+                        "opacity-100",
+                        "ring-2 ring-sky-400", // strong accent outline
+                        "shadow-lg shadow-sky-500/20", // soft glow
+                        "scale-[1.03]", // subtle zoom
+                        "z-[2]", // sit above neighbors
+                      ].join(" ")
+                      : "",
                   ].join(" ")}
                   style={{
                     contentVisibility: "auto",
@@ -711,6 +724,15 @@ export default function EpisodeNavigator({
                         {title}
                       </div>
                     </div>
+
+                    {isActive ? (
+                      <div className="pointer-events-none absolute right-2 bottom-1.5 flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-sky-400 shadow-[0_0_0_3px_rgba(56,189,248,0.18)]" />
+                        <span className="text-[10px] font-bold tracking-wide text-sky-300">
+                          CURRENT
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
                 </a>
               </Link>
