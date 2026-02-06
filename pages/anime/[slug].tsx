@@ -25,7 +25,7 @@ import GlobalLogModal from "@/components/reviews/GlobalLogModal";
 
 import AnimeMetaBox from "@/components/anime/AnimeMetaBox";
 
-import QuickLogBox from "@/components/anime/QuickLogBox";
+import AnimeQuickLogBox from "@/components/anime/AnimeQuickLogBox";
 
 // ✅ Letterboxd-style action box (reusable)
 import ActionBox from "@/components/actions/ActionBox";
@@ -109,6 +109,12 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
 
   // ✅ open/close the log modal
   const [logOpen, setLogOpen] = useState(false);
+
+  // ✅ which episode is being logged (for modal)
+  const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(null);
+
+  // ✅ force AnimeQuickLogBox to refresh its counts after a successful log
+  const [episodeLogsNonce, setEpisodeLogsNonce] = useState(0);
 
   // ✅ my series log count
   const [mySeriesLogCount, setMySeriesLogCount] = useState<number | null>(null);
@@ -524,9 +530,14 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                     onShowActivity={() => router.push(`/anime/${anime.slug}/activity`)}
                   />
 
-                  <QuickLogBox
+                  <AnimeQuickLogBox
                     animeId={anime.id}
-                    onOpenLog={() => setLogOpen(true)}
+                    totalEpisodes={anime.total_episodes}
+                    refreshToken={episodeLogsNonce}
+                    onOpenLog={(episodeId) => {
+                      setSelectedEpisodeId(episodeId ?? null);
+                      setLogOpen(true);
+                    }}
                   />
                 </div>
 
@@ -569,11 +580,18 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
 
       <GlobalLogModal
         open={logOpen}
-        onClose={() => setLogOpen(false)}
+        onClose={() => {
+          setLogOpen(false);
+          setSelectedEpisodeId(null);
+        }}
         title={anime.title}
         posterUrl={anime.image_url}
         animeId={anime.id}
+        animeEpisodeId={selectedEpisodeId}
         onSuccess={async () => {
+          if (selectedEpisodeId) {
+            setEpisodeLogsNonce((n) => n + 1);
+          }
           const {
             data: { user },
             error: userError,
