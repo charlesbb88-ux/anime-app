@@ -397,9 +397,6 @@ export default function CharacterNavigator({ slug, className, limit }: Props) {
     >
       <div className="mb-2 flex items-center justify-between px-1">
         <div className="text-sm font-semibold text-black/90">Characters</div>
-        <div className="text-xs text-black/50">
-          {loading ? "Loading…" : `${totalCount}`}
-        </div>
       </div>
 
       <div className="w-full overflow-hidden rounded-sm border border-black bg-black">
