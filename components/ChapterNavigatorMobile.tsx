@@ -682,7 +682,19 @@ export default function ChapterNavigatorMobile({
                                         cardBase,
                                         cardHover,
                                         cardSize,
-                                        isActive ? "ring-black/15 bg-white" : "",
+
+                                        // make non-active quieter so current pops
+                                        !isActive ? "opacity-80" : "opacity-100",
+
+                                        // active treatment
+                                        isActive
+                                            ? [
+                                                "ring-2 ring-sky-400",
+                                                "shadow-lg shadow-sky-500/20",
+                                                "scale-[1.03]",
+                                                "z-[2]",
+                                            ].join(" ")
+                                            : "",
                                     ].join(" ")}
                                     style={{
                                         contentVisibility: "auto",
@@ -705,8 +717,17 @@ export default function ChapterNavigatorMobile({
 
                                         <div className="absolute inset-x-0 bottom-0">
                                             <div className="bg-black/70 backdrop-blur-[2px] px-3 py-2">
-                                                <div className="text-[11px] font-semibold text-white/80">
-                                                    {metaLine}
+                                                <div className="flex items-center justify-between">
+                                                    <div className="text-[11px] font-semibold text-white/80">{metaLine}</div>
+
+                                                    {isActive ? (
+                                                        <div className="flex items-center gap-1">
+                                                            <span className="h-1.5 w-1.5 rounded-full bg-sky-400 shadow-[0_0_0_3px_rgba(56,189,248,0.18)]" />
+                                                            <span className="text-[10px] font-bold tracking-wide text-sky-300">
+                                                                CURRENT
+                                                            </span>
+                                                        </div>
+                                                    ) : null}
                                                 </div>
 
                                                 <div
