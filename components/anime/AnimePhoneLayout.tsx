@@ -8,12 +8,12 @@ import Image from "next/image";
 import FeedShell from "@/components/FeedShell";
 import PostFeed from "@/components/PostFeed";
 
-import EpisodeNavigator from "@/components/EpisodeNavigator";
-import CharacterNavigator from "@/components/CharacterNavigator";
+import EpisodeNavigatorResponsive from "@/components/EpisodeNavigatorResponsive";
+import CharacterNavigatorResponsive from "@/components/CharacterNavigatorResponsive";
 
 import AnimeMetaBox from "@/components/anime/AnimeMetaBox";
 import AnimeQuickLogBox from "@/components/anime/AnimeQuickLogBox";
-import ActionBox from "@/components/actions/ActionBox";
+import ActionBoxMobile from "@/components/actions/ActionBoxMobile";
 
 type AnimeTag = {
   id: number;
@@ -298,7 +298,7 @@ export default function AnimePhoneLayout(props: {
           {/* Episode nav full width */}
           {slug && (
             <div className="mt-4 w-full min-w-0 overflow-hidden">
-              <EpisodeNavigator
+              <EpisodeNavigatorResponsive
                 slug={slug}
                 totalEpisodes={anime.total_episodes ?? null}
                 currentEpisodeNumber={null}
@@ -307,12 +307,12 @@ export default function AnimePhoneLayout(props: {
           )}
 
           {/* Characters */}
-          <CharacterNavigator slug={slug as string} className="mt-4" />
+          <CharacterNavigatorResponsive slug={slug as string} className="mt-4" />
 
           {/* Actions full width */}
           <div className="mt-4 w-full">
             <div className="flex w-full flex-col items-start gap-2">
-              <ActionBox
+              <ActionBoxMobile
                 key={actionBoxNonce}
                 animeId={anime.id}
                 onOpenLog={onOpenLog}
@@ -393,9 +393,8 @@ export default function AnimePhoneLayout(props: {
                             )}
 
                             <span
-                              className={`relative ${
-                                isSpoiler ? "text-red-300" : "text-neutral-100"
-                              }`}
+                              className={`relative ${isSpoiler ? "text-red-300" : "text-neutral-100"
+                                }`}
                             >
                               {tag.name}
                             </span>
@@ -431,12 +430,10 @@ export default function AnimePhoneLayout(props: {
                       className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
                     >
                       {showSpoilers
-                        ? `Hide ${spoilerCount} spoiler tag${
-                            spoilerCount === 1 ? "" : "s"
-                          }`
-                        : `Show ${spoilerCount} spoiler tag${
-                            spoilerCount === 1 ? "" : "s"
-                          }`}
+                        ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
+                        }`
+                        : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
+                        }`}
                     </button>
                   )}
                 </>
