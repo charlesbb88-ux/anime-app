@@ -8,7 +8,9 @@ import Link from "next/link";
 
 import { supabase } from "@/lib/supabaseClient";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+
 import MangaMediaHeaderLayout from "@/components/layouts/MangaMediaHeaderLayout";
+import MangaChapterActivityPhoneLayout from "@/components/manga/MangaChapterActivityPhoneLayout";
 
 const CARD_CLASS = "bg-black p-4 text-neutral-100";
 
@@ -31,7 +33,6 @@ type ActivityItem =
       logged_at: string;
       visibility: Visibility;
 
-      // optional snapshot helpers (if your table has them)
       liked?: boolean | null;
       review_id?: string | null;
     }
@@ -42,8 +43,8 @@ type ActivityItem =
       title: string;
       subLabel?: string;
 
-      logged_at: string; // reviews.created_at
-      rating: number | null; // 0..100
+      logged_at: string;
+      rating: number | null;
       content: string | null;
       contains_spoilers: boolean;
     }
@@ -54,8 +55,8 @@ type ActivityItem =
       title: string;
       subLabel?: string;
 
-      logged_at: string; // user_marks.created_at
-      stars?: number | null; // half-stars 1..10 (rating mark)
+      logged_at: string;
+      stars?: number | null;
     };
 
 function getMangaDisplayTitle(manga: any): string {
@@ -155,7 +156,6 @@ function HalfStarsRow({ halfStars }: { halfStars: number }) {
 
 /* -------------------- Snapshot helpers -------------------- */
 
-// Convert a 0..100 rating to half-stars 1..10
 function rating100ToHalfStars(rating: number | null): number | null {
   if (typeof rating !== "number" || !Number.isFinite(rating)) return null;
   const clamped = clampInt(rating, 0, 100);
@@ -163,7 +163,6 @@ function rating100ToHalfStars(rating: number | null): number | null {
   return clampInt(Math.round(clamped / 10), 1, 10);
 }
 
-// Flexible: if your logs store 1..10 already, use it directly; else treat as 0..100.
 function ratingToHalfStarsFlexible(rating: number | null): number | null {
   if (typeof rating !== "number" || !Number.isFinite(rating)) return null;
   if (rating <= 0) return null;
@@ -200,6 +199,10 @@ const MangaChapterActivityPage: NextPage<MangaChapterActivityPageProps> = ({
 
   const [loading, setLoading] = useState(true);
   const [backdropUrl] = useState<string | null>(initialBackdropUrl);
+
+  const [mangaId, setMangaId] = useState<string | null>(null);
+  const [chapterSubLabel, setChapterSubLabel] = useState<string>("");
+
   const [posterUrl, setPosterUrl] = useState<string | null>(null);
   const [pageTitle, setPageTitle] = useState<string>("Your activity");
 
@@ -230,7 +233,6 @@ const MangaChapterActivityPage: NextPage<MangaChapterActivityPageProps> = ({
         return;
       }
 
-      // ✅ allow decimals like 78.1
       const raw = String(chapterNumber);
 
       if (!/^\d+(\.\d+)?$/.test(raw)) {
@@ -246,7 +248,6 @@ const MangaChapterActivityPage: NextPage<MangaChapterActivityPageProps> = ({
         return;
       }
 
-      // ✅ fetch manga by slug
       const mangaRes = await supabase
         .from("manga")
         .select("id, slug, title, title_english, title_native, title_preferred, image_url")
@@ -263,7 +264,8 @@ const MangaChapterActivityPage: NextPage<MangaChapterActivityPageProps> = ({
         return;
       }
 
-      // ✅ fetch chapter by manga_id + chapter_number
+      setMangaId(String(manga.id));
+
       const chapterRes = await supabase
         .from("manga_chapters")
         .select("id, chapter_number, title")
@@ -285,6 +287,7 @@ const MangaChapterActivityPage: NextPage<MangaChapterActivityPageProps> = ({
       const subLabel =
         chapter.chapter_number != null ? `Chapter ${chapter.chapter_number}` : "Chapter";
 
+      setChapterSubLabel(subLabel);
       setPosterUrl(manga?.image_url ?? null);
       setPageTitle(`Your activity · ${mangaTitle} · ${subLabel}`);
 
@@ -298,8 +301,6 @@ const MangaChapterActivityPage: NextPage<MangaChapterActivityPageProps> = ({
       ] = await Promise.all([
         supabase
           .from("manga_chapter_logs")
-          // include liked/review_id if they exist; if not, Supabase will error only if column truly doesn't exist
-          // If your table does NOT have these columns, remove them from select.
           .select("id, logged_at, rating, note, visibility, liked, review_id")
           .eq("user_id", user.id)
           .eq("manga_id", manga.id)
@@ -399,10 +400,8 @@ const MangaChapterActivityPage: NextPage<MangaChapterActivityPageProps> = ({
 
       const merged: ActivityItem[] = [];
 
-      // Build sets for de-duping standalone reviews
       const attachedReviewIds = new Set<string>();
 
-      // Snapshot suppression helpers (same logic as main)
       const chapterLogSnapshots = (chapterLogsRes.data ?? []).map((row: any) => {
         const loggedAtIso = String(row?.logged_at ?? "");
         const ms = new Date(loggedAtIso).getTime();
@@ -485,7 +484,6 @@ const MangaChapterActivityPage: NextPage<MangaChapterActivityPageProps> = ({
       maybePushMark(watchlistMarkRes.data, "watchlist", mangaTitle);
       maybePushMark(ratingMarkRes.data, "rating", mangaTitle);
 
-      // Standalone chapter reviews (only if not attached to snapshot logs)
       (chapterReviewsRes.data ?? []).forEach((row: any) => {
         if (!row?.id || !row?.created_at) return;
         if (attachedReviewIds.has(String(row.id))) return;
@@ -503,7 +501,6 @@ const MangaChapterActivityPage: NextPage<MangaChapterActivityPageProps> = ({
         });
       });
 
-      // Chapter logs (snapshot style)
       (chapterLogsRes.data ?? []).forEach((row: any) => {
         merged.push({
           id: String(row.id),
@@ -543,7 +540,10 @@ const MangaChapterActivityPage: NextPage<MangaChapterActivityPageProps> = ({
     );
   }
 
-  return (
+  const slugHref =
+    slug && chapterNumber ? `/manga/${slug}/chapter/${chapterNumber}` : "/";
+
+  const desktopView = (
     <MangaMediaHeaderLayout
       backdropUrl={backdropUrl}
       posterUrl={posterUrl}
@@ -560,12 +560,10 @@ const MangaChapterActivityPage: NextPage<MangaChapterActivityPageProps> = ({
         ) : (
           <ul className="space-y-1">
             {items.map((item) => {
-              // ✅ CHAPTER SNAPSHOT CARD (from manga_chapter_logs only)
               if (item.kind === "log" && item.type === "manga_chapter") {
                 const actions: Array<"read" | "liked" | "rated" | "reviewed"> = [];
 
                 actions.push("read");
-
                 if (item.liked) actions.push("liked");
 
                 const hs = ratingToHalfStarsFlexible(item.rating);
@@ -618,7 +616,6 @@ const MangaChapterActivityPage: NextPage<MangaChapterActivityPageProps> = ({
                 );
               }
 
-              // ✅ MARKS
               if (item.kind === "mark" && item.type === "watched") {
                 return (
                   <li key={`watched-${item.id}`} className={CARD_CLASS}>
@@ -698,7 +695,6 @@ const MangaChapterActivityPage: NextPage<MangaChapterActivityPageProps> = ({
                 );
               }
 
-              // ✅ Standalone chapter review
               if (item.kind === "review") {
                 const postId = reviewIdToPostId[String(item.id)];
 
@@ -742,15 +738,35 @@ const MangaChapterActivityPage: NextPage<MangaChapterActivityPageProps> = ({
         )}
 
         <div className="mt-4">
-          <Link
-            href={slug && chapterNumber ? `/manga/${slug}/chapter/${chapterNumber}` : "/"}
-            className="text-sm text-neutral-300 hover:underline"
-          >
+          <Link href={slugHref} className="text-sm text-neutral-300 hover:underline">
             ← Back
           </Link>
         </div>
       </div>
     </MangaMediaHeaderLayout>
+  );
+
+  const phoneView = (
+    <MangaChapterActivityPhoneLayout
+      mangaId={mangaId ?? ""}
+      posterUrl={posterUrl}
+      pageTitle={pageTitle}
+      subLabel={chapterSubLabel}
+      items={items}
+      error={error}
+      slugHref={slugHref}
+      reviewIdToPostId={reviewIdToPostId}
+    />
+  );
+
+  return (
+    <>
+      {/* phone */}
+      <div className="sm:hidden">{phoneView}</div>
+
+      {/* desktop */}
+      <div className="hidden sm:block">{desktopView}</div>
+    </>
   );
 };
 
@@ -777,7 +793,6 @@ export const getServerSideProps: GetServerSideProps<MangaChapterActivityPageProp
     return { props: { initialBackdropUrl: null } };
   }
 
-  // 1) Get manga id by slug (server-side)
   const { data: mangaRow, error: mangaErr } = await supabaseAdmin
     .from("manga")
     .select("id")
@@ -788,7 +803,6 @@ export const getServerSideProps: GetServerSideProps<MangaChapterActivityPageProp
     return { props: { initialBackdropUrl: null } };
   }
 
-  // 2) Pull ALL cached images for this manga from public.manga_covers
   const { data: covers, error: coverErr } = await supabaseAdmin
     .from("manga_covers")
     .select("cached_url")
