@@ -12,7 +12,7 @@ import EpisodeNavigatorResponsive from "@/components/EpisodeNavigatorResponsive"
 import CharacterNavigatorResponsive from "@/components/CharacterNavigatorResponsive";
 
 import AnimeMetaBox from "@/components/anime/AnimeMetaBox";
-import AnimeQuickLogBox from "@/components/anime/AnimeQuickLogBox";
+import AnimeQuickLogBoxMobile from "@/components/anime/AnimeQuickLogBoxMobile";
 import ActionBoxMobile from "@/components/actions/ActionBoxMobile";
 
 type AnimeTag = {
@@ -319,7 +319,7 @@ export default function AnimePhoneLayout(props: {
                 onShowActivity={onShowActivity}
               />
 
-              <AnimeQuickLogBox
+              <AnimeQuickLogBoxMobile
                 animeId={anime.id}
                 totalEpisodes={anime.total_episodes ?? null}
                 refreshToken={episodeLogsNonce}
