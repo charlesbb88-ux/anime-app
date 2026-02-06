@@ -12,6 +12,9 @@ type Props = {
 
     // NEW: icon mode (used when a community summary exists)
     mode?: "default" | "icon";
+
+    // NEW: optional wrapper spacing override (phone-only usage)
+    className?: string;
 };
 
 type ChapterSummaryRow = {
@@ -25,7 +28,7 @@ type ChapterSummaryRow = {
 
 const MAX_CHARS = 500;
 
-export default function MangaChapterSummary({ chapterId, onTopSummary, mode = "default" }: Props) {
+export default function MangaChapterSummary({ chapterId, onTopSummary, mode = "default", className }: Props) {
     const [summary, setSummary] = useState<ChapterSummaryRow | null>(null); // top summary (global)
     const [loading, setLoading] = useState(true);
 
@@ -314,7 +317,12 @@ export default function MangaChapterSummary({ chapterId, onTopSummary, mode = "d
 
     // ✅ DEFAULT MODE: unchanged full box behavior (used when NO community summary exists)
     return (
-        <div className="mt-6 rounded-md border border-neutral-800 bg-black p-2.5">
+        <div
+            className={[
+                className ?? "mt-6",
+                "rounded-md border border-neutral-800 bg-black p-2.5",
+            ].join(" ")}
+        >
             <div className="flex items-center justify-between gap-3">
                 <p className="min-w-0 text-xs text-neutral-100">
                     {summary
