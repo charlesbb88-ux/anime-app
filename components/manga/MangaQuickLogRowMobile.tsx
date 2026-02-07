@@ -24,19 +24,18 @@ type Props = {
   onLogCreated?: () => void;
 };
 
-// ✅ make swipe feel “full width”
-const SWIPE_MAX_RATIO = 1.0;
+// commit threshold as % of the visible track width
 const SWIPE_COMMIT_RATIO = 0.58;
 
-// ✅ tiny inset so it lands clean against rounded edges
+// tiny inset so it lands clean (optional; keep small)
 const SWIPE_EDGE_PX = 2;
 
-// ✅ TVTime-ish timing for the auto animation (unchanged)
+// TVTime-ish timing
 const AUTO_SWIPE_MS = 320;
 const AUTO_HOLD_MS = 140;
 const AUTO_RETURN_MS = 240;
 
-// ✅ Review-save polling (no modal changes required)
+// Review-save polling
 const REVIEW_POLL_MS = 400;
 const REVIEW_POLL_MAX_MS = 12000;
 
@@ -73,33 +72,48 @@ export default function MangaQuickLogRowMobile({
   const reviewPollTimerRef = useRef<any>(null);
   const reviewPollStartedAtRef = useRef<number>(0);
 
-  // ✅ measure swipe width so SWIPE_MAX is full-width on any phone
-  const swipeWrapRef = useRef<HTMLDivElement | null>(null);
-  const [swipeMaxPx, setSwipeMaxPx] = useState(240);
-  const [swipeCommitPx, setSwipeCommitPx] = useState(140);
+  // ✅ THIS is the important ref: the visible "track" that shows green behind
+  const swipeTrackRef = useRef<HTMLDivElement | null>(null);
+
+  // still keep row ref if you want, but max should come from track
+  const swipeRowRef = useRef<HTMLDivElement | null>(null);
+
+  const [swipeMaxPx, setSwipeMaxPx] = useState(0);
+  const [swipeCommitPx, setSwipeCommitPx] = useState(0);
 
   useEffect(() => {
-    function recalc() {
-      const el = swipeWrapRef.current;
-      if (!el) return;
+    function measure() {
+      const track = swipeTrackRef.current;
+      if (!track) return;
 
-      const w = el.getBoundingClientRect().width || 0;
+      const w = Math.max(0, track.getBoundingClientRect().width);
 
-      // max should be essentially the full container width (minus tiny inset)
-      const max = Math.max(140, Math.floor(w * SWIPE_MAX_RATIO) - SWIPE_EDGE_PX);
+      // to fully reveal green, row must translate basically the full track width
+      const max = Math.max(0, Math.floor(w) - SWIPE_EDGE_PX);
       const commit = Math.max(90, Math.floor(w * SWIPE_COMMIT_RATIO));
 
       setSwipeMaxPx(max);
       setSwipeCommitPx(commit);
+
+      // if we resized smaller, keep swipeX in bounds
+      setSwipeX((prev) => Math.min(prev, max));
     }
 
-    recalc();
+    // measure now + after layout settles (fonts/images/etc.)
+    measure();
+    requestAnimationFrame(measure);
+    setTimeout(measure, 0);
 
-    const ro = new ResizeObserver(() => recalc());
-    if (swipeWrapRef.current) ro.observe(swipeWrapRef.current);
+    const ro = new ResizeObserver(() => measure());
+
+    if (swipeTrackRef.current) ro.observe(swipeTrackRef.current);
+    if (swipeRowRef.current) ro.observe(swipeRowRef.current);
+
+    window.addEventListener("resize", measure);
 
     return () => {
       ro.disconnect();
+      window.removeEventListener("resize", measure);
     };
   }, []);
 
@@ -480,14 +494,15 @@ export default function MangaQuickLogRowMobile({
       ) : !nextChapter ? (
         <div className="px-3 py-2 text-xs text-gray-400">You’re caught up ✅</div>
       ) : (
-        <div ref={swipeWrapRef} className="relative overflow-hidden">
+        <div ref={swipeTrackRef} className="relative overflow-hidden">
           <div className="absolute inset-0 flex items-center justify-center bg-green-500">
             <div className="text-[14px] font-semibold text-white">Chapter Logged</div>
           </div>
 
           <div
+            ref={swipeRowRef}
             className={[
-              "relative bg-black",
+              "relative w-full bg-black",
               isDisabled ? "opacity-80" : "",
               "touch-pan-y select-none cursor-pointer",
             ].join(" ")}
