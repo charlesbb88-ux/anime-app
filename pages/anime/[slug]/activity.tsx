@@ -1,7 +1,7 @@
 // pages/anime/[slug]/activity.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { NextPage, GetServerSideProps } from "next";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -9,6 +9,9 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import MediaHeaderLayout from "@/components/layouts/MediaHeaderLayout";
+
+import ResponsiveSwitch from "@/components/ResponsiveSwitch";
+import AnimeActivityPhoneLayout from "@/components/anime/AnimeActivityPhoneLayout";
 
 const CARD_CLASS = "bg-black p-4 text-neutral-100";
 
@@ -20,38 +23,38 @@ type Visibility = "public" | "friends" | "private";
 
 type ActivityItem =
   | {
-    id: string;
-    kind: "log";
-    type: "anime_series" | "anime_episode";
-    title: string;
-    subLabel?: string;
-    rating: number | null; // 0..100 (from logs)
-    note: string | null;
-    logged_at: string;
-    visibility: Visibility;
+      id: string;
+      kind: "log";
+      type: "anime_series" | "anime_episode";
+      title: string;
+      subLabel?: string;
+      rating: number | null; // 0..100 (from logs)
+      note: string | null;
+      logged_at: string;
+      visibility: Visibility;
 
-    // series snapshot flags (only for anime_series logs)
-    liked?: boolean | null;
-    review_id?: string | null;
-  }
+      // series snapshot flags (only for anime_series logs)
+      liked?: boolean | null;
+      review_id?: string | null;
+    }
   | {
-    id: string;
-    kind: "review";
-    type: "anime_series_review";
-    title: string;
-    logged_at: string; // reviews.created_at
-    rating: number | null; // 0..100
-    content: string | null;
-    contains_spoilers: boolean;
-  }
+      id: string;
+      kind: "review";
+      type: "anime_series_review";
+      title: string;
+      logged_at: string; // reviews.created_at
+      rating: number | null; // 0..100
+      content: string | null;
+      contains_spoilers: boolean;
+    }
   | {
-    id: string;
-    kind: "mark";
-    type: "watched" | "liked" | "watchlist" | "rating";
-    title: string;
-    logged_at: string; // user_marks.created_at
-    stars?: number | null; // half-stars 1..10 (only for rating mark)
-  };
+      id: string;
+      kind: "mark";
+      type: "watched" | "liked" | "watchlist" | "rating";
+      title: string;
+      logged_at: string; // user_marks.created_at
+      stars?: number | null; // half-stars 1..10 (only for rating mark)
+    };
 
 function getAnimeDisplayTitle(anime: any): string {
   return (
@@ -178,7 +181,9 @@ function buildSnapshotPrefix(
   return `You ${joinWithCommasAnd(actions.map(actionWord))}`;
 }
 
-const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({ initialBackdropUrl }) => {
+const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({
+  initialBackdropUrl,
+}) => {
   const router = useRouter();
   const { slug } = router.query as { slug?: string };
 
@@ -186,13 +191,33 @@ const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({ initialBackdropUr
   const [backdropUrl] = useState<string | null>(initialBackdropUrl);
   const [posterUrl, setPosterUrl] = useState<string | null>(null);
   const [pageTitle, setPageTitle] = useState<string>("Your activity");
+  const [animeId, setAnimeId] = useState<string | null>(null);
 
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const [reviewIdToPostId, setReviewIdToPostId] = useState<Record<string, string>>(
-    {}
-  );
+  const [reviewIdToPostId, setReviewIdToPostId] = useState<
+    Record<string, string>
+  >({});
+
+  // phone "load more" (simple slicing; page still fetches all items)
+  const [feedLimit, setFeedLimit] = useState<number>(30);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
+
+  const slugHref = useMemo(() => {
+    if (!slug) return "/anime";
+    return `/anime/${slug}`;
+  }, [slug]);
+
+  async function onLoadMore() {
+    if (loadingMore) return;
+    setLoadingMore(true);
+
+    // just reveal more already-fetched items
+    setFeedLimit((n) => n + 30);
+
+    setLoadingMore(false);
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -218,9 +243,7 @@ const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({ initialBackdropUr
 
       const animeRes = await supabase
         .from("anime")
-        .select(
-          "id, title, title_english, title_native, title_preferred, image_url"
-        )
+        .select("id, title, title_english, title_native, title_preferred, image_url")
         .eq("slug", slug)
         .maybeSingle();
 
@@ -232,6 +255,8 @@ const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({ initialBackdropUr
         setLoading(false);
         return;
       }
+
+      setAnimeId(String(anime.id));
 
       const animeTitle = getAnimeDisplayTitle(anime);
       setPageTitle(`Your activity · ${animeTitle}`);
@@ -322,7 +347,8 @@ const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({ initialBackdropUr
       const reviewIdsToResolve = new Set<string>();
 
       for (const row of seriesLogsRes.data ?? []) {
-        if ((row as any)?.review_id) reviewIdsToResolve.add(String((row as any).review_id));
+        if ((row as any)?.review_id)
+          reviewIdsToResolve.add(String((row as any).review_id));
       }
 
       for (const r of seriesReviewsRes.data ?? []) {
@@ -419,10 +445,10 @@ const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({ initialBackdropUr
           type === "rating"
             ? shouldSuppressMarkBecauseOfNearbySeriesLog("rating", createdAt)
             : type === "liked"
-              ? shouldSuppressMarkBecauseOfNearbySeriesLog("liked", createdAt)
-              : type === "watched"
-                ? shouldSuppressMarkBecauseOfNearbySeriesLog("watched", createdAt)
-                : shouldSuppressMarkBecauseOfNearbySeriesLog("watchlist", createdAt);
+            ? shouldSuppressMarkBecauseOfNearbySeriesLog("liked", createdAt)
+            : type === "watched"
+            ? shouldSuppressMarkBecauseOfNearbySeriesLog("watched", createdAt)
+            : shouldSuppressMarkBecauseOfNearbySeriesLog("watchlist", createdAt);
 
         if (suppress) return;
 
@@ -495,10 +521,15 @@ const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({ initialBackdropUr
       });
 
       const finalItems = merged.sort(
-        (a, b) => new Date(b.logged_at).getTime() - new Date(a.logged_at).getTime()
+        (a, b) =>
+          new Date(b.logged_at).getTime() - new Date(a.logged_at).getTime()
       );
 
       setItems(finalItems);
+
+      // reset phone limit when reloading a new slug
+      setFeedLimit(30);
+
       setLoading(false);
     }
 
@@ -517,7 +548,22 @@ const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({ initialBackdropUr
     );
   }
 
-  return (
+  const Phone = () => (
+    <AnimeActivityPhoneLayout
+      animeId={animeId ?? ""}
+      slugHref={slugHref}
+      posterUrl={posterUrl}
+      pageTitle={pageTitle}
+      items={items}
+      error={error}
+      reviewIdToPostId={reviewIdToPostId}
+      feedLimit={feedLimit}
+      loadingMore={loadingMore}
+      onLoadMore={onLoadMore}
+    />
+  );
+
+  const Desktop = () => (
     <MediaHeaderLayout
       backdropUrl={backdropUrl}
       posterUrl={posterUrl}
@@ -567,7 +613,9 @@ const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({ initialBackdropUr
                             <span className="font-bold text-white">
                               {item.title}
                             </span>
-                            {hs !== null ? <HalfStarsRow halfStars={hs} /> : null}
+                            {hs !== null ? (
+                              <HalfStarsRow halfStars={hs} />
+                            ) : null}
                             <span className="ml-1">
                               {" "}
                               on {formatOnFullDate(item.logged_at)}
@@ -579,7 +627,9 @@ const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({ initialBackdropUr
                             <span className="font-bold text-white">
                               {item.title}
                             </span>
-                            {hs !== null ? <HalfStarsRow halfStars={hs} /> : null}
+                            {hs !== null ? (
+                              <HalfStarsRow halfStars={hs} />
+                            ) : null}
                             <span className="ml-1">
                               {" "}
                               on {formatOnFullDate(item.logged_at)}
@@ -603,7 +653,9 @@ const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({ initialBackdropUr
                     <div className="flex items-center justify-between gap-4">
                       <div className="text-sm font-medium">
                         You marked{" "}
-                        <span className="font-bold text-white">{item.title}</span>{" "}
+                        <span className="font-bold text-white">
+                          {item.title}
+                        </span>{" "}
                         as watched
                       </div>
                       <div className="whitespace-nowrap text-xs text-neutral-100">
@@ -620,7 +672,9 @@ const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({ initialBackdropUr
                     <div className="flex items-center justify-between gap-4">
                       <div className="text-sm font-medium">
                         You liked{" "}
-                        <span className="font-bold text-white">{item.title}</span>
+                        <span className="font-bold text-white">
+                          {item.title}
+                        </span>
                       </div>
                       <div className="whitespace-nowrap text-xs text-neutral-100">
                         {formatRelativeShort(item.logged_at)}
@@ -636,7 +690,9 @@ const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({ initialBackdropUr
                     <div className="flex items-center justify-between gap-4">
                       <div className="text-sm font-medium">
                         You added{" "}
-                        <span className="font-bold text-white">{item.title}</span>{" "}
+                        <span className="font-bold text-white">
+                          {item.title}
+                        </span>{" "}
                         to your watchlist
                       </div>
                       <div className="whitespace-nowrap text-xs text-neutral-100">
@@ -655,7 +711,9 @@ const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({ initialBackdropUr
                     <div className="flex items-center justify-between gap-4">
                       <div className="text-sm font-medium">
                         You rated{" "}
-                        <span className="font-bold text-white">{item.title}</span>
+                        <span className="font-bold text-white">
+                          {item.title}
+                        </span>
                         {hs > 0 ? <HalfStarsRow halfStars={hs} /> : null}
                       </div>
                       <div className="whitespace-nowrap text-xs text-neutral-100">
@@ -719,12 +777,19 @@ const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({ initialBackdropUr
                     <div className="flex items-center justify-between gap-4">
                       <div className="text-sm font-medium">
                         {prefix}{" "}
-                        <span className="font-bold text-white">{item.title}</span>
+                        <span className="font-bold text-white">
+                          {item.title}
+                        </span>
                         {item.subLabel ? (
-                          <span className="ml-2 text-neutral-400">· {item.subLabel}</span>
+                          <span className="ml-2 text-neutral-400">
+                            · {item.subLabel}
+                          </span>
                         ) : null}
                         {hs !== null ? <HalfStarsRow halfStars={hs} /> : null}
-                        <span className="ml-1"> on {formatOnFullDate(item.logged_at)}</span>
+                        <span className="ml-1">
+                          {" "}
+                          on {formatOnFullDate(item.logged_at)}
+                        </span>
                       </div>
 
                       <div className="whitespace-nowrap text-xs text-neutral-100">
@@ -742,13 +807,17 @@ const AnimeActivityPage: NextPage<AnimeActivityPageProps> = ({ initialBackdropUr
       </div>
     </MediaHeaderLayout>
   );
+
+  return <ResponsiveSwitch phone={<Phone />} desktop={<Desktop />} />;
 };
 
 (AnimeActivityPage as any).headerTransparent = true;
 
 export default AnimeActivityPage;
 
-export const getServerSideProps: GetServerSideProps<AnimeActivityPageProps> = async (ctx) => {
+export const getServerSideProps: GetServerSideProps<AnimeActivityPageProps> = async (
+  ctx
+) => {
   const raw = ctx.params?.slug;
   const slug =
     typeof raw === "string" ? raw : Array.isArray(raw) && raw[0] ? raw[0] : null;
