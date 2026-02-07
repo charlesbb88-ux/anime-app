@@ -6,6 +6,7 @@ import { useRouter } from "next/router";
 import { Check } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { createAnimeEpisodeLog } from "@/lib/logs";
+import AnimeEpisodeThumb from "@/components/anime/AnimeEpisodeThumb";
 
 type EpisodeRow = {
   id: string;
@@ -25,7 +26,6 @@ type Props = {
   onLogCreated?: () => void;
 };
 
-const SWIPE_MAX = 260;
 const SWIPE_COMMIT = 160;
 
 const AUTO_SWIPE_MS = 320;
@@ -58,6 +58,24 @@ export default function AnimeQuickLogRowMobile({
   const dragStartXRef = useRef<number | null>(null);
   const startSwipeXRef = useRef<number>(0);
   const committedRef = useRef(false);
+
+  // ✅ measure how far the swipe can go (full width of the swipe row)
+  const swipeRowRef = useRef<HTMLDivElement | null>(null);
+  const [swipeMax, setSwipeMax] = useState(0);
+
+  useEffect(() => {
+    function measure() {
+      const el = swipeRowRef.current;
+      if (!el) return;
+
+      const rect = el.getBoundingClientRect();
+      setSwipeMax(Math.max(0, rect.width));
+    }
+
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
 
   const isAutoAnimating = autoPhase !== "idle";
   const lockInput = busy || isAutoAnimating;
@@ -346,7 +364,7 @@ export default function AnimeQuickLogRowMobile({
     committedRef.current = true;
 
     setAutoPhase("swiping");
-    setSwipeX(SWIPE_MAX);
+    setSwipeX(swipeMax);
     await new Promise((r) => setTimeout(r, AUTO_SWIPE_MS));
 
     setAutoPhase("holding");
@@ -385,7 +403,7 @@ export default function AnimeQuickLogRowMobile({
     if (dragStartXRef.current === null) return;
 
     const dx = e.clientX - dragStartXRef.current;
-    const next = clamp(startSwipeXRef.current + dx, 0, SWIPE_MAX);
+    const next = clamp(startSwipeXRef.current + dx, 0, swipeMax);
     setSwipeX(next);
   }
 
@@ -448,6 +466,7 @@ export default function AnimeQuickLogRowMobile({
           </div>
 
           <div
+            ref={swipeRowRef}
             className={[
               "relative border-x border-gray-800 bg-black",
               isDisabled ? "opacity-80" : "",
@@ -466,13 +485,24 @@ export default function AnimeQuickLogRowMobile({
             onPointerCancel={onPointerUpOrCancel}
           >
             <div className="flex items-center justify-between gap-2 px-3 py-2.5">
-              <div className="min-w-0">
-                <div className="text-[12px] font-semibold text-gray-100">
-                  Ep {nextEpisode.episode_number}
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="-ml-3 -my-2.5 w-24 shrink-0 overflow-hidden rounded-xs bg-black/20">
+                  <AnimeEpisodeThumb
+                    episodeId={nextEpisode.id}
+                    alt=""
+                    showPlaceholder
+                    className="h-auto w-full object-contain"
+                  />
                 </div>
-                {title ? (
-                  <div className="mt-0.5 truncate text-[11px] text-gray-500">{title}</div>
-                ) : null}
+
+                <div className="min-w-0">
+                  <div className="text-[12px] font-semibold text-gray-100">
+                    Ep {nextEpisode.episode_number}
+                  </div>
+                  {title ? (
+                    <div className="mt-0.5 truncate text-[11px] text-gray-500">{title}</div>
+                  ) : null}
+                </div>
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
@@ -485,7 +515,6 @@ export default function AnimeQuickLogRowMobile({
                     onOpenLog(nextEpisode.id);
                   }}
                   className={[
-                    // mobile: slightly larger + rounded
                     "relative rounded-lg border px-3.5 py-2 text-[11px] font-semibold",
                     "transition-all duration-150 cursor-pointer",
                     "border-gray-700 text-gray-200",
