@@ -33,6 +33,8 @@ import ActionBox from "@/components/actions/ActionBox";
 import AnimeMetaBox from "@/components/anime/AnimeMetaBox";
 import AnimeQuickLogBox from "@/components/anime/AnimeQuickLogBox";
 
+import { pickEnglishTitle } from "@/lib/pickEnglishTitle";
+
 type AnimeTag = {
   id: number;
   anime_id: string;
@@ -264,6 +266,17 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
 
   const a: any = anime;
 
+  const pickedSeriesTitle = anime
+    ? pickEnglishTitle({
+      title_english: (a as any).title_english,
+      title_preferred: (a as any).title_preferred,
+      title: anime.title,
+      title_native: (a as any).title_native,
+    })?.value
+    : null;
+
+  const seriesDisplayTitle = pickedSeriesTitle ?? (anime?.title ?? slugString);
+
   const genres: string[] = useMemo(() => {
     const g = (a as any)?.genres;
     return Array.isArray(g) ? g : [];
@@ -481,14 +494,11 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                   {episode?.title ? episode.title : <>Episode {episodeNum}</>}
                 </h1>
 
-                <div className="mt-1 text-sm text-gray-600">
-                  <Link
-                    href={`/anime/${slugString}`}
-                    className="hover:text-gray-900"
-                  >
-                    {anime?.title ?? slugString}
+                <div className="mt-0 text-xl font-semibold leading-snug text-black">
+                  <Link href={`/anime/${slugString}`} className="hover:underline">
+                    {seriesDisplayTitle}
                   </Link>
-                  <span className="mx-1">•</span>
+                  <span className="mx-2">•</span>
                   <span>Episode {episodeNum}</span>
                 </div>
               </div>
@@ -618,7 +628,9 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
         open={logOpen}
         onClose={() => setLogOpen(false)}
         title={
-          anime ? `${anime.title} — Episode ${episodeNum}` : `Episode ${episodeNum}`
+          anime
+            ? `${seriesDisplayTitle} — Episode ${episodeNum}`
+            : `Episode ${episodeNum}`
         }
         posterUrl={anime?.image_url ?? null}
         animeId={anime?.id ?? null}

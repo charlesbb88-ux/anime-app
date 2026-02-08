@@ -17,6 +17,9 @@ import ActionBoxMobile from "@/components/actions/ActionBoxMobile";
 
 import AnimeInfoDropdownMobile from "@/components/anime/AnimeInfoDropdownMobile";
 
+import EnglishTitle from "@/components/EnglishTitle";
+import { pickEnglishTitle } from "@/lib/pickEnglishTitle";
+
 type AnimeTag = {
   id: number;
   anime_id: string;
@@ -94,6 +97,33 @@ export default function AnimePhoneLayout(props: {
   } = props;
 
   const a: any = anime;
+
+  const picked = pickEnglishTitle({
+    title_english: (a as any).title_english,
+    title_preferred: (a as any).title_preferred,
+    title: anime.title,
+    title_native: (a as any).title_native,
+  });
+
+  const mainTitle = picked?.value ?? anime.title;
+
+  // show the "other" title as a smaller subtitle (only if it exists and differs)
+  const secondaryTitle = (() => {
+    const eng = typeof a.title_english === "string" ? a.title_english.trim() : "";
+    const base = typeof anime.title === "string" ? anime.title.trim() : "";
+    const nat = typeof a.title_native === "string" ? a.title_native.trim() : "";
+
+    // Prefer showing the original (anime.title) if the mainTitle became English.
+    if (mainTitle && base && base !== mainTitle) return base;
+
+    // Otherwise, if mainTitle is base and we have a different English, show English
+    if (mainTitle && eng && eng !== mainTitle) return eng;
+
+    // Otherwise, show native if it's different
+    if (mainTitle && nat && nat !== mainTitle) return nat;
+
+    return "";
+  })();
 
   const hasGenres = Array.isArray(a.genres) && a.genres.length > 0;
   const genres: string[] = a.genres || [];
@@ -217,7 +247,7 @@ export default function AnimePhoneLayout(props: {
               {anime.image_url ? (
                 <img
                   src={anime.image_url}
-                  alt={anime.title}
+                  alt={mainTitle}
                   className="h-full w-full object-cover"
                   style={{ display: "block" }}
                 />
@@ -247,17 +277,14 @@ export default function AnimePhoneLayout(props: {
                 }}
               >
                 <h1 className="text-[22px] font-bold leading-tight">
-                  {anime.title}
+                  {mainTitle}
                 </h1>
 
-                {/* Optional: small secondary titles (only if present) */}
-                {typeof a.title_english === "string" &&
-                  a.title_english.trim() &&
-                  a.title_english.trim() !== anime.title && (
-                    <div className="mt-0.5 text-[13px] font-semibold text-gray-500">
-                      {a.title_english.trim()}
-                    </div>
-                  )}
+                {!!secondaryTitle && (
+                  <div className="mt-0.5 text-[13px] font-semibold text-gray-500">
+                    {secondaryTitle}
+                  </div>
+                )}
               </div>
 
               {!!synopsisText && (
