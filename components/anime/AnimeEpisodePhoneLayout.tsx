@@ -164,9 +164,11 @@ export default function AnimeEpisodePhoneLayout(props: {
                         </div>
 
                         <div className="min-w-0 flex-1">
+                            <div className="mt-0.5 text-[13px] font-semibold text-black">
+                                Episode {episodeNum}
+                            </div>
+
                             <h1 className="text-[22px] font-bold leading-tight">
-                                <span className="text-black/90">Ep. {episodeNum}</span>
-                                <span className="mx-2 text-black/90">•</span>
                                 {episodeTitle}
                             </h1>
 
@@ -174,6 +176,19 @@ export default function AnimeEpisodePhoneLayout(props: {
                                 <Link href={`/anime/${slug}`} className="hover:underline">
                                     {seriesDisplayTitle}
                                 </Link>
+                            </div>
+
+                            {/* Synopsis (moved here to match series page placement) */}
+                            <div className="mt-1">
+                                {episode?.synopsis?.trim() ? (
+                                    <p className="whitespace-pre-line text-sm text-black">
+                                        {episode.synopsis}
+                                    </p>
+                                ) : episode ? (
+                                    <p className="text-sm text-gray-500">
+                                        No synopsis has been added for this episode yet.
+                                    </p>
+                                ) : null}
                             </div>
 
                             {/* status/errors line (same info as desktop, just compact) */}
@@ -192,19 +207,6 @@ export default function AnimeEpisodePhoneLayout(props: {
                                 )}
                             </div>
                         </div>
-                    </div>
-
-                    {/* Synopsis */}
-                    <div className="mt-3">
-                        {episode?.synopsis?.trim() ? (
-                            <p className="whitespace-pre-line text-sm text-black">
-                                {episode.synopsis}
-                            </p>
-                        ) : episode ? (
-                            <p className="text-sm text-gray-500">
-                                No synopsis has been added for this episode yet.
-                            </p>
-                        ) : null}
                     </div>
 
                     {/* Episode nav */}
