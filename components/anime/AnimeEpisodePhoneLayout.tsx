@@ -9,7 +9,7 @@ import FeedShell from "@/components/FeedShell";
 import PostFeed from "@/components/PostFeed";
 
 import EpisodeNavigatorMobile from "@/components/EpisodeNavigatorMobile";
-import CharacterNavigator from "@/components/CharacterNavigator";
+import CharacterNavigatorMobile from "@/components/CharacterNavigatorMobile";
 
 // Mobile versions (you may already have these for manga; if not, we’ll add them next)
 import ActionBoxMobile from "@/components/actions/ActionBoxMobile";
@@ -218,15 +218,14 @@ export default function AnimeEpisodePhoneLayout(props: {
                         />
                     </div>
 
-                    {/* Characters */}
-                    <CharacterNavigator slug={slug} className="mt-4" />
-
                     <div className="mt-1">
                         <Link href={`/anime/${slug}`} className="text-xs text-black hover:underline">
                             ← Back to anime main page
                         </Link>
                     </div>
 
+                    {/* Characters */}
+                    <CharacterNavigatorMobile slug={slug} className="mt-4" />
                     {/* Actions */}
                     <div className="mt-4 w-full">
                         <div className="flex flex-col gap-2">
