@@ -35,6 +35,9 @@ import AnimeQuickLogBox from "@/components/anime/AnimeQuickLogBox";
 
 import { pickEnglishTitle } from "@/lib/pickEnglishTitle";
 
+import ResponsiveSwitch from "@/components/ResponsiveSwitch";
+import AnimeEpisodePhoneLayout from "@/components/anime/AnimeEpisodePhoneLayout";
+
 type AnimeTag = {
   id: number;
   anime_id: string;
@@ -318,7 +321,7 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
   // ------------------------
   // MAIN EPISODE PAGE CONTENT (series-page structure)
   // ------------------------
-  return (
+  const desktopView = (
     <>
       <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
         {/* Backdrop (SSR random from public.anime_episode_artwork) */}
@@ -336,7 +339,6 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
               unoptimized={backdropUrl.includes("artworks.thetvdb.com")}
             />
 
-            {/* OVERLAY (match series page) */}
             <img
               src="/overlays/my-overlay.png"
               alt=""
@@ -348,9 +350,8 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
         {/* Top section (same structure as series page) */}
         <div className="-mt-5 relative z-10 px-3">
           <div className="mb-8 flex flex-row gap-7">
-            {/* LEFT COLUMN (poster + genres + tags + meta) */}
+            {/* LEFT COLUMN */}
             <div className="flex-shrink-0 w-56">
-              {/* Poster */}
               {anime?.image_url ? (
                 <img
                   src={anime.image_url}
@@ -363,12 +364,9 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                 </div>
               )}
 
-              {/* Genres */}
               {hasGenres && (
                 <div className="mt-4">
-                  <h2 className="mb-1 text-sm font-semibold text-black-300">
-                    Genres
-                  </h2>
+                  <h2 className="mb-1 text-sm font-semibold text-black-300">Genres</h2>
                   <div className="flex flex-wrap gap-2">
                     {genres.map((g) => (
                       <span
@@ -382,7 +380,6 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                 </div>
               )}
 
-              {/* Tags (✅ ONLY render if tags exist — manga behavior) */}
               {tags.length > 0 && (
                 <div className="mt-5">
                   <div className="mb-1 flex items-center gap-2">
@@ -397,23 +394,27 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                   <div className="flex flex-col gap-1">
                     <div className="flex w-full flex-col gap-1">
                       {tags.map((tag) => {
-                        const isSpoiler = tag.is_general_spoiler || tag.is_media_spoiler;
+                        const isSpoiler =
+                          tag.is_general_spoiler || tag.is_media_spoiler;
                         if (isSpoiler && !showSpoilers) return null;
 
                         let percent: number | null = null;
                         if (typeof tag.rank === "number") {
-                          percent = Math.max(0, Math.min(100, Math.round(tag.rank)));
+                          percent = Math.max(
+                            0,
+                            Math.min(100, Math.round(tag.rank))
+                          );
                         }
 
                         return (
                           <div key={tag.id} className="group relative inline-flex">
                             <span
                               className="
-                  relative inline-flex w-full items-center justify-between
-                  rounded-full border border-gray-700 bg-gray-900/80
-                  px-3 py-[3px] text-[13px] font-medium
-                  whitespace-nowrap overflow-hidden
-                "
+                                relative inline-flex w-full items-center justify-between
+                                rounded-full border border-gray-700 bg-gray-900/80
+                                px-3 py-[3px] text-[13px] font-medium
+                                whitespace-nowrap overflow-hidden
+                              "
                             >
                               {percent !== null && (
                                 <span
@@ -423,7 +424,8 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                               )}
 
                               <span
-                                className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"}`}
+                                className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"
+                                  }`}
                               >
                                 {tag.name}
                               </span>
@@ -438,11 +440,11 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                             {tag.description && (
                               <div
                                 className="
-                    pointer-events-none absolute left-0 top-full z-20 mt-1 w-64
-                    rounded-md bg-black px-3 py-2 text-xs text-gray-100 shadow-lg
-                    opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0
-                    transition duration-200 delay-150
-                  "
+                                  pointer-events-none absolute left-0 top-full z-20 mt-1 w-64
+                                  rounded-md bg-black px-3 py-2 text-xs text-gray-100 shadow-lg
+                                  opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0
+                                  transition duration-200 delay-150
+                                "
                               >
                                 {tag.description}
                               </div>
@@ -460,14 +462,15 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                       className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
                     >
                       {showSpoilers
-                        ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`
-                        : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`}
+                        ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
+                        }`
+                        : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
+                        }`}
                     </button>
                   )}
                 </div>
               )}
 
-              {/* Meta box */}
               <div className="mt-4">
                 <AnimeMetaBox
                   titleEnglish={a?.title_english}
@@ -486,9 +489,8 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
               </div>
             </div>
 
-            {/* RIGHT COLUMN (title + pinned actions + synopsis + nav + characters + feed) */}
+            {/* RIGHT COLUMN */}
             <div className="min-w-100 flex-1">
-              {/* ROW 1 — TITLE */}
               <div className="mb-0 pl-1">
                 <h1 className="text-4xl font-bold leading-tight">
                   {episode?.title ? episode.title : <>Episode {episodeNum}</>}
@@ -503,9 +505,7 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                 </div>
               </div>
 
-              {/* ROW 2 — LEFT CONTENT + pinned ActionBox + QuickLog */}
               <div className="relative w-full">
-                {/* RIGHT SIDE: pinned */}
                 <div className="absolute right-0 top-6 flex flex-col items-end gap-2">
                   {anime && episode ? (
                     <>
@@ -525,18 +525,13 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                         animeId={anime.id}
                         totalEpisodes={anime.total_episodes}
                         refreshToken={episodeLogsNonce}
-                        onOpenLog={(episodeId) => {
-                          // from episode page, QuickLog should still open modal (episodeId may be provided)
-                          setLogOpen(true);
-                        }}
+                        onOpenLog={() => setLogOpen(true)}
                       />
                     </>
                   ) : null}
                 </div>
 
-                {/* LEFT SIDE: reserve space */}
                 <div className="min-w-0 pr-[270px] pl-1">
-                  {/* Synopsis */}
                   {episode?.synopsis ? (
                     <div className="mt-6 mb-3">
                       <p className="whitespace-pre-line text-base text-black">
@@ -553,7 +548,6 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                     )
                   )}
 
-                  {/* EpisodeNavigator */}
                   <div className="mt-4 min-w-0 overflow-hidden">
                     <EpisodeNavigator
                       slug={slugString}
@@ -562,10 +556,8 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                     />
                   </div>
 
-                  {/* CharacterNavigator (requested) */}
                   <CharacterNavigator slug={slugString} className="mt-4" />
 
-                  {/* Small utility row (NO test buttons) */}
                   <div className="mt-2 flex flex-wrap items-center gap-3">
                     <Link
                       href={`/anime/${slugString}`}
@@ -573,14 +565,6 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                     >
                       ← Back to anime main page
                     </Link>
-
-                    {false && typeof myLogCount === "number" && (
-                      <span className="text-xs text-gray-600">
-                        You logged this{" "}
-                        <span className="font-semibold text-gray-900">{myLogCount}</span>{" "}
-                        time{myLogCount === 1 ? "" : "s"}
-                      </span>
-                    )}
 
                     {isAnimeLoading && (
                       <span className="text-xs text-gray-500">
@@ -591,16 +575,13 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                       <span className="text-xs text-red-500">{animeError}</span>
                     )}
                     {isEpisodeLoading && (
-                      <span className="text-xs text-gray-500">
-                        Loading episode…
-                      </span>
+                      <span className="text-xs text-gray-500">Loading episode…</span>
                     )}
                     {!isEpisodeLoading && episodeError && (
                       <span className="text-xs text-red-500">{episodeError}</span>
                     )}
                   </div>
 
-                  {/* Feed (same wrapper style as series page) */}
                   {anime && episode && (
                     <div className="mt-6">
                       <FeedShell>
@@ -622,8 +603,40 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
           ← Back home
         </Link>
       </div>
+    </>
+  );
 
-      {/* ✅ Global log modal render */}
+  const phoneView = (
+    <AnimeEpisodePhoneLayout
+      slug={slugString}
+      episodeNum={episodeNum}
+      anime={anime as any}
+      episode={episode as any}
+      backdropUrl={backdropUrl}
+      tags={tags}
+      tagsLoading={tagsLoading}
+      showSpoilers={showSpoilers}
+      setShowSpoilers={setShowSpoilers}
+      actionBoxNonce={actionBoxNonce}
+      episodeLogsNonce={episodeLogsNonce}
+      onOpenLog={() => setLogOpen(true)}
+      onShowActivity={() =>
+        router.push(`/anime/${slugString}/episode/${episodeNum}/activity`)
+      }
+      onOpenLogForEpisode={() => setLogOpen(true)}
+      feedNonce={feedNonce}
+      seriesDisplayTitle={seriesDisplayTitle}
+      isAnimeLoading={isAnimeLoading}
+      animeError={animeError}
+      isEpisodeLoading={isEpisodeLoading}
+      episodeError={episodeError}
+    />
+  );
+
+  return (
+    <>
+      <ResponsiveSwitch desktop={desktopView} phone={phoneView} />
+
       <GlobalLogModal
         open={logOpen}
         onClose={() => setLogOpen(false)}
@@ -641,13 +654,8 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
           const { count, error } = await getMyAnimeEpisodeLogCount(episode.id);
           if (!error) setMyLogCount(count);
 
-          // ✅ refresh episode feed
           setFeedNonce((n) => n + 1);
-
-          // ✅ refresh marks UI
           setActionBoxNonce((n) => n + 1);
-
-          // ✅ refresh QuickLog counts
           setEpisodeLogsNonce((n) => n + 1);
         }}
       />
