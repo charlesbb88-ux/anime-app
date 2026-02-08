@@ -123,8 +123,6 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
           </div>
         </nav>
       </div>
-
-      {bio ? <p className="mt-3 text-sm text-slate-800 whitespace-pre-line">{bio}</p> : null}
     </div>
   );
 }
