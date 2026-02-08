@@ -233,22 +233,6 @@ function ActivityBody({ profileId, username }: { profileId: string; username?: s
     try {
       setError(null);
 
-      const {
-        data: { user },
-        error: userErr,
-      } = await supabase.auth.getUser();
-
-      if (!user || userErr) {
-        router.replace("/login");
-        return;
-      }
-
-      if (profileId !== user.id) {
-        setError("You can only view your own activity.");
-        setHasMore(false);
-        return;
-      }
-
       const rpcRes = await supabase.rpc("get_activity_events_page", {
         p_user_id: profileId,
         p_cursor_at: isFirst ? null : cursorAt,
