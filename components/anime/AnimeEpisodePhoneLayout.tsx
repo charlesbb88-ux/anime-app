@@ -164,14 +164,16 @@ export default function AnimeEpisodePhoneLayout(props: {
                         </div>
 
                         <div className="min-w-0 flex-1">
-                            <h1 className="text-[22px] font-bold leading-tight">{episodeTitle}</h1>
+                            <h1 className="text-[22px] font-bold leading-tight">
+                                <span className="text-black/90">Ep. {episodeNum}</span>
+                                <span className="mx-2 text-black/90">•</span>
+                                {episodeTitle}
+                            </h1>
 
-                            <div className="mt-0 text-[16px] font-semibold leading-snug text-black/90">
+                            <div className="mt-0.5 text-[13px] font-semibold text-gray-500">
                                 <Link href={`/anime/${slug}`} className="hover:underline">
                                     {seriesDisplayTitle}
                                 </Link>
-                                <span className="mx-2">•</span>
-                                <span>Episode {episodeNum}</span>
                             </div>
 
                             {/* status/errors line (same info as desktop, just compact) */}
