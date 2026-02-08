@@ -3,12 +3,13 @@
 import { useRouter } from "next/router";
 import type { NextPage, GetServerSideProps } from "next";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 
 import type { Anime, AnimeEpisode } from "@/lib/types";
 import { getAnimeBySlug, getAnimeEpisode } from "@/lib/anime";
 
+import { supabase } from "@/lib/supabaseClient";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 // ✅ episode review helper
@@ -18,15 +19,31 @@ import { createAnimeEpisodeReview } from "@/lib/reviews";
 import { createAnimeEpisodeLog, getMyAnimeEpisodeLogCount } from "@/lib/logs";
 
 import EpisodeNavigator from "@/components/EpisodeNavigator";
-import LeftSidebar from "@/components/LeftSidebar";
-import RightSidebar from "@/components/RightSidebar";
+import CharacterNavigator from "@/components/CharacterNavigator";
 import PostFeed from "@/components/PostFeed";
+
+import FeedShell from "@/components/FeedShell";
 
 // ✅ Global Log modal
 import GlobalLogModal from "@/components/reviews/GlobalLogModal";
 
 // ✅ Letterboxd-style action box
 import ActionBox from "@/components/actions/ActionBox";
+
+import AnimeMetaBox from "@/components/anime/AnimeMetaBox";
+import AnimeQuickLogBox from "@/components/anime/AnimeQuickLogBox";
+
+type AnimeTag = {
+  id: number;
+  anime_id: string;
+  name: string;
+  description: string | null;
+  rank: number | null;
+  is_adult: boolean | null;
+  is_general_spoiler: boolean | null;
+  is_media_spoiler: boolean | null;
+  category: string | null;
+};
 
 type AnimeEpisodePageProps = {
   initialBackdropUrl: string | null;
@@ -70,14 +87,6 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
   const [isEpisodeLoading, setIsEpisodeLoading] = useState(false);
   const [episodeError, setEpisodeError] = useState<string | null>(null);
 
-  // ✅ Test review saving state
-  const [savingReview, setSavingReview] = useState(false);
-  const [reviewSaveMsg, setReviewSaveMsg] = useState<string | null>(null);
-
-  // ✅ Test logging state
-  const [savingLog, setSavingLog] = useState(false);
-  const [logSaveMsg, setLogSaveMsg] = useState<string | null>(null);
-
   // ✅ my log count
   const [myLogCount, setMyLogCount] = useState<number | null>(null);
 
@@ -90,11 +99,16 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
   // ✅ open/close the global log modal
   const [logOpen, setLogOpen] = useState(false);
 
+  // ✅ tags (same as series page)
+  const [tags, setTags] = useState<AnimeTag[]>([]);
+  const [tagsLoading, setTagsLoading] = useState(false);
+  const [showSpoilers, setShowSpoilers] = useState(false);
+
+  // ✅ quick log refresh (same pattern as series page)
+  const [episodeLogsNonce, setEpisodeLogsNonce] = useState(0);
+
   // ✅ Backdrop from SSR (public.anime_episode_artwork) — random every reload
   const backdropUrl = initialBackdropUrl;
-
-  // ✅ Your uploaded overlay (match series page)
-  const overlayMaskUrl = "/masks/white-edge-mask.png"; // (kept for parity if you use later)
 
   // Normalize slug and episodeNumber to strings
   const slugString = Array.isArray(slug) ? slug[0] : slug ?? "";
@@ -209,68 +223,60 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
     };
   }, [episode?.id]);
 
-  async function handleTestSaveReview() {
-    if (!anime?.id || !episode?.id) return;
+  // ✅ fetch tags for THIS anime (same as series page)
+  useEffect(() => {
+    const animeId = anime?.id;
+    if (!animeId) {
+      setTags([]);
+      return;
+    }
 
-    setSavingReview(true);
-    setReviewSaveMsg(null);
+    let isMounted = true;
 
-    try {
-      const result = await createAnimeEpisodeReview({
-        anime_id: anime.id,
-        anime_episode_id: episode.id,
-        rating: 87,
-        content: `Test review for ${anime.title} - Episode ${episodeNum} @ ${new Date().toLocaleString()}`,
-        contains_spoilers: false,
-      });
+    async function run() {
+      setTagsLoading(true);
 
-      if (result.error) {
-        console.error("Error saving review:", result.error);
-        setReviewSaveMsg(
-          String((result.error as any)?.message || "Failed to save review.")
-        );
-        return;
+      const { data, error } = await supabase
+        .from("anime_tags")
+        .select(
+          "id, anime_id, name, description, rank, is_adult, is_general_spoiler, is_media_spoiler, category"
+        )
+        .eq("anime_id", animeId)
+        .order("rank", { ascending: false });
+
+      if (!isMounted) return;
+
+      if (error || !data) {
+        console.error("Error fetching anime_tags", error);
+        setTags([]);
+      } else {
+        setTags(data as AnimeTag[]);
       }
 
-      setReviewSaveMsg(`Saved ✅ (review id: ${result.data?.id})`);
-
-      // ✅ Force PostFeed to re-mount and re-fetch the episode feed
-      setFeedNonce((n) => n + 1);
-    } finally {
-      setSavingReview(false);
+      setTagsLoading(false);
     }
-  }
 
-  // ✅ test log episode (INSERT ONLY)
-  async function handleTestLogEpisode() {
-    if (!anime?.id || !episode?.id) return;
+    run();
+    return () => {
+      isMounted = false;
+    };
+  }, [anime?.id]);
 
-    setSavingLog(true);
-    setLogSaveMsg(null);
+  const a: any = anime;
 
-    try {
-      const result = await createAnimeEpisodeLog({
-        anime_id: anime.id,
-        anime_episode_id: episode.id,
-      });
+  const genres: string[] = useMemo(() => {
+    const g = (a as any)?.genres;
+    return Array.isArray(g) ? g : [];
+  }, [a]);
 
-      if (result.error) {
-        console.error("Error logging episode:", result.error);
-        setLogSaveMsg(
-          String((result.error as any)?.message || "Failed to log episode.")
-        );
-        return;
-      }
+  const hasGenres = genres.length > 0;
 
-      setLogSaveMsg(`Logged ✅ (log id: ${result.data?.id})`);
-
-      // ✅ refresh count
-      const { count, error } = await getMyAnimeEpisodeLogCount(episode.id);
-      if (!error) setMyLogCount(count);
-    } finally {
-      setSavingLog(false);
-    }
-  }
+  const spoilerTags = useMemo(
+    () =>
+      tags.filter((t) => t.is_general_spoiler === true || t.is_media_spoiler === true),
+    [tags]
+  );
+  const spoilerCount = spoilerTags.length;
 
   // ------------------------
   // Loading / Invalid
@@ -297,7 +303,7 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
   }
 
   // ------------------------
-  // MAIN EPISODE PAGE CONTENT (match series layout)
+  // MAIN EPISODE PAGE CONTENT (series-page structure)
   // ------------------------
   return (
     <>
@@ -326,67 +332,201 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
           </div>
         )}
 
-        {/* Top section (overlap + poster left + content right) */}
+        {/* Top section (same structure as series page) */}
         <div className="-mt-5 relative z-10 px-3">
           <div className="mb-8 flex flex-row gap-7">
-            <div className="flex-shrink-0">
+            {/* LEFT COLUMN (poster + genres + tags + meta) */}
+            <div className="flex-shrink-0 w-56">
+              {/* Poster */}
               {anime?.image_url ? (
                 <img
                   src={anime.image_url}
                   alt={anime.title}
-                  className="h-84 w-56 rounded-md object-cover border border-black/100"
+                  className="h-84 w-56 rounded-md object-cover border-3 border-black/100"
                 />
               ) : (
-                <div className="flex h-64 w-44 items-center justify-center rounded-lg bg-gray-800 text-4xl font-bold text-gray-200">
+                <div className="flex h-64 w-56 items-center justify-center rounded-lg bg-gray-800 text-4xl font-bold text-gray-200">
                   {(anime?.title ?? slugString)[0] ?? "?"}
                 </div>
               )}
+
+              {/* Genres */}
+              {hasGenres && (
+                <div className="mt-4">
+                  <h2 className="mb-1 text-sm font-semibold text-black-300">
+                    Genres
+                  </h2>
+                  <div className="flex flex-wrap gap-2">
+                    {genres.map((g) => (
+                      <span
+                        key={g}
+                        className="rounded-full bg-black px-3 py-1 text-xs text-gray-100"
+                      >
+                        {g}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Tags (✅ ONLY render if tags exist — manga behavior) */}
+              {tags.length > 0 && (
+                <div className="mt-5">
+                  <div className="mb-1 flex items-center gap-2">
+                    <h2 className="text-base font-semibold text-black-300">Tags</h2>
+                    {tagsLoading && (
+                      <span className="text-[10px] uppercase tracking-wide text-gray-500">
+                        Loading…
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <div className="flex w-full flex-col gap-1">
+                      {tags.map((tag) => {
+                        const isSpoiler = tag.is_general_spoiler || tag.is_media_spoiler;
+                        if (isSpoiler && !showSpoilers) return null;
+
+                        let percent: number | null = null;
+                        if (typeof tag.rank === "number") {
+                          percent = Math.max(0, Math.min(100, Math.round(tag.rank)));
+                        }
+
+                        return (
+                          <div key={tag.id} className="group relative inline-flex">
+                            <span
+                              className="
+                  relative inline-flex w-full items-center justify-between
+                  rounded-full border border-gray-700 bg-gray-900/80
+                  px-3 py-[3px] text-[13px] font-medium
+                  whitespace-nowrap overflow-hidden
+                "
+                            >
+                              {percent !== null && (
+                                <span
+                                  className="pointer-events-none absolute inset-y-0 left-0 bg-black"
+                                  style={{ width: `${percent}%` }}
+                                />
+                              )}
+
+                              <span
+                                className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"}`}
+                              >
+                                {tag.name}
+                              </span>
+
+                              {percent !== null && (
+                                <span className="relative text-[11px] font-semibold text-gray-200">
+                                  {percent}%
+                                </span>
+                              )}
+                            </span>
+
+                            {tag.description && (
+                              <div
+                                className="
+                    pointer-events-none absolute left-0 top-full z-20 mt-1 w-64
+                    rounded-md bg-black px-3 py-2 text-xs text-gray-100 shadow-lg
+                    opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0
+                    transition duration-200 delay-150
+                  "
+                              >
+                                {tag.description}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {spoilerCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSpoilers((prev) => !prev)}
+                      className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
+                    >
+                      {showSpoilers
+                        ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`
+                        : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Meta box */}
+              <div className="mt-4">
+                <AnimeMetaBox
+                  titleEnglish={a?.title_english}
+                  titleNative={a?.title_native}
+                  totalEpisodes={anime?.total_episodes ?? null}
+                  format={a?.format}
+                  status={a?.status}
+                  startDate={a?.start_date}
+                  endDate={a?.end_date}
+                  season={a?.season}
+                  seasonYear={a?.season_year}
+                  averageScore={
+                    typeof a?.average_score === "number" ? a.average_score : null
+                  }
+                />
+              </div>
             </div>
 
+            {/* RIGHT COLUMN (title + pinned actions + synopsis + nav + characters + feed) */}
             <div className="min-w-100 flex-1">
               {/* ROW 1 — TITLE */}
-              <h1 className="mb-2 text-4xl font-bold leading-tight">
-                {episode?.title ? (
-                  episode.title
-                ) : (
-                  <>Episode {episodeNum}</>
-                )}
-              </h1>
+              <div className="mb-0 pl-1">
+                <h1 className="text-4xl font-bold leading-tight">
+                  {episode?.title ? episode.title : <>Episode {episodeNum}</>}
+                </h1>
 
-              <div className="text-sm text-gray-600">
-                <Link
-                  href={`/anime/${slugString}`}
-                  className="hover:text-gray-900"
-                >
-                  {anime?.title ?? slugString}
-                </Link>
-                <span className="mx-1">•</span>
-                <span>Episode {episodeNum}</span>
+                <div className="mt-1 text-sm text-gray-600">
+                  <Link
+                    href={`/anime/${slugString}`}
+                    className="hover:text-gray-900"
+                  >
+                    {anime?.title ?? slugString}
+                  </Link>
+                  <span className="mx-1">•</span>
+                  <span>Episode {episodeNum}</span>
+                </div>
               </div>
 
-              {/* ROW 2 — LEFT CONTENT + ActionBox pinned top-right */}
+              {/* ROW 2 — LEFT CONTENT + pinned ActionBox + QuickLog */}
               <div className="relative w-full">
-                {/* RIGHT SIDE: ActionBox pinned */}
-                <div className="absolute right-0 top-1">
+                {/* RIGHT SIDE: pinned */}
+                <div className="absolute right-0 top-6 flex flex-col items-end gap-2">
                   {anime && episode ? (
-                    <ActionBox
-                      key={actionBoxNonce}
-                      animeId={anime.id}
-                      animeEpisodeId={episode.id}
-                      onOpenLog={() => setLogOpen(true)}
-                      onShowActivity={() =>
-                        router.push(
-                          `/anime/${slugString}/episode/${episodeNum}/activity`
-                        )
-                      }
-                    />
+                    <>
+                      <ActionBox
+                        key={actionBoxNonce}
+                        animeId={anime.id}
+                        animeEpisodeId={episode.id}
+                        onOpenLog={() => setLogOpen(true)}
+                        onShowActivity={() =>
+                          router.push(
+                            `/anime/${slugString}/episode/${episodeNum}/activity`
+                          )
+                        }
+                      />
+
+                      <AnimeQuickLogBox
+                        animeId={anime.id}
+                        totalEpisodes={anime.total_episodes}
+                        refreshToken={episodeLogsNonce}
+                        onOpenLog={(episodeId) => {
+                          // from episode page, QuickLog should still open modal (episodeId may be provided)
+                          setLogOpen(true);
+                        }}
+                      />
+                    </>
                   ) : null}
                 </div>
 
-                {/* LEFT SIDE: reserve space so content never goes under ActionBox */}
-                <div className="min-w-0 pr-[260px]">
-                  {/* Episode title + synopsis (this is the “synopsis area” like series page) */}
-                  
+                {/* LEFT SIDE: reserve space */}
+                <div className="min-w-0 pr-[270px] pl-1">
+                  {/* Synopsis */}
                   {episode?.synopsis ? (
                     <div className="mt-6 mb-3">
                       <p className="whitespace-pre-line text-base text-black">
@@ -403,7 +543,7 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                     )
                   )}
 
-                  {/* EpisodeNavigator (same spot as series page) */}
+                  {/* EpisodeNavigator */}
                   <div className="mt-4 min-w-0 overflow-hidden">
                     <EpisodeNavigator
                       slug={slugString}
@@ -412,60 +552,24 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                     />
                   </div>
 
-                  {/* Small utility row (back link + test buttons) */}
-                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                  {/* CharacterNavigator (requested) */}
+                  <CharacterNavigator slug={slugString} className="mt-4" />
+
+                  {/* Small utility row (NO test buttons) */}
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
                     <Link
                       href={`/anime/${slugString}`}
-                      className="text-xs text-blue-400 hover:text-blue-300"
+                      className="text-xs text-black hover:underline"
                     >
                       ← Back to anime main page
                     </Link>
 
-                    {anime && episode && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={handleTestSaveReview}
-                          disabled={savingReview}
-                          className="rounded-md border border-gray-300 bg-white/70 px-3 py-1 text-xs font-medium text-gray-900 hover:bg-white disabled:opacity-60"
-                        >
-                          {savingReview ? "Saving…" : "Test: Save episode review"}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={handleTestLogEpisode}
-                          disabled={savingLog}
-                          className="rounded-md border border-gray-300 bg-white/70 px-3 py-1 text-xs font-medium text-gray-900 hover:bg-white disabled:opacity-60"
-                        >
-                          {savingLog ? "Logging…" : "Test: Log episode"}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setLogOpen(true)}
-                          className="rounded-md border border-gray-300 bg-white/70 px-3 py-1 text-xs font-medium text-gray-900 hover:bg-white"
-                        >
-                          Log
-                        </button>
-                      </>
-                    )}
-
-                    {typeof myLogCount === "number" && (
+                    {false && typeof myLogCount === "number" && (
                       <span className="text-xs text-gray-600">
                         You logged this{" "}
-                        <span className="font-semibold text-gray-900">
-                          {myLogCount}
-                        </span>{" "}
+                        <span className="font-semibold text-gray-900">{myLogCount}</span>{" "}
                         time{myLogCount === 1 ? "" : "s"}
                       </span>
-                    )}
-
-                    {reviewSaveMsg && (
-                      <span className="text-xs text-gray-600">{reviewSaveMsg}</span>
-                    )}
-                    {logSaveMsg && (
-                      <span className="text-xs text-gray-600">{logSaveMsg}</span>
                     )}
 
                     {isAnimeLoading && (
@@ -477,61 +581,33 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                       <span className="text-xs text-red-500">{animeError}</span>
                     )}
                     {isEpisodeLoading && (
-                      <span className="text-xs text-gray-500">Loading episode…</span>
+                      <span className="text-xs text-gray-500">
+                        Loading episode…
+                      </span>
                     )}
                     {!isEpisodeLoading && episodeError && (
                       <span className="text-xs text-red-500">{episodeError}</span>
                     )}
                   </div>
 
-                  {/* Feed directly below synopsis (like series page) */}
+                  {/* Feed (same wrapper style as series page) */}
                   {anime && episode && (
-                    <div className="mx-auto mt-6 max-w-6xl px-4 pb-12">
-                      <div className="mb-3 text-lg font-semibold text-gray-900">
-                        Episode discussion
-                      </div>
-                      <PostFeed
-                        key={feedNonce}
-                        animeId={anime.id}
-                        animeEpisodeId={episode.id}
-                      />
+                    <div className="mt-6">
+                      <FeedShell>
+                        <PostFeed
+                          key={feedNonce}
+                          animeId={anime.id}
+                          animeEpisodeId={episode.id}
+                        />
+                      </FeedShell>
                     </div>
                   )}
                 </div>
               </div>
-              {/* everything below stays in normal flow */}
             </div>
           </div>
         </div>
 
-        {/* (Optional) Keep sidebars grid, but now it visually follows the same layout rhythm */}
-        {anime && episode && (
-          <div
-            style={{
-              marginTop: "0.5rem",
-              maxWidth: "80rem",
-              marginLeft: "auto",
-              marginRight: "auto",
-              padding: "0 1.5rem 2rem",
-              display: "grid",
-              gridTemplateColumns:
-                "minmax(0, 19rem) minmax(0, 41rem) minmax(0, 19rem)",
-              gap: "1rem",
-            }}
-          >
-            <div>
-              <LeftSidebar />
-            </div>
-
-            <div>{/* center column intentionally empty for now */}</div>
-
-            <div>
-              <RightSidebar />
-            </div>
-          </div>
-        )}
-
-        {/* Back link (match series page placement if you want it low) */}
         <Link href="/" className="text-xs text-blue-400 hover:text-blue-300">
           ← Back home
         </Link>
@@ -553,11 +629,14 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
           const { count, error } = await getMyAnimeEpisodeLogCount(episode.id);
           if (!error) setMyLogCount(count);
 
-          // ✅ refresh episode feed so new review shows immediately
+          // ✅ refresh episode feed
           setFeedNonce((n) => n + 1);
 
-          // ✅ refresh marks UI (watched/liked/watchlist/rating)
+          // ✅ refresh marks UI
           setActionBoxNonce((n) => n + 1);
+
+          // ✅ refresh QuickLog counts
+          setEpisodeLogsNonce((n) => n + 1);
         }}
       />
     </>
