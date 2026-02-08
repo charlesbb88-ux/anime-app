@@ -16,13 +16,13 @@ type Props = {
   children: ReactNode | ((args: { profile: Profile }) => ReactNode);
 
   activeTab?:
-    | "anime"
-    | "watchlist"
-    | "posts"
-    | "journal"
-    | "library"
-    | "activity"
-    | "completions";
+  | "anime"
+  | "watchlist"
+  | "posts"
+  | "journal"
+  | "library"
+  | "activity"
+  | "completions";
 
   maxWidthClassName?: string;
 };
@@ -113,7 +113,7 @@ export default function ProfileLayout({
 
   return (
     <main className="min-h-screen">
-      <div className={`${maxWidthClassName} mx-auto px-4 py-7`}>
+      <div className={`${maxWidthClassName} mx-auto px-4 pt-5 pb-7`}>
         <ProfileTopNav
           username={profile.username}
           avatarUrl={profile.avatar_url}
