@@ -31,6 +31,8 @@ import ActionBox from "@/components/actions/ActionBox";
 import ResponsiveSwitch from "@/components/ResponsiveSwitch";
 import AnimePhoneLayout from "@/components/anime/AnimePhoneLayout";
 
+import EnglishTitle from "@/components/EnglishTitle";
+
 type AnimeTag = {
   id: number;
   anime_id: string;
@@ -458,9 +460,8 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                                 )}
 
                                 <span
-                                  className={`relative ${
-                                    isSpoiler ? "text-red-400" : "text-gray-100"
-                                  }`}
+                                  className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"
+                                    }`}
                                 >
                                   {tag.name}
                                 </span>
@@ -497,12 +498,10 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                         className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
                       >
                         {showSpoilers
-                          ? `Hide ${spoilerCount} spoiler tag${
-                              spoilerCount === 1 ? "" : "s"
-                            }`
-                          : `Show ${spoilerCount} spoiler tag${
-                              spoilerCount === 1 ? "" : "s"
-                            }`}
+                          ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
+                          }`
+                          : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
+                          }`}
                       </button>
                     )}
                   </>
@@ -529,9 +528,17 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
 
             <div className="min-w-100 flex-1">
               {/* ROW 1 — TITLE (full width, can be tall) */}
-              <div className="mb-0 pl-1">
-                <h1 className="text-4xl font-bold leading-tight">{anime.title}</h1>
-              </div>
+              <EnglishTitle
+                as="h1"
+                className="text-4xl font-bold leading-tight"
+                titles={{
+                  title_english: (anime as any).title_english,
+                  title_preferred: (anime as any).title_preferred,
+                  title: anime.title,
+                  title_native: (anime as any).title_native,
+                }}
+                fallback={anime.title}
+              />
 
               {/* ROW 2 — LEFT CONTENT + ActionBox pinned top-right */}
               <div className="relative w-full">
