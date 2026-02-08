@@ -9,6 +9,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import MediaHeaderLayout from "@/components/layouts/MediaHeaderLayout";
+import AnimeEpisodeActivityPhoneLayout from "@/components/anime/AnimeEpisodeActivityPhoneLayout";
 
 const CARD_CLASS = "bg-black p-4 text-neutral-100";
 
@@ -20,42 +21,42 @@ type Visibility = "public" | "friends" | "private";
 
 type ActivityItem =
   | {
-    id: string;
-    kind: "log";
-    type: "anime_episode";
-    title: string;
-    subLabel?: string;
-    rating: number | null; // 0..100
-    note: null; // ✅ never show notes on this page
-    logged_at: string;
-    visibility: Visibility;
+      id: string;
+      kind: "log";
+      type: "anime_episode";
+      title: string;
+      subLabel?: string;
+      rating: number | null; // 0..100
+      note: null; // ✅ never show notes on this page
+      logged_at: string;
+      visibility: Visibility;
 
-    // episode snapshot flags (from anime_episode_logs)
-    liked?: boolean | null;
+      // episode snapshot flags (from anime_episode_logs)
+      liked?: boolean | null;
 
-    // ✅ if the log submit also created a review, store it so we can suppress the standalone review
-    review_id?: string | null;
-  }
+      // ✅ if the log submit also created a review, store it so we can suppress the standalone review
+      review_id?: string | null;
+    }
   | {
-    id: string;
-    kind: "review";
-    type: "anime_episode_review";
-    title: string;
-    subLabel?: string;
-    logged_at: string; // reviews.created_at
-    rating: number | null; // 0..100
-    content: string | null;
-    contains_spoilers: boolean;
-  }
+      id: string;
+      kind: "review";
+      type: "anime_episode_review";
+      title: string;
+      subLabel?: string;
+      logged_at: string; // reviews.created_at
+      rating: number | null; // 0..100
+      content: string | null;
+      contains_spoilers: boolean;
+    }
   | {
-    id: string;
-    kind: "mark";
-    type: "watched" | "liked" | "watchlist" | "rating";
-    title: string;
-    subLabel?: string;
-    logged_at: string; // user_marks.created_at
-    stars?: number | null; // half-stars 1..10 (only for rating mark)
-  };
+      id: string;
+      kind: "mark";
+      type: "watched" | "liked" | "watchlist" | "rating";
+      title: string;
+      subLabel?: string;
+      logged_at: string; // user_marks.created_at
+      stars?: number | null; // half-stars 1..10 (only for rating mark)
+    };
 
 function getAnimeDisplayTitle(anime: any): string {
   return (
@@ -199,6 +200,7 @@ const AnimeEpisodeActivityPage: NextPage<AnimeEpisodeActivityPageProps> = ({
 
   const [backdropUrl] = useState<string | null>(initialBackdropUrl);
   const [posterUrl, setPosterUrl] = useState<string | null>(null);
+  const [animeId, setAnimeId] = useState<string | null>(null);
 
   const [pageTitle, setPageTitle] = useState<string>("Your activity");
   const [items, setItems] = useState<ActivityItem[]>([]);
@@ -255,6 +257,7 @@ const AnimeEpisodeActivityPage: NextPage<AnimeEpisodeActivityPageProps> = ({
 
       const animeTitle = getAnimeDisplayTitle(anime);
       setPosterUrl(anime?.image_url ?? null);
+      setAnimeId(String(anime.id));
 
       // 2) Find episode row (by anime_id + episode_number)
       const episodeRes = await supabase
@@ -531,7 +534,10 @@ const AnimeEpisodeActivityPage: NextPage<AnimeEpisodeActivityPageProps> = ({
     );
   }
 
-  return (
+  const episodeHref =
+    slug && episodeNumber ? `/anime/${slug}/episode/${episodeNumber}` : "/";
+
+  const desktopView = (
     <MediaHeaderLayout
       backdropUrl={backdropUrl}
       posterUrl={posterUrl}
@@ -744,6 +750,26 @@ const AnimeEpisodeActivityPage: NextPage<AnimeEpisodeActivityPageProps> = ({
         )}
       </div>
     </MediaHeaderLayout>
+  );
+
+  const phoneView = (
+    <AnimeEpisodeActivityPhoneLayout
+      animeId={animeId ?? ""}
+      posterUrl={posterUrl}
+      pageTitle={pageTitle}
+      subLabel={`Episode ${Number(episodeNumber)}`}
+      items={items}
+      error={error}
+      episodeHref={episodeHref}
+      reviewIdToPostId={reviewIdToPostId}
+    />
+  );
+
+  return (
+    <>
+      <div className="sm:hidden">{phoneView}</div>
+      <div className="hidden sm:block">{desktopView}</div>
+    </>
   );
 };
 
