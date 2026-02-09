@@ -7,6 +7,7 @@ import ProfileLayout from "@/components/profile/ProfileLayout";
 
 import { buildChapterNavGroups } from "@/lib/chapterNavigation";
 import type { NavGroup } from "@/lib/chapterNavigation";
+import ProfileWatchlistPhone from "@/components/profile/phone/ProfileWatchlistPhone";
 
 type AnimeCard = {
   id: string;
@@ -640,97 +641,101 @@ function WatchlistBody({ profileId }: { profileId: string }) {
 
   return (
     <>
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold tracking-wide text-slate-900 uppercase">Watchlist</h2>
-          <span className="text-sm text-slate-500">{countLabel}</span>
-        </div>
+      {/* ✅ PC stays EXACTLY the same */}
+      <div className="hidden sm:block">
+        <>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <h2 className="text-sm font-semibold tracking-wide text-slate-900 uppercase">
+                Watchlist
+              </h2>
+              <span className="text-sm text-slate-500">{countLabel}</span>
+            </div>
 
-        {loading ? <span className="text-sm text-slate-500">Loading…</span> : null}
+            {loading ? <span className="text-sm text-slate-500">Loading…</span> : null}
+          </div>
+
+          {loading ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-600">
+              Loading watchlist…
+            </div>
+          ) : items.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-600">
+              Nothing on this watchlist yet.
+            </div>
+          ) : (
+            <div className="grid [grid-template-columns:repeat(auto-fill,minmax(160px,1fr))] gap-x-2 gap-y-4">
+              {items.map((it) => {
+                let href = "#";
+
+                if (it.slug && it.kind === "anime") href = `/anime/${it.slug}`;
+                if (it.slug && it.kind === "manga") href = `/manga/${it.slug}`;
+
+                if (it.slug && it.kind === "manga_chapter" && it.chapterNumber != null) {
+                  href = `/manga/${it.slug}/chapter/${it.chapterNumber}`;
+                }
+
+                if (it.slug && it.kind === "anime_episode") {
+                  href = `/anime/${it.slug}`;
+                }
+
+                return (
+                  <Link key={`${it.kind}:${it.id}`} href={href} title={it.title} className="group block">
+                    <div className="relative w-full aspect-[2/3] overflow-visible">
+                      <div className="relative w-full h-full overflow-hidden rounded-[4px] bg-slate-200 border-2 border-black group-hover:border-slate-400 transition">
+                        {it.posterUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={it.posterUrl} alt={it.title} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <span className="text-[10px] text-slate-500">No poster</span>
+                          </div>
+                        )}
+
+                        {it.posterUrl ? (
+                          <div className="pointer-events-none absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors" />
+                        ) : null}
+                      </div>
+
+                      {it.posterUrl ? (
+                        <div className="pointer-events-none absolute inset-0 z-50 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="flex-none w-[220px] aspect-[2/3] overflow-hidden rounded-[6px] border border-slate-200/80 shadow-2xl bg-slate-200">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={it.posterUrl} alt={it.title} className="w-full h-full object-cover" />
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-1">
+                      <div className="text-[13px] font-semibold leading-snug text-black line-clamp-1">
+                        {it.title}
+                      </div>
+
+                      {it.kind === "manga_chapter" ? (
+                        <div className="text-[12px] leading-snug text-black">
+                          {it.chapterNumber != null ? `Chapter ${it.chapterNumber}` : "Chapter"}
+                        </div>
+                      ) : it.kind === "anime_episode" ? (
+                        <div className="text-[12px] leading-snug text-black">
+                          {it.episodeNumber != null ? `Episode ${it.episodeNumber}` : "Episode"}
+                        </div>
+                      ) : null}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </>
       </div>
 
-      {loading ? (
-        <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-600">
-          Loading watchlist…
-        </div>
-      ) : items.length === 0 ? (
-        <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-600">
-          Nothing on this watchlist yet.
-        </div>
-      ) : (
-        <div className="grid [grid-template-columns:repeat(auto-fill,minmax(160px,1fr))] gap-x-2 gap-y-4">
-          {items.map((it) => {
-            let href = "#";
-
-            // series routes
-            if (it.slug && it.kind === "anime") href = `/anime/${it.slug}`;
-            if (it.slug && it.kind === "manga") href = `/manga/${it.slug}`;
-
-            // ✅ your chapter route pattern:
-            // pages/manga/[slug]/chapter/[chapterNumber].tsx
-            if (it.slug && it.kind === "manga_chapter" && it.chapterNumber != null) {
-              href = `/manga/${it.slug}/chapter/${it.chapterNumber}`;
-            }
-
-            // NOTE: I still don't know your anime episode route pattern.
-            // Safe fallback to anime series page for now.
-            if (it.slug && it.kind === "anime_episode") {
-              href = `/anime/${it.slug}`;
-            }
-
-            return (
-              <Link key={`${it.kind}:${it.id}`} href={href} title={it.title} className="group block">
-                <div className="relative w-full aspect-[2/3] overflow-visible">
-                  <div className="relative w-full h-full overflow-hidden rounded-[4px] bg-slate-200 border-2 border-black group-hover:border-slate-400 transition">
-                    {it.posterUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={it.posterUrl} alt={it.title} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <span className="text-[10px] text-slate-500">No poster</span>
-                      </div>
-                    )}
-
-                    {it.posterUrl ? (
-                      <div className="pointer-events-none absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors" />
-                    ) : null}
-                  </div>
-
-                  {it.posterUrl ? (
-                    <div className="pointer-events-none absolute inset-0 z-50 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="flex-none w-[220px] aspect-[2/3] overflow-hidden rounded-[6px] border border-slate-200/80 shadow-2xl bg-slate-200">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={it.posterUrl} alt={it.title} className="w-full h-full object-cover" />
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-
-                {/* label under poster so chapter cards are actually distinguishable */}
-                <div className="mt-1">
-                  {/* row 1: series title (bigger + bold) */}
-                  <div className="text-[13px] font-semibold leading-snug text-black line-clamp-1">
-                    {it.title}
-                  </div>
-
-                  {/* row 2: chapter/episode number (same size, now black) */}
-                  {it.kind === "manga_chapter" ? (
-                    <div className="text-[12px] leading-snug text-black">
-                      {it.chapterNumber != null ? `Chapter ${it.chapterNumber}` : "Chapter"}
-                    </div>
-                  ) : it.kind === "anime_episode" ? (
-                    <div className="text-[12px] leading-snug text-black">
-                      {it.episodeNumber != null ? `Episode ${it.episodeNumber}` : "Episode"}
-                    </div>
-                  ) : null}
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      )}
+      {/* ✅ Phone */}
+      <div className="sm:hidden">
+        <ProfileWatchlistPhone items={items} loading={loading} countLabel={countLabel} />
+      </div>
     </>
   );
 }
