@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabase } from "../../lib/supabaseClient";
 import ProfileLayout from "../../components/profile/ProfileLayout";
 import ReviewIcon from "@/components/icons/ReviewIcon";
+import ProfileLibraryPhone from "@/components/profile/phone/ProfileLibraryPhone";
 
 type AnimeCard = {
   id: string;
@@ -337,110 +338,120 @@ function LibraryBody({ profileId }: { profileId: string }) {
 
   return (
     <>
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold tracking-wide text-slate-900 uppercase">Watched / Read</h2>
-          <span className="text-sm text-slate-500">{items.length}</span>
-        </div>
+      {/* ✅ PC stays EXACTLY the same */}
+      <div className="hidden sm:block">
+        <>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <h2 className="text-sm font-semibold tracking-wide text-slate-900 uppercase">Watched / Read</h2>
+              <span className="text-sm text-slate-500">{items.length}</span>
+            </div>
 
-        {loadingLibrary ? <span className="text-sm text-slate-500">Loading…</span> : null}
+            {loadingLibrary ? <span className="text-sm text-slate-500">Loading…</span> : null}
+          </div>
+
+          {loadingLibrary ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-600">Loading library…</div>
+          ) : items.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-600">
+              Nothing in this library yet.
+            </div>
+          ) : (
+            <div className="grid [grid-template-columns:repeat(auto-fill,minmax(100px,1fr))] gap-x-2 gap-y-4">
+              {items.map((it) => {
+                const href = itemHref(it);
+
+                return (
+                  <div key={`${it.kind}:${it.id}`} className="block">
+                    {/* ✅ only the poster is the media link */}
+                    <Link href={href} title={it.title} className="block">
+                      {/* ✅ HOVER TRIGGER IS ONLY THIS POSTER BOX (NOT THE STARS ROW) */}
+                      <div className="group relative w-full aspect-[2/3] overflow-visible">
+                        <div className="relative w-full h-full overflow-hidden rounded-[4px] bg-slate-200 border-2 border-black group-hover:border-slate-400 transition">
+                          {it.posterUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={it.posterUrl} alt={it.title} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <span className="text-[10px] text-slate-500">No poster</span>
+                            </div>
+                          )}
+
+                          {it.posterUrl ? (
+                            <div className="pointer-events-none absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors" />
+                          ) : null}
+                        </div>
+
+                        {it.posterUrl ? (
+                          <div className="pointer-events-none absolute inset-0 z-50 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <div className="flex-none w-[220px] aspect-[2/3] overflow-hidden rounded-[6px] ring-5 ring-black shadow-2xl bg-slate-200">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={it.posterUrl} alt={it.title} className="w-full h-full object-cover" />
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </Link>
+
+                    {/* ✅ not inside .group, so hovering here does NOTHING to the preview */}
+                    <div className="mt-0 flex items-center justify-between">
+                      <div className="min-h-[12px] leading-none">
+                        {(() => {
+                          const hasStars = typeof it.stars === "number" && it.stars > 0;
+
+                          return (
+                            <div className="flex items-start">
+                              {hasStars ? (
+                                <span className="text-[14px] text-slate-1000 tracking-tight leading-none">
+                                  {renderStars(it.stars as number)}
+                                </span>
+                              ) : null}
+
+                              {it.liked ? (
+                                <span
+                                  className={[
+                                    "text-[15px] text-slate-1000 leading-none",
+                                    hasStars ? "ml-1 relative top-[.5px]" : "",
+                                  ].join(" ")}
+                                  aria-label="Liked"
+                                  title="Liked"
+                                >
+                                  ♥
+                                </span>
+                              ) : null}
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        {it.reviewed ? (
+                          it.reviewPostId ? (
+                            <Link href={`/posts/${it.reviewPostId}`} className="text-slate-600 hover:text-slate-900">
+                              <ReviewIcon size={12} />
+                            </Link>
+                          ) : (
+                            <span className="text-slate-600" aria-label="Reviewed" title="Reviewed">
+                              <ReviewIcon size={12} />
+                            </span>
+                          )
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       </div>
 
-      {loadingLibrary ? (
-        <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-600">Loading library…</div>
-      ) : items.length === 0 ? (
-        <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-600">
-          Nothing in this library yet.
-        </div>
-      ) : (
-        <div className="grid [grid-template-columns:repeat(auto-fill,minmax(100px,1fr))] gap-x-2 gap-y-4">
-          {items.map((it) => {
-            const href = itemHref(it);
-
-            return (
-              <div key={`${it.kind}:${it.id}`} className="block">
-                {/* ✅ only the poster is the media link */}
-                <Link href={href} title={it.title} className="block">
-                  {/* ✅ HOVER TRIGGER IS ONLY THIS POSTER BOX (NOT THE STARS ROW) */}
-                  <div className="group relative w-full aspect-[2/3] overflow-visible">
-                    <div className="relative w-full h-full overflow-hidden rounded-[4px] bg-slate-200 border-2 border-black group-hover:border-slate-400 transition">
-                      {it.posterUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={it.posterUrl} alt={it.title} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <span className="text-[10px] text-slate-500">No poster</span>
-                        </div>
-                      )}
-
-                      {it.posterUrl ? (
-                        <div className="pointer-events-none absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors" />
-                      ) : null}
-                    </div>
-
-                    {it.posterUrl ? (
-                      <div className="pointer-events-none absolute inset-0 z-50 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="flex-none w-[220px] aspect-[2/3] overflow-hidden rounded-[6px] ring-5 ring-black shadow-2xl bg-slate-200">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={it.posterUrl} alt={it.title} className="w-full h-full object-cover" />
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                </Link>
-
-                {/* ✅ not inside .group, so hovering here does NOTHING to the preview */}
-                <div className="mt-0 flex items-center justify-between">
-                  <div className="min-h-[12px] leading-none">
-                    {(() => {
-                      const hasStars = typeof it.stars === "number" && it.stars > 0;
-
-                      return (
-                        <div className="flex items-start">
-                          {hasStars ? (
-                            <span className="text-[14px] text-slate-1000 tracking-tight leading-none">
-                              {renderStars(it.stars as number)}
-                            </span>
-                          ) : null}
-
-                          {it.liked ? (
-                            <span
-                              className={[
-                                "text-[15px] text-slate-1000 leading-none",
-                                hasStars ? "ml-1 relative top-[.5px]" : "",
-                              ].join(" ")}
-                              aria-label="Liked"
-                              title="Liked"
-                            >
-                              ♥
-                            </span>
-                          ) : null}
-                        </div>
-                      );
-                    })()}
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    {it.reviewed ? (
-                      it.reviewPostId ? (
-                        <Link href={`/posts/${it.reviewPostId}`} className="text-slate-600 hover:text-slate-900">
-                          <ReviewIcon size={12} />
-                        </Link>
-                      ) : (
-                        <span className="text-[11px] text-slate-600" aria-label="Reviewed" title="Reviewed">
-                          ✍
-                        </span>
-                      )
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {/* ✅ Phone layout */}
+      <div className="sm:hidden">
+        <ProfileLibraryPhone items={items} loading={loadingLibrary} />
+      </div>
     </>
   );
 }

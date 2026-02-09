@@ -305,9 +305,9 @@ function WatchlistBody({ profileId }: { profileId: string }) {
             : Promise.resolve({ data: [] as any[] }),
           mangaIds.length
             ? supabase
-                .from("manga")
-                .select("id, slug, title, title_english, image_url, total_chapters")
-                .in("id", mangaIds)
+              .from("manga")
+              .select("id, slug, title, title_english, image_url, total_chapters")
+              .in("id", mangaIds)
             : Promise.resolve({ data: [] as any[] }),
         ]);
 
@@ -338,8 +338,8 @@ function WatchlistBody({ profileId }: { profileId: string }) {
               typeof m.total_chapters === "number" && Number.isFinite(m.total_chapters)
                 ? m.total_chapters
                 : m.total_chapters != null && String(m.total_chapters).trim() !== ""
-                ? Number(m.total_chapters)
-                : null,
+                  ? Number(m.total_chapters)
+                  : null,
           };
         });
 
@@ -391,8 +391,8 @@ function WatchlistBody({ profileId }: { profileId: string }) {
               typeof c.chapter_number === "number" && Number.isFinite(c.chapter_number)
                 ? c.chapter_number
                 : c.chapter_number != null && String(c.chapter_number).trim() !== ""
-                ? Number(c.chapter_number)
-                : null,
+                  ? Number(c.chapter_number)
+                  : null,
           };
         });
 
@@ -406,8 +406,8 @@ function WatchlistBody({ profileId }: { profileId: string }) {
               typeof e.episode_number === "number" && Number.isFinite(e.episode_number)
                 ? e.episode_number
                 : e.episode_number != null && String(e.episode_number).trim() !== ""
-                ? Number(e.episode_number)
-                : null,
+                  ? Number(e.episode_number)
+                  : null,
           };
         });
 
@@ -514,7 +514,7 @@ function WatchlistBody({ profileId }: { profileId: string }) {
               parentId,
               slug: a.slug ?? null,
               posterUrl: a.image_url ?? null,
-              title: epNum != null ? `${baseTitle} — Episode ${epNum}` : `${baseTitle} — Episode`,
+              title: baseTitle,
               addedAt,
               stars: ratingAnime[parentId] ?? null,
               liked: likedAnime.has(parentId),
@@ -552,7 +552,7 @@ function WatchlistBody({ profileId }: { profileId: string }) {
               slug: m.slug ?? null,
               // ✅ prefer the computed chapter cover; fallback to series image_url
               posterUrl: chapterCover ?? m.image_url ?? null,
-              title: chNum != null ? `${baseTitle} — Chapter ${chNum}` : `${baseTitle} — Chapter`,
+              title: baseTitle,
               addedAt,
               stars: ratingManga[parentId] ?? null,
               liked: likedManga.has(parentId),
@@ -681,7 +681,7 @@ function WatchlistBody({ profileId }: { profileId: string }) {
             return (
               <Link key={`${it.kind}:${it.id}`} href={href} title={it.title} className="group block">
                 <div className="relative w-full aspect-[2/3] overflow-visible">
-                  <div className="relative w-full h-full overflow-hidden rounded-[4px] bg-slate-200 border border-black group-hover:border-slate-400 transition">
+                  <div className="relative w-full h-full overflow-hidden rounded-[4px] bg-slate-200 border-2 border-black group-hover:border-slate-400 transition">
                     {it.posterUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={it.posterUrl} alt={it.title} className="w-full h-full object-cover" />
@@ -709,7 +709,23 @@ function WatchlistBody({ profileId }: { profileId: string }) {
                 </div>
 
                 {/* label under poster so chapter cards are actually distinguishable */}
-                <div className="mt-2 text-[12px] leading-snug text-slate-900 line-clamp-2">{it.title}</div>
+                <div className="mt-1">
+                  {/* row 1: series title (bigger + bold) */}
+                  <div className="text-[13px] font-semibold leading-snug text-black line-clamp-1">
+                    {it.title}
+                  </div>
+
+                  {/* row 2: chapter/episode number (same size, now black) */}
+                  {it.kind === "manga_chapter" ? (
+                    <div className="text-[12px] leading-snug text-black">
+                      {it.chapterNumber != null ? `Chapter ${it.chapterNumber}` : "Chapter"}
+                    </div>
+                  ) : it.kind === "anime_episode" ? (
+                    <div className="text-[12px] leading-snug text-black">
+                      {it.episodeNumber != null ? `Episode ${it.episodeNumber}` : "Episode"}
+                    </div>
+                  ) : null}
+                </div>
               </Link>
             );
           })}
