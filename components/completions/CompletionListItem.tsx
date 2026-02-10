@@ -49,9 +49,9 @@ export default function CompletionListItem({ item, onSelect }: Props) {
 
         {/* text */}
         <div className="min-w-0 flex-1 text-left">
-          <div className="truncate text-sm font-semibold text-slate-900">{item.title}</div>
-          <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-600">
-            <span className="rounded-md border border-black/10 bg-white px-1.5 py-0.5">
+          <div className="truncate text-lg font-semibold text-slate-900">{item.title}</div>
+          <div className="mt-0.5 flex items-center gap-2 text-xs text-black">
+            <span className="rounded-md border border-black bg-white px-1.5 py-0.5">
               {item.kind === "manga" ? "Manga" : "Anime"}
             </span>
           </div>

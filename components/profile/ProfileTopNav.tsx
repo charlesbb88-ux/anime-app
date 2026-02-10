@@ -80,7 +80,7 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
   }, [currentTab]);
 
   return (
-    <div className="mb-6 border-b border-black pb-4">
+    <div className="mb-3 border-b border-black pb-4">
       <div className="flex items-start justify-between gap-6">
         {/* Left: avatar + username */}
         <div className="flex items-center gap-3 min-w-0">
