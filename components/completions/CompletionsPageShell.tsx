@@ -187,8 +187,16 @@ export default function CompletionsPageShell({ userId }: Props) {
     if (!q) return items;
 
     return items.filter((it) => {
-      const title = (it.title ?? "").toLowerCase();
-      return title.includes(q);
+      const titles = [
+        (it as any).title,
+        (it as any).title_english,
+        (it as any).title_native,
+        (it as any).title_preferred,
+      ]
+        .filter(Boolean)
+        .map((t: string) => t.toLowerCase());
+
+      return titles.some((t) => t.includes(q));
     });
   }, [items, filters.search]);
 
@@ -205,6 +213,9 @@ export default function CompletionsPageShell({ userId }: Props) {
       id: it.id,
       slug: it.slug,
       title: it.title,
+      title_english: (it as any).title_english ?? null,
+      title_native: (it as any).title_native ?? null,
+      title_preferred: (it as any).title_preferred ?? null,
       kind: it.kind,
       image_url: it.image_url ?? null,
     };

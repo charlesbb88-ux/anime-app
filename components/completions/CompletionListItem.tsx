@@ -20,6 +20,33 @@ function safeInt(v: unknown) {
     return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
 }
 
+function safeString(v: unknown) {
+    return typeof v === "string" ? v.trim() : "";
+}
+
+/**
+ * Deterministic display title for THIS list:
+ * 1) title_english
+ * 2) title
+ * 3) title_preferred
+ * 4) title_native
+ */
+function pickDisplayTitle(item: CompletionItem) {
+    const english = safeString((item as any).title_english);
+    if (english) return english;
+
+    const base = safeString(item.title);
+    if (base) return base;
+
+    const preferred = safeString((item as any).title_preferred);
+    if (preferred) return preferred;
+
+    const native = safeString((item as any).title_native);
+    if (native) return native;
+
+    return item.title ?? "";
+}
+
 export default function CompletionListItem({ item, onSelect }: Props) {
     // These now come directly from get_user_completions_with_stats
     const progressCurrent = safeInt((item as any).progress_current);
@@ -31,6 +58,8 @@ export default function CompletionListItem({ item, onSelect }: Props) {
     // Guard: avoid 0 total (your SQL should already enforce 1 for empty series, but this is extra safety)
     const totalForRings = progressTotal > 0 ? progressTotal : 1;
 
+    const displayTitle = pickDisplayTitle(item);
+
     return (
         <button type="button" onClick={() => onSelect(item)} className="w-full">
             <div className="flex items-center gap-3 rounded-xs border border-black bg-white px-3 py-2 hover:bg-slate-50 active:translate-y-[1px]">
@@ -40,7 +69,7 @@ export default function CompletionListItem({ item, onSelect }: Props) {
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                             src={item.image_url}
-                            alt={item.title}
+                            alt={displayTitle || item.title}
                             className="h-full w-full object-cover"
                             loading="lazy"
                         />
@@ -49,7 +78,8 @@ export default function CompletionListItem({ item, onSelect }: Props) {
 
                 {/* text */}
                 <div className="min-w-0 flex-1 text-left">
-                    <div className="truncate text-lg font-semibold text-slate-900">{item.title}</div>
+                    <div className="truncate text-lg font-semibold text-slate-900">{displayTitle}</div>
+
                     <div className="mt-0.5 flex items-center gap-2 text-xs text-black">
                         <span className="rounded-md border border-black bg-white px-1.5 py-0.5">
                             {item.kind === "manga" ? "Manga" : "Anime"}
@@ -57,7 +87,6 @@ export default function CompletionListItem({ item, onSelect }: Props) {
                     </div>
                 </div>
 
-                {/* mini rings (right side) */}
                 {/* mini rings (right side) */}
                 <div className="pointer-events-none flex shrink-0 items-center gap-2">
                     {/* progress */}
