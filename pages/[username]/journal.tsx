@@ -6,6 +6,8 @@ import type { NextPage } from "next";
 import Link from "next/link";
 import { Heart, MessageSquare } from "lucide-react";
 
+import ProfileJournalPhone from "@/components/profile/phone/ProfileJournalPhone";
+
 import ProfileLayout from "@/components/profile/ProfileLayout";
 
 import { supabase } from "@/lib/supabaseClient";
@@ -155,6 +157,31 @@ async function hydrateMediaForRows(rows: JournalEntryRow[]): Promise<MediaMaps> 
   return { animeById, mangaById, animeEpisodeById, mangaChapterById };
 }
 
+/* ---------------------- review -> post id map (for linking icon) ---------------------- */
+
+type ReviewPostMap = Record<string, string>; // review_id -> post_id
+
+async function hydratePostsForReviews(rows: JournalEntryRow[]): Promise<ReviewPostMap> {
+  const reviewIds = Array.from(new Set(rows.map((r) => r.review_id).filter(Boolean) as string[]));
+  if (!reviewIds.length) return {};
+
+  const { data, error } = await supabase.from("posts").select("id, review_id").in("review_id", reviewIds);
+
+  if (error) return {};
+
+  const map: ReviewPostMap = {};
+  for (const p of data ?? []) {
+    if (p?.review_id && p?.id) map[p.review_id] = p.id;
+  }
+  return map;
+}
+
+async function fetchPostIdForReviewId(reviewId: string): Promise<string | null> {
+  const { data, error } = await supabase.from("posts").select("id").eq("review_id", reviewId).limit(1).maybeSingle();
+  if (error) return null;
+  return data?.id ?? null;
+}
+
 /* ---------------------- rating UI ---------------------- */
 
 function clamp(n: number, min: number, max: number) {
@@ -181,6 +208,11 @@ function computeStarFillPercent(steps: number, starIndex: number) {
   return 0 as const;
 }
 
+/**
+ * NOTE: Star colors intentionally NOT inverted per request.
+ * - unfilled star stays text-zinc-700
+ * - filled star stays text-amber-300
+ */
 function StarVisual({
   filledPercent,
   disabled,
@@ -302,6 +334,11 @@ function JournalBody({ profileId }: { profileId: string }) {
     mangaChapterById: {},
   });
 
+  const [viewerId, setViewerId] = useState<string | null>(null);
+  const isOwner = viewerId != null && viewerId === profileId;
+
+  const [postIdByReviewId, setPostIdByReviewId] = useState<ReviewPostMap>({});
+
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [busyRow, setBusyRow] = useState<string | null>(null);
@@ -361,6 +398,16 @@ function JournalBody({ profileId }: { profileId: string }) {
     return { title, subtitle, year, posterUrl, href };
   }
 
+  function postHrefForReviewId(reviewId: string) {
+    const postId = postIdByReviewId[reviewId];
+    return postId ? `/posts/${postId}` : null;
+  }
+
+  async function loadViewer() {
+    const { data } = await supabase.auth.getUser();
+    setViewerId(data?.user?.id ?? null);
+  }
+
   async function loadInitial() {
     setLoading(true);
     setErrorMsg(null);
@@ -377,6 +424,9 @@ function JournalBody({ profileId }: { profileId: string }) {
     setRows(r);
     const hydrated = await hydrateMediaForRows(r);
     setMedia(hydrated);
+
+    const postMap = await hydratePostsForReviews(r);
+    setPostIdByReviewId(postMap);
 
     setLoading(false);
   }
@@ -403,6 +453,9 @@ function JournalBody({ profileId }: { profileId: string }) {
     const hydrated = await hydrateMediaForRows(combined);
     setMedia(hydrated);
 
+    const postMap = await hydratePostsForReviews(combined);
+    setPostIdByReviewId(postMap);
+
     setLoadingMore(false);
   }
 
@@ -417,8 +470,8 @@ function JournalBody({ profileId }: { profileId: string }) {
         animeEpisodeById: {},
         mangaChapterById: {},
       });
-
-      await loadInitial();
+      setPostIdByReviewId({});
+      await Promise.all([loadViewer(), loadInitial()]);
     })();
 
     return () => {
@@ -558,13 +611,21 @@ function JournalBody({ profileId }: { profileId: string }) {
       }
     }
 
+    const finalReviewId = (reviewId ?? reviewModal.reviewId ?? null) as string | null;
+
     patchRow(r.log_id, {
-      review_id: reviewId ?? reviewModal.reviewId ?? null,
+      review_id: finalReviewId,
       rating: reviewModal.rating,
       liked: reviewModal.authorLiked,
       contains_spoilers: reviewModal.containsSpoilers,
       visibility: reviewModal.visibility,
     });
+
+    // make the link work immediately after first save
+    if (finalReviewId && !postIdByReviewId[finalReviewId]) {
+      const postId = await fetchPostIdForReviewId(finalReviewId);
+      if (postId) setPostIdByReviewId((prev) => ({ ...prev, [finalReviewId]: postId }));
+    }
 
     setReviewModal((m) => ({ ...m, saving: false, open: false }));
   }
@@ -572,163 +633,208 @@ function JournalBody({ profileId }: { profileId: string }) {
   return (
     <>
       {errorMsg && (
-        <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+        <div className="mb-4 rounded-lg border border-red-600/30 bg-red-600/10 px-4 py-3 text-sm text-red-800">
           {errorMsg}
         </div>
       )}
 
-      {/* Table */}
-      <div className="overflow-hidden rounded-md border border-zinc-800/70 bg-black">
-        {/* header row */}
-        <div className="grid grid-cols-[56px_1fr_90px_140px_70px_70px] gap-0 border-b border-zinc-400 bg-zinc-950/40 px-4 py-3 text-xs text-zinc-400">
-          <div>DAY</div>
-          <div>TITLE</div>
-          <div className="text-center">YEAR</div>
-          <div className="text-center">RATING</div>
-          <div className="text-center">LIKE</div>
-          <div className="text-center">REVIEW</div>
-        </div>
+      {/* ✅ Desktop (unchanged layout; only review cell behavior) */}
+      <div className="hidden sm:block">
+        {/* Table */}
+        <div className="overflow-hidden rounded-md border border border-black bg-white">
+          {/* header row */}
+          <div className="grid grid-cols-[56px_1fr_90px_140px_70px_70px] gap-0 border-b border-black bg-zinc-50 px-4 py-3 text-xs text-zinc-600">
+            <div>DAY</div>
+            <div>TITLE</div>
+            <div className="text-center">YEAR</div>
+            <div className="text-center">RATING</div>
+            <div className="text-center">LIKE</div>
+            <div className="text-center">REVIEW</div>
+          </div>
 
-        {loading ? (
-          <div className="px-4 py-8 text-sm text-zinc-300">Loading…</div>
-        ) : rows.length === 0 ? (
-          <div className="px-4 py-8 text-sm text-zinc-300">No journal entries (or they’re private).</div>
-        ) : (
-          <div>
-            {groups.map((g) => (
-              <div key={g.key} className="border-b border-zinc-400 last:border-b-0">
-                <div className="px-4 py-3 text-xs font-semibold tracking-wide text-zinc-300">{g.label}</div>
+          {loading ? (
+            <div className="px-4 py-8 text-sm text-zinc-700">Loading…</div>
+          ) : rows.length === 0 ? (
+            <div className="px-4 py-8 text-sm text-zinc-700">No journal entries (or they’re private).</div>
+          ) : (
+            <div>
+              {groups.map((g) => (
+                <div key={g.key} className="border-b border-black last:border-b-0">
+                  <div className="px-4 py-3 text-xs font-semibold tracking-wide text-zinc-700">{g.label}</div>
 
-                {g.items.map((r) => {
-                  const d = new Date(r.logged_at);
-                  const day = dayNumber(d);
-                  const display = getDisplay(r);
-                  const isBusy = busyRow === r.log_id;
+                  {g.items.map((r) => {
+                    const d = new Date(r.logged_at);
+                    const day = dayNumber(d);
+                    const display = getDisplay(r);
+                    const isBusy = busyRow === r.log_id;
 
-                  return (
-                    <div
-                      key={`${r.kind}:${r.log_id}`}
-                      className="grid grid-cols-[56px_1fr_90px_140px_70px_70px] items-center gap-0 border-t border-zinc-400 px-4 py-3 text-sm text-zinc-100 hover:bg-zinc-900/40"
-                    >
-                      <div className="flex items-center justify-end pr-5">
-                        <div className="w-[2ch] text-right tabular-nums text-3xl font-semibold leading-none text-zinc-400">
-                          {day}
-                        </div>
-                      </div>
+                    const postHref = r.review_id ? postHrefForReviewId(r.review_id) : null;
 
-                      {/* title cell */}
-                      <div className="flex min-w-0 items-center gap-3">
-                        {display.posterUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={display.posterUrl}
-                            alt=""
-                            className="h-[84px] w-[56px] shrink-0 rounded object-cover ring-1 ring-zinc-800/70"
-                            loading="lazy"
-                          />
-                        ) : (
-                          <div className="h-[42px] w-[28px] rounded bg-zinc-900 ring-1 ring-zinc-800/70" />
-                        )}
-
-                        <div className="min-w-0">
-                          <div className="flex items-baseline gap-2">
-                            {display.href ? (
-                              <Link
-                                href={display.href}
-                                className="truncate text-xl font-bold text-zinc-100 hover:text-white hover:underline"
-                              >
-                                {display.title}
-                              </Link>
-                            ) : (
-                              <div className="truncate font-semibold text-zinc-100">{display.title}</div>
-                            )}
+                    return (
+                      <div
+                        key={`${r.kind}:${r.log_id}`}
+                        className="grid grid-cols-[56px_1fr_90px_140px_70px_70px] items-center gap-0 border-t border-black px-4 py-3 text-sm text-zinc-900 hover:bg-zinc-100"
+                      >
+                        <div className="flex items-center justify-end pr-5">
+                          <div className="w-[2ch] text-right tabular-nums text-3xl font-semibold leading-none text-zinc-600">
+                            {day}
                           </div>
-
-                          {display.subtitle ? (
-                            <div className="truncate text-lg font-bold text-white">{display.subtitle}</div>
-                          ) : null}
                         </div>
-                      </div>
 
-                      {/* year */}
-                      <div className="flex items-center justify-center text-lg text-zinc-400 leading-none">
-                        {typeof display.year === "number" ? display.year : null}
-                      </div>
+                        {/* title cell */}
+                        <div className="flex min-w-0 items-center gap-3">
+                          {display.posterUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={display.posterUrl}
+                              alt=""
+                              className="h-[84px] w-[56px] shrink-0 rounded object-cover ring-1 ring-zinc-200"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="h-[42px] w-[28px] rounded bg-zinc-100 ring-1 ring-zinc-200" />
+                          )}
 
-                      {/* rating */}
-                      <div className="flex items-center justify-center">
-                        <StarRating
-                          value={r.rating == null ? null : Math.round(Number(r.rating))}
-                          disabled={isBusy}
-                          onChange={(next) => onChangeRating(r, next)}
-                        />
-                      </div>
+                          <div className="min-w-0">
+                            <div className="flex items-baseline gap-2">
+                              {display.href ? (
+                                <Link
+                                  href={display.href}
+                                  className="truncate text-xl font-bold text-zinc-900 hover:text-black hover:underline"
+                                >
+                                  {display.title}
+                                </Link>
+                              ) : (
+                                <div className="truncate font-semibold text-zinc-900">{display.title}</div>
+                              )}
+                            </div>
 
-                      {/* like */}
-                      <div className="flex items-center justify-center">
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => onToggleLike(r)}
-                          className="inline-flex items-center justify-center rounded-md p-1 hover:bg-zinc-900/60 disabled:opacity-50"
-                          title="Like"
-                        >
-                          <Heart
-                            className={`h-5 w-5 ${r.liked ? "text-rose-400" : "text-zinc-600"}`}
-                            fill={r.liked ? "currentColor" : "none"}
+                            {display.subtitle ? (
+                              <div className="truncate text-lg font-bold text-zinc-900">{display.subtitle}</div>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        {/* year */}
+                        <div className="flex items-center justify-center text-lg leading-none text-zinc-600">
+                          {typeof display.year === "number" ? display.year : null}
+                        </div>
+
+                        {/* rating */}
+                        <div className="flex items-center justify-center">
+                          <StarRating
+                            value={r.rating == null ? null : Math.round(Number(r.rating))}
+                            disabled={isBusy}
+                            onChange={(next) => onChangeRating(r, next)}
                           />
-                        </button>
-                      </div>
+                        </div>
 
-                      {/* review column */}
-                      <div className="flex items-center justify-center">
-                        {r.review_id ? (
+                        {/* like */}
+                        <div className="flex items-center justify-center">
                           <button
                             type="button"
-                            onClick={() => openReviewEditor(r)}
-                            className="inline-flex items-center justify-center rounded-md p-1 hover:bg-zinc-900/60"
-                            title="Edit review"
+                            disabled={isBusy}
+                            onClick={() => onToggleLike(r)}
+                            className="inline-flex items-center justify-center rounded-md p-1 hover:bg-zinc-100 disabled:opacity-50"
+                            title="Like"
                           >
-                            <MessageSquare className="h-5 w-5 text-zinc-200" />
+                            <Heart
+                              className={`h-5 w-5 ${r.liked ? "text-rose-400" : "text-zinc-600"}`}
+                              fill={r.liked ? "currentColor" : "none"}
+                            />
                           </button>
-                        ) : (
-                          <div className="inline-flex items-center justify-center p-1" title="No review">
-                            <MessageSquare className="h-5 w-5 text-zinc-700" />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
+                        </div>
 
-            <div className="px-4 py-4">
-              <button
-                className="w-full rounded-lg border border-zinc-800/70 bg-zinc-950/40 py-2 text-sm text-zinc-200 hover:bg-zinc-900/50 disabled:opacity-50"
-                onClick={loadMore}
-                disabled={loadingMore || !cursor}
-              >
-                {loadingMore ? "Loading…" : "Load more"}
-              </button>
+                        {/* review column (icon position unchanged; Edit is absolute under it) */}
+                        <div className="flex items-center justify-center">
+                          <div className="relative h-[28px] w-[28px]">
+                            {r.review_id && postHref ? (
+                              <Link
+                                href={postHref}
+                                className="absolute inset-0 inline-flex items-center justify-center rounded-md p-1 hover:bg-zinc-100"
+                                title="Open review"
+                              >
+                                <MessageSquare className="h-5 w-5 text-zinc-700" />
+                              </Link>
+                            ) : r.review_id ? (
+                              // review exists but no post found yet — keep icon in same spot (still clickable to edit)
+                              <button
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() => openReviewEditor(r)}
+                                className="absolute inset-0 inline-flex items-center justify-center rounded-md p-1 hover:bg-zinc-100 disabled:opacity-50"
+                                title="Edit review"
+                              >
+                                <MessageSquare className="h-5 w-5 text-zinc-700" />
+                              </button>
+                            ) : (
+                              <div className="absolute inset-0 inline-flex items-center justify-center p-1" title="No review">
+                                <MessageSquare className="h-5 w-5 text-zinc-300" />
+                              </div>
+                            )}
+
+                            {isOwner && (
+                              <button
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() => openReviewEditor(r)}
+                                className="absolute left-1/2 top-full mt-1 -translate-x-1/2 rounded-md px-2 py-[3px] text-[11px] font-semibold text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+                                title="Edit review"
+                              >
+                                Edit
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+
+              <div className="px-4 py-4">
+                <button
+                  className="w-full rounded-lg border border-zinc-200 bg-zinc-50 py-2 text-sm text-zinc-800 hover:bg-zinc-100 disabled:opacity-50"
+                  onClick={loadMore}
+                  disabled={loadingMore || !cursor}
+                >
+                  {loadingMore ? "Loading…" : "Load more"}
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
+      </div>
+
+      {/* ✅ Phone (EXACTLY as you had it) */}
+      <div className="sm:hidden">
+        <ProfileJournalPhone
+          rows={rows}
+          media={media}
+          loading={loading}
+          loadingMore={loadingMore}
+          cursor={cursor}
+          busyRow={busyRow}
+          onLoadMore={loadMore}
+          onToggleLike={onToggleLike}
+          onChangeRating={onChangeRating}
+          onOpenReviewEditor={openReviewEditor}
+        />
       </div>
 
       {/* Review Modal */}
       {reviewModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4">
-          <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-zinc-800/70 bg-zinc-950 shadow-xl">
-            <div className="flex items-center justify-between border-b border-zinc-800/70 px-5 py-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 px-4">
+          <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-zinc-100">Review — {reviewModal.title}</div>
-                <div className="text-xs text-zinc-400">This review is tied to this specific log entry.</div>
+                <div className="truncate text-sm font-semibold text-zinc-900">Review — {reviewModal.title}</div>
+                <div className="text-xs text-zinc-600">This review is tied to this specific log entry.</div>
               </div>
 
               <button
                 type="button"
-                className="rounded-md px-2 py-1 text-sm text-zinc-300 hover:bg-zinc-900/60"
+                className="rounded-md px-2 py-1 text-sm text-zinc-700 hover:bg-zinc-100"
                 onClick={() => setReviewModal(newModalState())}
                 disabled={reviewModal.saving}
               >
@@ -738,16 +844,16 @@ function JournalBody({ profileId }: { profileId: string }) {
 
             <div className="space-y-4 px-5 py-4">
               {reviewModal.error && (
-                <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                <div className="rounded-lg border border-red-600/30 bg-red-600/10 px-4 py-3 text-sm text-red-800">
                   {reviewModal.error}
                 </div>
               )}
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="sm:col-span-1">
-                  <div className="mb-1 text-xs text-zinc-400">Visibility</div>
+                  <div className="mb-1 text-xs text-zinc-600">Visibility</div>
                   <select
-                    className="w-full rounded-md border border-zinc-800/70 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-100"
+                    className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
                     value={reviewModal.visibility}
                     onChange={(e) => setReviewModal((m) => ({ ...m, visibility: e.target.value as any }))}
                     disabled={reviewModal.saving}
@@ -759,8 +865,8 @@ function JournalBody({ profileId }: { profileId: string }) {
                 </div>
 
                 <div className="sm:col-span-1">
-                  <div className="mb-1 text-xs text-zinc-400">Spoilers</div>
-                  <label className="flex items-center gap-2 rounded-md border border-zinc-800/70 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-200">
+                  <div className="mb-1 text-xs text-zinc-600">Spoilers</div>
+                  <label className="flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800">
                     <input
                       type="checkbox"
                       checked={reviewModal.containsSpoilers}
@@ -772,8 +878,8 @@ function JournalBody({ profileId }: { profileId: string }) {
                 </div>
 
                 <div className="sm:col-span-1">
-                  <div className="mb-1 text-xs text-zinc-400">Rating</div>
-                  <div className="rounded-md border border-zinc-800/70 bg-zinc-950/40 px-2 py-2">
+                  <div className="mb-1 text-xs text-zinc-600">Rating</div>
+                  <div className="rounded-md border border-zinc-200 bg-white px-2 py-2">
                     <StarRating
                       value={reviewModal.rating}
                       disabled={reviewModal.saving}
@@ -784,8 +890,8 @@ function JournalBody({ profileId }: { profileId: string }) {
               </div>
 
               <div>
-                <div className="mb-1 text-xs text-zinc-400">Author liked</div>
-                <label className="flex items-center gap-2 rounded-md border border-zinc-800/70 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-200">
+                <div className="mb-1 text-xs text-zinc-600">Author liked</div>
+                <label className="flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800">
                   <input
                     type="checkbox"
                     checked={reviewModal.authorLiked}
@@ -797,9 +903,9 @@ function JournalBody({ profileId }: { profileId: string }) {
               </div>
 
               <div>
-                <div className="mb-1 text-xs text-zinc-400">Review</div>
+                <div className="mb-1 text-xs text-zinc-600">Review</div>
                 <textarea
-                  className="min-h-[180px] w-full resize-y rounded-md border border-zinc-800/70 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600"
+                  className="min-h-[180px] w-full resize-y rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-500"
                   placeholder="Write your review…"
                   value={reviewModal.content}
                   onChange={(e) => setReviewModal((m) => ({ ...m, content: e.target.value }))}
@@ -809,10 +915,10 @@ function JournalBody({ profileId }: { profileId: string }) {
               </div>
             </div>
 
-            <div className="flex items-center justify-between border-t border-zinc-800/70 px-5 py-4">
+            <div className="flex items-center justify-between border-t border-zinc-200 px-5 py-4">
               <button
                 type="button"
-                className="rounded-md border border-zinc-800/70 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-900/50 disabled:opacity-50"
+                className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800 hover:bg-zinc-100 disabled:opacity-50"
                 onClick={() => setReviewModal(newModalState())}
                 disabled={reviewModal.saving}
               >
@@ -821,7 +927,7 @@ function JournalBody({ profileId }: { profileId: string }) {
 
               <button
                 type="button"
-                className="rounded-md bg-zinc-100 px-4 py-2 text-sm font-semibold text-black hover:bg-white disabled:opacity-50"
+                className="rounded-md bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-900 disabled:opacity-50"
                 onClick={saveReviewFromModal}
                 disabled={reviewModal.saving}
               >
