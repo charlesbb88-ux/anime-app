@@ -2,8 +2,6 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CompletionsCarouselRow from "./CompletionsCarouselRow";
-import CompletionsCarouselRowLarge from "./CompletionsCarouselRowLarge";
-import CompletionsCarouselRowExtraLarge from "./CompletionsCarouselRowExtraLarge";
 import CompletionListItem from "./CompletionListItem";
 import { fetchUserCompletions, type CompletionItem, type CompletionCursor } from "@/lib/completions";
 import CompletionDetailsModal, { type CompletionDetails } from "./CompletionDetailsModal";
@@ -15,6 +13,8 @@ type Props = {
   userId: string;
 };
 
+type ViewMode = "carousel" | "list";
+
 function chunk<T>(arr: T[], size: number) {
   if (size <= 0) return [arr];
   const out: T[][] = [];
@@ -22,10 +22,6 @@ function chunk<T>(arr: T[], size: number) {
   return out;
 }
 
-type PosterSize = "small" | "large" | "xlarge";
-type ViewMode = "carousel" | "list";
-
-// keep your testing value; change back later
 const PAGE_SIZE = 60;
 
 function progressBounds(progress: ProgressFilter): { minPct: number | null; maxPct: number | null } {
@@ -43,6 +39,10 @@ function safeInt(v: unknown) {
   return Number.isFinite(n) ? Math.trunc(n) : 0;
 }
 
+function normalizeSearch(s: string) {
+  return (s ?? "").trim().toLowerCase();
+}
+
 export default function CompletionsPageShell({ userId }: Props) {
   const [items, setItems] = useState<CompletionItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,7 +50,6 @@ export default function CompletionsPageShell({ userId }: Props) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
-  const [posterSize, setPosterSize] = useState<PosterSize>("small");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
 
   const [filters, setFilters] = useState<CompletionsFilters>(DEFAULT_COMPLETIONS_FILTERS);
@@ -58,13 +57,11 @@ export default function CompletionsPageShell({ userId }: Props) {
   const [selected, setSelected] = useState<CompletionDetails | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
-  const rowLimit = posterSize === "small" ? 40 : posterSize === "large" ? 30 : 15;
+  // fixed carousel row size (normal posters only)
+  const rowLimit = 40;
 
-  // Turn the progress dropdown into server-side bounds
   const bounds = useMemo(() => progressBounds(filters.progress), [filters.progress]);
 
-  // Cursor derived from the last loaded item (keyset pagination)
-  // IMPORTANT: include pct so pct sort pagination is stable.
   const cursor: CompletionCursor | null = useMemo(() => {
     const last = items[items.length - 1];
     if (!last) return null;
@@ -77,7 +74,6 @@ export default function CompletionsPageShell({ userId }: Props) {
     };
   }, [items]);
 
-  // Load page 1 whenever userId or any server-side filter changes
   useEffect(() => {
     let cancelled = false;
 
@@ -114,6 +110,7 @@ export default function CompletionsPageShell({ userId }: Props) {
     return () => {
       cancelled = true;
     };
+    // NOTE: search is intentionally NOT here (client-side only)
   }, [userId, bounds.minPct, bounds.maxPct, filters.kind, filters.sort]);
 
   const loadMore = useCallback(async () => {
@@ -143,46 +140,27 @@ export default function CompletionsPageShell({ userId }: Props) {
 
       setHasMore(next.length === PAGE_SIZE);
     } catch {
-      // Don’t permanently flip hasMore=false on transient errors.
+      // transient errors: do nothing special
     } finally {
       setLoadingMore(false);
     }
-  }, [
-    bounds.minPct,
-    bounds.maxPct,
-    cursor,
-    filters.kind,
-    filters.sort,
-    hasMore,
-    loading,
-    loadingMore,
-    userId,
-  ]);
+  }, [bounds.minPct, bounds.maxPct, cursor, filters.kind, filters.sort, hasMore, loading, loadingMore, userId]);
 
-  // No client-side reshuffle: server already did kind/sort/progress paging correctly.
-  const visibleItems = items;
+  // Client-side search filter (safe: does not affect pagination/cursor)
+  const visibleItems = useMemo(() => {
+    const q = normalizeSearch(filters.search);
+    if (!q) return items;
+
+    return items.filter((it) => {
+      const title = (it.title ?? "").toLowerCase();
+      return title.includes(q);
+    });
+  }, [items, filters.search]);
 
   const rows = useMemo(() => chunk(visibleItems, rowLimit), [visibleItems, rowLimit]);
 
-  const RowComp =
-    posterSize === "small"
-      ? CompletionsCarouselRow
-      : posterSize === "large"
-        ? CompletionsCarouselRowLarge
-        : CompletionsCarouselRowExtraLarge;
-
-  function nextPosterSizeLabel(size: PosterSize) {
-    if (size === "small") return "Bigger posters";
-    if (size === "large") return "Extra big posters";
-    return "Smaller posters";
-  }
-
-  function cyclePosterSize() {
-    setPosterSize((s) => (s === "small" ? "large" : s === "large" ? "xlarge" : "small"));
-  }
-
   function toggleViewMode() {
-    setViewMode((m) => (m === "carousel" ? "list" : "carousel"));
+    setViewMode((m: ViewMode) => (m === "carousel" ? "list" : "carousel"));
   }
 
   function openDetails(it: CompletionItem) {
@@ -207,29 +185,15 @@ export default function CompletionsPageShell({ userId }: Props) {
 
   return (
     <div className="space-y-0">
-      {/* FILTER ROW + top right controls */}
       <div className="flex items-center justify-between gap-2 pb-2">
         <div />
         <div className="flex items-center gap-2">
-          <CompletionsFilterRow filters={filters} onChange={setFilters} />
-
-          <button
-            type="button"
-            onClick={toggleViewMode}
-            className="rounded-md border border-black bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 shadow-[0_1px_0_rgba(0,0,0,0.20)] hover:bg-slate-50 active:translate-y-[1px]"
-          >
-            {viewMode === "carousel" ? "List view" : "Carousel view"}
-          </button>
-
-          {viewMode === "carousel" ? (
-            <button
-              type="button"
-              onClick={cyclePosterSize}
-              className="rounded-md border border-black bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 shadow-[0_1px_0_rgba(0,0,0,0.20)] hover:bg-slate-50 active:translate-y-[1px]"
-            >
-              {nextPosterSizeLabel(posterSize)}
-            </button>
-          ) : null}
+          <CompletionsFilterRow
+            filters={filters}
+            onChange={setFilters}
+            viewMode={viewMode}
+            onToggleViewMode={toggleViewMode}
+          />
         </div>
       </div>
 
@@ -237,13 +201,14 @@ export default function CompletionsPageShell({ userId }: Props) {
         <div className="py-6 text-sm text-slate-600">Loading…</div>
       ) : items.length === 0 ? (
         <div className="py-6 text-sm text-slate-600">No completions yet.</div>
+      ) : !loading && items.length > 0 && visibleItems.length === 0 ? (
+        <div className="py-6 text-sm text-slate-600">No matches.</div>
       ) : null}
 
-      {/* VIEW: carousel */}
       {viewMode === "carousel" ? (
         <>
           {rows.map((rowItems, idx) => (
-            <RowComp
+            <CompletionsCarouselRow
               key={`completions-row-${idx}`}
               items={rowItems}
               onSelect={(it) => openDetails(it as CompletionItem)}
@@ -252,17 +217,11 @@ export default function CompletionsPageShell({ userId }: Props) {
         </>
       ) : null}
 
-      {/* VIEW: list */}
       {viewMode === "list" ? (
         <>
           <div className="space-y-2 pb-2">
             {visibleItems.map((it) => (
-              <CompletionListItem
-                key={`${it.kind}:${it.id}`}
-                item={it}
-                userId={userId}
-                onSelect={openDetails}
-              />
+              <CompletionListItem key={`${it.kind}:${it.id}`} item={it} userId={userId} onSelect={openDetails} />
             ))}
           </div>
 
@@ -280,13 +239,7 @@ export default function CompletionsPageShell({ userId }: Props) {
   );
 }
 
-function InfiniteSentinel({
-  onVisible,
-  disabled,
-}: {
-  onVisible: () => void;
-  disabled?: boolean;
-}) {
+function InfiniteSentinel({ onVisible, disabled }: { onVisible: () => void; disabled?: boolean }) {
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {

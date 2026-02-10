@@ -18,8 +18,8 @@ export type ProgressFilter =
   | "0-9";
 
 export const PROGRESS_FILTER_OPTIONS: { value: ProgressFilter; label: string }[] = [
-  { value: "all", label: "All progress" },
-  { value: "100", label: "100% done" },
+  { value: "all", label: "Any %" },
+  { value: "100", label: "100%" },
   { value: "90-99", label: "90–99%" },
   { value: "80-89", label: "80–89%" },
   { value: "70-79", label: "70–79%" },
@@ -37,9 +37,9 @@ export const PROGRESS_FILTER_OPTIONS: { value: ProgressFilter; label: string }[]
 export type KindFilter = "all" | "anime" | "manga";
 
 export const KIND_FILTER_OPTIONS: { value: KindFilter; label: string }[] = [
-  { value: "all", label: "All types" },
-  { value: "anime", label: "Anime only" },
-  { value: "manga", label: "Manga only" },
+  { value: "all", label: "Anime + Manga" },
+  { value: "anime", label: "Anime" },
+  { value: "manga", label: "Manga" },
 ];
 
 /* -------------------- Sort filter -------------------- */
@@ -47,20 +47,22 @@ export const KIND_FILTER_OPTIONS: { value: KindFilter; label: string }[] = [
 export type SortFilter = "last_logged" | "pct_desc" | "pct_asc";
 
 export const SORT_FILTER_OPTIONS: { value: SortFilter; label: string }[] = [
-  { value: "last_logged", label: "Sort: Last logged" },
-  { value: "pct_desc", label: "Sort: Most complete" },
-  { value: "pct_asc", label: "Sort: Least complete" },
+  { value: "last_logged", label: "Recent" },
+  { value: "pct_desc", label: "High %" },
+  { value: "pct_asc", label: "Low %" },
 ];
 
 /* -------------------- Filters model -------------------- */
 
 export type CompletionsFilters = {
+  search: string; // NEW
   progress: ProgressFilter;
   kind: KindFilter;
   sort: SortFilter;
 };
 
 export const DEFAULT_COMPLETIONS_FILTERS: CompletionsFilters = {
+  search: "", // NEW
   progress: "all",
   kind: "all",
   sort: "last_logged",
@@ -84,7 +86,6 @@ function timeMsOrNull(it: CompletionItem) {
  * - We want descending by default for "id key" so results don't flip randomly.
  */
 function keyOf(it: CompletionItem) {
-  // kind then id is fine; id is uuid so stable
   return `${it.kind}:${it.id}`;
 }
 
@@ -92,10 +93,23 @@ function compareKeyDesc(a: CompletionItem, b: CompletionItem) {
   return keyOf(b).localeCompare(keyOf(a));
 }
 
+function normalizeSearch(s: string) {
+  return (s ?? "").trim().toLowerCase();
+}
+
 /* -------------------- Implementation -------------------- */
 
 export function applyCompletionsFilters(items: CompletionItem[], filters: CompletionsFilters) {
   let out = items;
+
+  // 0) search (client-side)
+  const q = normalizeSearch(filters.search);
+  if (q) {
+    out = out.filter((it) => {
+      const title = (it.title ?? "").toLowerCase();
+      return title.includes(q);
+    });
+  }
 
   // 1) kind
   if (filters.kind !== "all") {
@@ -128,11 +142,10 @@ export function applyCompletionsFilters(items: CompletionItem[], filters: Comple
       const d = pctOf(b) - pctOf(a);
       if (d !== 0) return d;
 
-      // secondary: last_logged desc (real dates first)
       const ta = timeMsOrNull(a);
       const tb = timeMsOrNull(b);
       if (ta !== tb) {
-        if (ta === null) return 1;  // null goes last
+        if (ta === null) return 1;
         if (tb === null) return -1;
         return tb - ta;
       }
@@ -146,7 +159,6 @@ export function applyCompletionsFilters(items: CompletionItem[], filters: Comple
       const d = pctOf(a) - pctOf(b);
       if (d !== 0) return d;
 
-      // secondary: last_logged desc (still show recently touched first within same pct)
       const ta = timeMsOrNull(a);
       const tb = timeMsOrNull(b);
       if (ta !== tb) {
@@ -164,14 +176,12 @@ export function applyCompletionsFilters(items: CompletionItem[], filters: Comple
     const ta = timeMsOrNull(a);
     const tb = timeMsOrNull(b);
 
-    // real dates first, nulls last
     if (ta !== tb) {
       if (ta === null) return 1;
       if (tb === null) return -1;
-      return tb - ta; // desc
+      return tb - ta;
     }
 
-    // secondary: pct desc (optional but feels good)
     const d = pctOf(b) - pctOf(a);
     if (d !== 0) return d;
 

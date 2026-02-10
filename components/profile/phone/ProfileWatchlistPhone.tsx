@@ -28,7 +28,6 @@ export default function ProfileWatchlistPhone({
 }) {
     return (
         <>
-            <div className="-mt-4"></div>
             <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                     <h2 className="text-xs font-semibold tracking-wide text-slate-900 uppercase">
