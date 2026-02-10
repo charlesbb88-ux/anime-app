@@ -3,7 +3,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CompletionsCarouselRow from "./CompletionsCarouselRow";
 import CompletionListItem from "./CompletionListItem";
-import { fetchUserCompletions, type CompletionItem, type CompletionCursor } from "@/lib/completions";
+import {
+  fetchCompletionBucketCounts,
+  fetchUserCompletions,
+  type CompletionCursor,
+  type CompletionItem,
+  type ProgressBucket,
+} from "@/lib/completions";
 import CompletionDetailsModal, { type CompletionDetails } from "./CompletionDetailsModal";
 
 import CompletionsFilterRow from "./CompletionsFilterRow";
@@ -73,6 +79,35 @@ export default function CompletionsPageShell({ userId }: Props) {
       pct: safeInt(last.progress_pct),
     };
   }, [items]);
+
+  // ✅ Step 3 — Store counts in CompletionsPageShell and pass to the filter row
+  const [bucketCounts, setBucketCounts] = useState<Record<string, ProgressBucket>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function run() {
+      try {
+        const rows = await fetchCompletionBucketCounts({
+          userId,
+          kind: filters.kind,
+          search: filters.search,
+        });
+        if (cancelled) return;
+
+        const map: Record<string, ProgressBucket> = {};
+        for (const r of rows) map[r.bucket] = r;
+        setBucketCounts(map);
+      } catch {
+        if (!cancelled) setBucketCounts({});
+      }
+    }
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, filters.kind, filters.search]);
 
   useEffect(() => {
     let cancelled = false;
@@ -185,14 +220,14 @@ export default function CompletionsPageShell({ userId }: Props) {
 
   return (
     <div className="space-y-0">
-      <div className="flex items-center justify-between gap-2 pb-2">
-        <div />
-        <div className="flex items-center gap-2">
+      <div className="pb-2">
+        <div className="flex justify-center">
           <CompletionsFilterRow
             filters={filters}
             onChange={setFilters}
             viewMode={viewMode}
             onToggleViewMode={toggleViewMode}
+            bucketCounts={bucketCounts}
           />
         </div>
       </div>
@@ -219,7 +254,7 @@ export default function CompletionsPageShell({ userId }: Props) {
 
       {viewMode === "list" ? (
         <>
-          <div className="space-y-2 pb-2">
+          <div className="space-y-1.5 pb-2">
             {visibleItems.map((it) => (
               <CompletionListItem key={`${it.kind}:${it.id}`} item={it} userId={userId} onSelect={openDetails} />
             ))}
@@ -228,9 +263,6 @@ export default function CompletionsPageShell({ userId }: Props) {
           <InfiniteSentinel disabled={!hasMore || loading || loadingMore} onVisible={loadMore} />
 
           {loadingMore ? <div className="py-4 text-xs text-slate-600">Loading more…</div> : null}
-          {!loading && !loadingMore && visibleItems.length > 0 && !hasMore ? (
-            <div className="py-4 text-xs text-slate-500">That’s everything.</div>
-          ) : null}
         </>
       ) : null}
 
