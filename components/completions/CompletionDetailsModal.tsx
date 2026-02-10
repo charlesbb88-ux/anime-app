@@ -10,7 +10,13 @@ type CompletionKind = "anime" | "manga";
 export type CompletionDetails = {
   id: string;
   slug: string | null;
+
+  // base title + optional variants
   title: string;
+  title_english?: string | null;
+  title_native?: string | null;
+  title_preferred?: string | null;
+
   kind: CompletionKind;
   image_url?: string | null;
 };
@@ -51,6 +57,24 @@ const RING_FILLED_RATED = "#EF4444"; // red (rated)
 function safeNum(v: unknown) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+function safeString(v: unknown) {
+  return typeof v === "string" ? v.trim() : "";
+}
+
+/**
+ * Match what you just decided for the list:
+ * English-first, then fallbacks.
+ */
+function displayTitle(it: CompletionDetails) {
+  return (
+    safeString(it.title_english) ||
+    safeString(it.title) ||
+    safeString(it.title_preferred) ||
+    safeString(it.title_native) ||
+    it.title
+  );
 }
 
 async function fetchProgress(params: { userId: string; id: string; kind: CompletionKind }) {
@@ -221,6 +245,8 @@ export default function CompletionDetailsModal({ open, item, onClose, userId }: 
   if (!open || !item) return null;
 
   const it = item;
+  const title = displayTitle(it);
+
   const unit = it.kind === "manga" ? "chapter entries" : "episodes";
 
   const seriesHref = it.slug ? (it.kind === "manga" ? `/manga/${it.slug}` : `/anime/${it.slug}`) : null;
@@ -298,6 +324,7 @@ export default function CompletionDetailsModal({ open, item, onClose, userId }: 
           <div className="h-[calc(100%-52px)] overflow-y-auto overflow-x-hidden scrollbar-none">
             <ModalBody
               it={it}
+              displayTitle={title}
               seriesHref={seriesHref}
               progress={progress}
               engagement={engagement}
@@ -333,6 +360,7 @@ export default function CompletionDetailsModal({ open, item, onClose, userId }: 
             <div className="h-[calc(100%-52px)] overflow-y-auto overflow-x-hidden scrollbar-none">
               <ModalBody
                 it={it}
+                displayTitle={title}
                 seriesHref={seriesHref}
                 progress={progress}
                 engagement={engagement}
@@ -408,6 +436,7 @@ function Header({
 /** Shared body so mobile + desktop are literally identical inside */
 function ModalBody({
   it,
+  displayTitle,
   seriesHref,
   progress,
   engagement,
@@ -423,6 +452,7 @@ function ModalBody({
   progressCenterLabel,
 }: {
   it: CompletionDetails;
+  displayTitle: string;
   seriesHref: string | null;
   progress: ProgressState;
   engagement: EngagementState;
@@ -452,17 +482,17 @@ function ModalBody({
             <div className="relative aspect-[2/3] w-full overflow-hidden rounded-xl border border-black bg-slate-200">
               {it.image_url ? (
                 seriesHref ? (
-                  <Link href={seriesHref} className="absolute inset-0 block" aria-label={`Open ${it.title}`}>
+                  <Link href={seriesHref} className="absolute inset-0 block" aria-label={`Open ${displayTitle}`}>
                     <img
                       src={it.image_url}
-                      alt={it.title}
+                      alt={displayTitle}
                       className="absolute inset-0 h-full w-full object-cover transition-transform duration-150 hover:scale-[1.02]"
                       draggable={false}
                     />
                     <div className="absolute inset-0 ring-0 ring-black/0 hover:ring-2 hover:ring-black/20" />
                   </Link>
                 ) : (
-                  <img src={it.image_url} alt={it.title} className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+                  <img src={it.image_url} alt={displayTitle} className="absolute inset-0 h-full w-full object-cover" draggable={false} />
                 )
               ) : null}
             </div>
@@ -471,7 +501,7 @@ function ModalBody({
           {/* right: title + (progress ring) */}
           <div className="min-w-0 flex flex-col gap-6">
             <div>
-              <div className="text-base font-bold text-slate-900 leading-tight line-clamp-3">{it.title}</div>
+              <div className="text-base font-bold text-slate-900 leading-tight line-clamp-3">{displayTitle}</div>
 
               {progress.status === "loading" ? (
                 <div className="mt-1 text-xs text-slate-500">Loading progress…</div>
@@ -612,13 +642,7 @@ function ModalBody({
                 current={Math.max(0, current)}
                 reviewed={Math.max(0, reviewed)}
                 rated={Math.max(0, rated)}
-                hrefBase={
-                  seriesHref
-                    ? it.kind === "manga"
-                      ? `${seriesHref}/chapter/`
-                      : `${seriesHref}/episode/`
-                    : null
-                }
+                hrefBase={seriesHref ? (it.kind === "manga" ? `${seriesHref}/chapter/` : `${seriesHref}/episode/`) : null}
                 label={it.kind === "manga" ? "Chapters" : "Episodes"}
                 initialBatch={30}
                 batchSize={30}
@@ -630,7 +654,6 @@ function ModalBody({
             )}
           </div>
         </div>
-
 
         {/* If total is unknown (progress not ready), make that obvious */}
         {progress.status !== "ready" ? (

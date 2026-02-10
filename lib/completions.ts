@@ -1,5 +1,8 @@
 import { supabase } from "@/lib/supabaseClient";
 
+/**
+ * RPC: get_user_completion_progress_bucket_counts
+ */
 export type ProgressBucket = {
   bucket: string; // "all" | "100" | "90-99" | ...
   anime_count: number;
@@ -22,24 +25,39 @@ export async function fetchCompletionBucketCounts(params: {
   return (data ?? []) as ProgressBucket[];
 }
 
+/**
+ * RPC: get_user_completions_with_stats
+ */
+export type CompletionKind = "all" | "anime" | "manga";
+export type CompletionSort = "last_logged" | "pct_desc" | "pct_asc";
+
 export type CompletionItem = {
+  // titles (so client-side search can match any language)
+  title_english: string | null;
+  title_native: string | null;
+  title_preferred: string | null;
+
+  // identity
   kind: "anime" | "manga";
   id: string;
+  slug: string | null;
+
+  // display
   title: string;
   image_url: string | null;
-  slug: string | null;
-  last_logged_at: string | null;
 
-  progress_current: number;
-  progress_total: number;
+  // sorting/pagination
+  last_logged_at: string | null;
   progress_pct: number;
 
+  // ring numerators/denominators
+  progress_current: number;
+  progress_total: number;
+
+  // engagement rings
   reviewed_count: number;
   rated_count: number;
 };
-
-export type CompletionSort = "last_logged" | "pct_desc" | "pct_asc";
-export type CompletionKind = "all" | "anime" | "manga";
 
 export type CompletionCursor = {
   last_logged_at: string | null;
@@ -57,7 +75,7 @@ export async function fetchUserCompletions(args: {
   minPct?: number | null;
   maxPct?: number | null;
 
-  // new server-side filters/sort
+  // server-side filters/sort
   kind?: CompletionKind;
   sort?: CompletionSort;
 }) {
