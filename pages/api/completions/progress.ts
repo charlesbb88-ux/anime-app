@@ -115,7 +115,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         });
       }
 
-      return res.status(200).json({ current: logged.count, total: total.count });
+      const currentRaw = logged.count;
+      const totalRaw = total.count;
+
+      const adjustedCurrent = totalRaw === 0 ? 1 : currentRaw;
+      const adjustedTotal = totalRaw === 0 ? 1 : totalRaw;
+
+      return res.status(200).json({ current: adjustedCurrent, total: adjustedTotal });
     }
 
     // manga
@@ -144,7 +150,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       });
     }
 
-    return res.status(200).json({ current: logged.count, total: total.count });
+    const currentRaw = logged.count;
+    const totalRaw = total.count;
+
+    const adjustedCurrent = totalRaw === 0 ? 1 : currentRaw;
+    const adjustedTotal = totalRaw === 0 ? 1 : totalRaw;
+
+    return res.status(200).json({ current: adjustedCurrent, total: adjustedTotal });
   } catch (e: any) {
     return res.status(500).json({
       error: "Failed to compute progress (unexpected throw)",

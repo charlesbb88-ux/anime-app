@@ -337,6 +337,8 @@ function JournalBody({ profileId }: { profileId: string }) {
   const [viewerId, setViewerId] = useState<string | null>(null);
   const isOwner = viewerId != null && viewerId === profileId;
 
+  const reviews_locked = true; // set to true to temporarily disable review editing
+
   const [postIdByReviewId, setPostIdByReviewId] = useState<ReviewPostMap>({});
 
   const [loading, setLoading] = useState(true);
@@ -527,6 +529,27 @@ function JournalBody({ profileId }: { profileId: string }) {
   }
 
   async function openReviewEditor(r: JournalEntryRow) {
+    if (reviews_locked) {
+      const display = getDisplay(r);
+
+      setReviewModal({
+        ...newModalState(),
+        open: true,
+        saving: false,
+        error: "Editing reviews is not allowed right now.",
+        log: r,
+        title: display.title,
+
+        reviewId: r.review_id ?? null,
+        rating: r.rating == null ? null : Math.round(Number(r.rating)),
+        containsSpoilers: Boolean(r.contains_spoilers),
+        visibility: r.visibility ?? "public",
+        authorLiked: Boolean(r.liked),
+        content: "",
+      });
+
+      return;
+    }
     const display = getDisplay(r);
 
     setReviewModal({

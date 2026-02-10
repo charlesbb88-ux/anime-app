@@ -8,6 +8,14 @@ import CompletionListItem from "./CompletionListItem";
 import { fetchUserCompletions, type CompletionItem } from "@/lib/completions";
 import CompletionDetailsModal, { type CompletionDetails } from "./CompletionDetailsModal";
 
+import CompletionsFilterRow from "./CompletionsFilterRow";
+import {
+  applyCompletionsFilters,
+  DEFAULT_COMPLETIONS_FILTERS,
+  type CompletionsFilters,
+  type ProgressByKey,
+} from "./completionsFilters";
+
 type Props = {
   userId: string;
 };
@@ -26,8 +34,15 @@ export default function CompletionsPageShell({ userId }: Props) {
   const [items, setItems] = useState<CompletionItem[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // NEW: batch progress state
+  const [progressByKey, setProgressByKey] = useState<ProgressByKey>({});
+
+  const [progressLoading, setProgressLoading] = useState(false);
+
   const [posterSize, setPosterSize] = useState<PosterSize>("small");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
+
+  const [filters, setFilters] = useState<CompletionsFilters>(DEFAULT_COMPLETIONS_FILTERS);
 
   const [selected, setSelected] = useState<CompletionDetails | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -55,7 +70,53 @@ export default function CompletionsPageShell({ userId }: Props) {
     };
   }, [userId]);
 
-  const rows = useMemo(() => chunk(items, rowLimit), [items, rowLimit]);
+  // NEW: after items load, fetch progress-batch once
+  useEffect(() => {
+    let cancelled = false;
+
+    async function run() {
+      if (items.length === 0) {
+        setProgressByKey({});
+        return;
+      }
+
+      setProgressLoading(true);
+      try {
+        const resp = await fetch("/api/completions/progress-batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({
+            userId,
+            items: items.map((it) => ({ id: it.id, kind: it.kind })),
+          }),
+        });
+
+        if (!resp.ok) throw new Error(String(resp.status));
+
+        const data = (await resp.json()) as {
+          byKey: Record<string, { current: number; total: number; pct: number | null }>;
+        };
+        if (!cancelled) setProgressByKey(data.byKey ?? {});
+      } catch {
+        if (!cancelled) setProgressByKey({});
+      } finally {
+        if (!cancelled) setProgressLoading(false);
+      }
+    }
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [items, userId]);
+
+  const filteredItems = useMemo(
+    () => applyCompletionsFilters(items, filters, progressByKey),
+    [items, filters, progressByKey]
+  );
+
+  const rows = useMemo(() => chunk(filteredItems, rowLimit), [filteredItems, rowLimit]);
 
   const RowComp =
     posterSize === "small"
@@ -79,7 +140,6 @@ export default function CompletionsPageShell({ userId }: Props) {
   }
 
   function openDetails(it: CompletionItem) {
-    // If slug is missing, don't open a broken modal.
     if (!it.slug) return;
 
     const mapped: CompletionDetails = {
@@ -101,42 +161,45 @@ export default function CompletionsPageShell({ userId }: Props) {
 
   return (
     <div className="space-y-0">
-      {/* top right controls */}
-      <div className="flex items-center justify-end gap-2 pb-2">
-        <button
-          type="button"
-          onClick={toggleViewMode}
-          className="rounded-md border border-black bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 shadow-[0_1px_0_rgba(0,0,0,0.20)] hover:bg-slate-50 active:translate-y-[1px]"
-        >
-          {viewMode === "carousel" ? "List view" : "Carousel view"}
-        </button>
+      {/* FILTER ROW + top right controls */}
+      <div className="flex items-center justify-between gap-2 pb-2">
+        <div />
+        <div className="flex items-center gap-2">
+          <CompletionsFilterRow filters={filters} onChange={setFilters} />
 
-        {viewMode === "carousel" ? (
           <button
             type="button"
-            onClick={cyclePosterSize}
+            onClick={toggleViewMode}
             className="rounded-md border border-black bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 shadow-[0_1px_0_rgba(0,0,0,0.20)] hover:bg-slate-50 active:translate-y-[1px]"
           >
-            {nextPosterSizeLabel(posterSize)}
+            {viewMode === "carousel" ? "List view" : "Carousel view"}
           </button>
-        ) : null}
+
+          {viewMode === "carousel" ? (
+            <button
+              type="button"
+              onClick={cyclePosterSize}
+              className="rounded-md border border-black bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 shadow-[0_1px_0_rgba(0,0,0,0.20)] hover:bg-slate-50 active:translate-y-[1px]"
+            >
+              {nextPosterSizeLabel(posterSize)}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {loading ? (
         <div className="py-6 text-sm text-slate-600">Loading…</div>
       ) : items.length === 0 ? (
         <div className="py-6 text-sm text-slate-600">No completions yet.</div>
+      ) : filteredItems.length === 0 ? (
+        <div className="py-6 text-sm text-slate-600">No titles match those filters.</div>
       ) : null}
 
       {/* VIEW: carousel */}
       {viewMode === "carousel" ? (
         <>
           {rows.map((rowItems, idx) => (
-            <RowComp
-              key={`completions-row-${idx}`}
-              items={rowItems}
-              onSelect={(it) => openDetails(it as CompletionItem)}
-            />
+            <RowComp key={`completions-row-${idx}`} items={rowItems} onSelect={(it) => openDetails(it as CompletionItem)} />
           ))}
         </>
       ) : null}
@@ -144,23 +207,21 @@ export default function CompletionsPageShell({ userId }: Props) {
       {/* VIEW: list */}
       {viewMode === "list" ? (
         <div className="space-y-2 pb-2">
-          {items.map((it) => (
+          {filteredItems.map((it) => (
             <CompletionListItem
               key={it.id}
               item={it}
               userId={userId}
               onSelect={(x) => openDetails(x)}
+            // NOTE: progressByKey/progressLoading are now available in the shell if you want to thread them down next.
+            // progress={progressByKey[`${it.kind}:${it.id}`]}
+            // progressLoading={progressLoading}
             />
           ))}
         </div>
       ) : null}
 
-      <CompletionDetailsModal
-        open={modalOpen}
-        item={selected}
-        onClose={closeDetails}
-        userId={userId}
-      />
+      <CompletionDetailsModal open={modalOpen} item={selected} onClose={closeDetails} userId={userId} />
     </div>
   );
 }
