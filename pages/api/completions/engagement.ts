@@ -10,6 +10,26 @@ function asStr(v: unknown): string | null {
   return s.length ? s : null;
 }
 
+async function countTotalEpisodesOrChapters(params: { kind: CompletionKind; id: string }) {
+  if (params.kind === "anime") {
+    const { count, error } = await supabaseAdmin
+      .from("anime_episodes")
+      .select("id", { count: "exact", head: true })
+      .eq("anime_id", params.id);
+
+    if (error) throw error;
+    return count ?? 0;
+  }
+
+  const { count, error } = await supabaseAdmin
+    .from("manga_chapters")
+    .select("id", { count: "exact", head: true })
+    .eq("manga_id", params.id);
+
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     if (req.method !== "GET") {
@@ -24,6 +44,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!userId || !id || (kind !== "anime" && kind !== "manga")) {
       return res.status(400).json({ error: "Missing/invalid userId, id, or kind" });
     }
+
+    // NEW: total eps/chapters for the series
+    const total = await countTotalEpisodesOrChapters({ kind, id });
 
     // --- REVIEWED count (episodes/chapters with a review row)
     // NOTE: counts EPISODE/CHAPTER reviews only (episode_id/chapter_id must be not null)
@@ -77,6 +100,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       if (error) throw error;
       rated = count ?? 0;
+    }
+
+    // NEW RULE:
+    // If there are no episodes/chapters in the database (total === 0),
+    // but this series appears in completions (meaning it has series-level logging),
+    // treat reviewed and rated as 1/1.
+    if (total === 0) {
+      reviewed = 1;
+      rated = 1;
     }
 
     return res.status(200).json({ reviewed, rated });
