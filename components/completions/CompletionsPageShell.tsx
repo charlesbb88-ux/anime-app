@@ -1,20 +1,15 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CompletionsCarouselRow from "./CompletionsCarouselRow";
 import CompletionsCarouselRowLarge from "./CompletionsCarouselRowLarge";
 import CompletionsCarouselRowExtraLarge from "./CompletionsCarouselRowExtraLarge";
 import CompletionListItem from "./CompletionListItem";
-import { fetchUserCompletions, type CompletionItem } from "@/lib/completions";
+import { fetchUserCompletions, type CompletionItem, type CompletionCursor } from "@/lib/completions";
 import CompletionDetailsModal, { type CompletionDetails } from "./CompletionDetailsModal";
 
 import CompletionsFilterRow from "./CompletionsFilterRow";
-import {
-  applyCompletionsFilters,
-  DEFAULT_COMPLETIONS_FILTERS,
-  type CompletionsFilters,
-  type ProgressByKey,
-} from "./completionsFilters";
+import { DEFAULT_COMPLETIONS_FILTERS, type CompletionsFilters, type ProgressFilter } from "./completionsFilters";
 
 type Props = {
   userId: string;
@@ -30,14 +25,30 @@ function chunk<T>(arr: T[], size: number) {
 type PosterSize = "small" | "large" | "xlarge";
 type ViewMode = "carousel" | "list";
 
+// keep your testing value; change back later
+const PAGE_SIZE = 60;
+
+function progressBounds(progress: ProgressFilter): { minPct: number | null; maxPct: number | null } {
+  if (!progress || progress === "all") return { minPct: null, maxPct: null };
+  if (progress === "100") return { minPct: 100, maxPct: 100 };
+
+  const m = /^(\d+)-(\d+)$/.exec(progress);
+  if (!m) return { minPct: null, maxPct: null };
+
+  return { minPct: Number(m[1]), maxPct: Number(m[2]) };
+}
+
+function safeInt(v: unknown) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.trunc(n) : 0;
+}
+
 export default function CompletionsPageShell({ userId }: Props) {
   const [items, setItems] = useState<CompletionItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // NEW: batch progress state
-  const [progressByKey, setProgressByKey] = useState<ProgressByKey>({});
-
-  const [progressLoading, setProgressLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
 
   const [posterSize, setPosterSize] = useState<PosterSize>("small");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -49,16 +60,51 @@ export default function CompletionsPageShell({ userId }: Props) {
 
   const rowLimit = posterSize === "small" ? 40 : posterSize === "large" ? 30 : 15;
 
+  // Turn the progress dropdown into server-side bounds
+  const bounds = useMemo(() => progressBounds(filters.progress), [filters.progress]);
+
+  // Cursor derived from the last loaded item (keyset pagination)
+  // IMPORTANT: include pct so pct sort pagination is stable.
+  const cursor: CompletionCursor | null = useMemo(() => {
+    const last = items[items.length - 1];
+    if (!last) return null;
+
+    return {
+      last_logged_at: last.last_logged_at,
+      kind: last.kind,
+      id: last.id,
+      pct: safeInt(last.progress_pct),
+    };
+  }, [items]);
+
+  // Load page 1 whenever userId or any server-side filter changes
   useEffect(() => {
     let cancelled = false;
 
     async function run() {
       setLoading(true);
+      setLoadingMore(false);
+      setHasMore(true);
+
       try {
-        const data = await fetchUserCompletions(userId);
-        if (!cancelled) setItems(data);
+        const first = await fetchUserCompletions({
+          userId,
+          limit: PAGE_SIZE,
+          cursor: null,
+          minPct: bounds.minPct,
+          maxPct: bounds.maxPct,
+          kind: filters.kind,
+          sort: filters.sort,
+        });
+
+        if (cancelled) return;
+
+        setItems(first);
+        setHasMore(first.length === PAGE_SIZE);
       } catch {
-        if (!cancelled) setItems([]);
+        if (cancelled) return;
+        setItems([]);
+        setHasMore(false);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -68,55 +114,55 @@ export default function CompletionsPageShell({ userId }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [userId, bounds.minPct, bounds.maxPct, filters.kind, filters.sort]);
 
-  // NEW: after items load, fetch progress-batch once
-  useEffect(() => {
-    let cancelled = false;
+  const loadMore = useCallback(async () => {
+    if (loading || loadingMore || !hasMore) return;
 
-    async function run() {
-      if (items.length === 0) {
-        setProgressByKey({});
-        return;
-      }
+    setLoadingMore(true);
+    try {
+      const next = await fetchUserCompletions({
+        userId,
+        limit: PAGE_SIZE,
+        cursor,
+        minPct: bounds.minPct,
+        maxPct: bounds.maxPct,
+        kind: filters.kind,
+        sort: filters.sort,
+      });
 
-      setProgressLoading(true);
-      try {
-        const resp = await fetch("/api/completions/progress-batch", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          cache: "no-store",
-          body: JSON.stringify({
-            userId,
-            items: items.map((it) => ({ id: it.id, kind: it.kind })),
-          }),
-        });
+      setItems((prev) => {
+        const seen = new Set(prev.map((x) => `${x.kind}:${x.id}`));
+        const out = [...prev];
+        for (const it of next) {
+          const key = `${it.kind}:${it.id}`;
+          if (!seen.has(key)) out.push(it);
+        }
+        return out;
+      });
 
-        if (!resp.ok) throw new Error(String(resp.status));
-
-        const data = (await resp.json()) as {
-          byKey: Record<string, { current: number; total: number; pct: number | null }>;
-        };
-        if (!cancelled) setProgressByKey(data.byKey ?? {});
-      } catch {
-        if (!cancelled) setProgressByKey({});
-      } finally {
-        if (!cancelled) setProgressLoading(false);
-      }
+      setHasMore(next.length === PAGE_SIZE);
+    } catch {
+      // Don’t permanently flip hasMore=false on transient errors.
+    } finally {
+      setLoadingMore(false);
     }
+  }, [
+    bounds.minPct,
+    bounds.maxPct,
+    cursor,
+    filters.kind,
+    filters.sort,
+    hasMore,
+    loading,
+    loadingMore,
+    userId,
+  ]);
 
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [items, userId]);
+  // No client-side reshuffle: server already did kind/sort/progress paging correctly.
+  const visibleItems = items;
 
-  const filteredItems = useMemo(
-    () => applyCompletionsFilters(items, filters, progressByKey),
-    [items, filters, progressByKey]
-  );
-
-  const rows = useMemo(() => chunk(filteredItems, rowLimit), [filteredItems, rowLimit]);
+  const rows = useMemo(() => chunk(visibleItems, rowLimit), [visibleItems, rowLimit]);
 
   const RowComp =
     posterSize === "small"
@@ -191,37 +237,75 @@ export default function CompletionsPageShell({ userId }: Props) {
         <div className="py-6 text-sm text-slate-600">Loading…</div>
       ) : items.length === 0 ? (
         <div className="py-6 text-sm text-slate-600">No completions yet.</div>
-      ) : filteredItems.length === 0 ? (
-        <div className="py-6 text-sm text-slate-600">No titles match those filters.</div>
       ) : null}
 
       {/* VIEW: carousel */}
       {viewMode === "carousel" ? (
         <>
           {rows.map((rowItems, idx) => (
-            <RowComp key={`completions-row-${idx}`} items={rowItems} onSelect={(it) => openDetails(it as CompletionItem)} />
+            <RowComp
+              key={`completions-row-${idx}`}
+              items={rowItems}
+              onSelect={(it) => openDetails(it as CompletionItem)}
+            />
           ))}
         </>
       ) : null}
 
       {/* VIEW: list */}
       {viewMode === "list" ? (
-        <div className="space-y-2 pb-2">
-          {filteredItems.map((it) => (
-            <CompletionListItem
-              key={it.id}
-              item={it}
-              userId={userId}
-              onSelect={(x) => openDetails(x)}
-            // NOTE: progressByKey/progressLoading are now available in the shell if you want to thread them down next.
-            // progress={progressByKey[`${it.kind}:${it.id}`]}
-            // progressLoading={progressLoading}
-            />
-          ))}
-        </div>
+        <>
+          <div className="space-y-2 pb-2">
+            {visibleItems.map((it) => (
+              <CompletionListItem
+                key={`${it.kind}:${it.id}`}
+                item={it}
+                userId={userId}
+                onSelect={openDetails}
+              />
+            ))}
+          </div>
+
+          <InfiniteSentinel disabled={!hasMore || loading || loadingMore} onVisible={loadMore} />
+
+          {loadingMore ? <div className="py-4 text-xs text-slate-600">Loading more…</div> : null}
+          {!loading && !loadingMore && visibleItems.length > 0 && !hasMore ? (
+            <div className="py-4 text-xs text-slate-500">That’s everything.</div>
+          ) : null}
+        </>
       ) : null}
 
       <CompletionDetailsModal open={modalOpen} item={selected} onClose={closeDetails} userId={userId} />
     </div>
   );
+}
+
+function InfiniteSentinel({
+  onVisible,
+  disabled,
+}: {
+  onVisible: () => void;
+  disabled?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (disabled) return;
+
+    const el = ref.current;
+    if (!el) return;
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0];
+        if (first?.isIntersecting) onVisible();
+      },
+      { root: null, rootMargin: "800px", threshold: 0 }
+    );
+
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [onVisible, disabled]);
+
+  return <div ref={ref} className="h-1 w-full" />;
 }
