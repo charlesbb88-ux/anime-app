@@ -7,12 +7,10 @@ import Link from "next/link";
 import { Heart, MessageSquare } from "lucide-react";
 
 import ProfileJournalPhone from "@/components/profile/phone/ProfileJournalPhone";
-
 import ProfileLayout from "@/components/profile/ProfileLayout";
 
 import { supabase } from "@/lib/supabaseClient";
 import {
-  listJournalEntriesByUserId,
   type JournalEntryRow,
   updateLogRating,
   toggleLogLiked,
@@ -20,6 +18,65 @@ import {
   upsertReviewForLog,
   setLogReviewId,
 } from "@/lib/journal";
+
+/**
+ * IMPORTANT:
+ * This page now reads ONLY from public.user_journal_items (the denormalized table you just backfilled).
+ * It does NOT hydrate media from anime/manga tables.
+ *
+ * If your phone component still expects "media maps", you must update ProfileJournalPhone to use:
+ *   r.media_title / r.entry_label / r.poster_url / r.media_slug / r.media_year / r.review_post_id
+ * the same way desktop does below.
+ */
+
+/* ---------------------- types ---------------------- */
+
+type UiJournalRow = JournalEntryRow & {
+  // denormalized display fields on user_journal_items
+  media_title?: string | null;
+  entry_label?: string | null;
+  poster_url?: string | null;
+  media_slug?: string | null;
+  media_year?: number | null;
+  review_post_id?: string | null;
+
+  // some schemas store these directly too
+  anime_id?: string | null;
+  manga_id?: string | null;
+};
+
+type ReviewModalState = {
+  open: boolean;
+  saving: boolean;
+  error: string | null;
+
+  log: UiJournalRow | null;
+
+  title: string;
+
+  reviewId: string | null;
+  content: string;
+  rating: number | null;
+  containsSpoilers: boolean;
+  visibility: "public" | "friends" | "private";
+  authorLiked: boolean;
+};
+
+function newModalState(): ReviewModalState {
+  return {
+    open: false,
+    saving: false,
+    error: null,
+    log: null,
+    title: "Review",
+    reviewId: null,
+    content: "",
+    rating: null,
+    containsSpoilers: false,
+    visibility: "public",
+    authorLiked: false,
+  };
+}
 
 /* ---------------------- small helpers ---------------------- */
 
@@ -32,9 +89,9 @@ function dayNumber(d: Date) {
   return d.getDate();
 }
 
-type Group = { key: string; label: string; items: JournalEntryRow[] };
+type Group = { key: string; label: string; items: UiJournalRow[] };
 
-function groupByMonth(rows: JournalEntryRow[]): Group[] {
+function groupByMonth(rows: UiJournalRow[]): Group[] {
   const groups: Group[] = [];
   const map = new Map<string, Group>();
 
@@ -42,144 +99,17 @@ function groupByMonth(rows: JournalEntryRow[]): Group[] {
     const d = new Date(r.logged_at);
     const label = monthLabel(d);
     const key = label;
+
     if (!map.has(key)) {
       const g: Group = { key, label, items: [] };
       map.set(key, g);
       groups.push(g);
     }
+
     map.get(key)!.items.push(r);
   }
+
   return groups;
-}
-
-function pickFirstString(obj: any, keys: string[]) {
-  for (const k of keys) {
-    const v = obj?.[k];
-    if (typeof v === "string" && v.trim()) return v.trim();
-  }
-  return null;
-}
-
-function pickFirstNumber(obj: any, keys: string[]) {
-  for (const k of keys) {
-    const v = obj?.[k];
-    if (typeof v === "number" && !Number.isNaN(v)) return v;
-    if (typeof v === "string" && v.trim() && !Number.isNaN(Number(v))) return Number(v);
-  }
-  return null;
-}
-
-function pickPosterUrl(obj: any) {
-  return pickFirstString(obj, [
-    "poster_url",
-    "poster",
-    "cover_url",
-    "cover",
-    "image_url",
-    "image",
-    "thumbnail_url",
-    "thumb_url",
-  ]);
-}
-
-function pickSlug(obj: any) {
-  return pickFirstString(obj, ["slug", "handle", "url_slug"]);
-}
-
-function normalizeTitle(obj: any) {
-  return (
-    pickFirstString(obj, ["title_english", "title_romaji", "title", "name"]) ??
-    pickFirstString(obj, ["title_native", "romanized_title"]) ??
-    "Untitled"
-  );
-}
-
-function normalizeYear(obj: any) {
-  return pickFirstNumber(obj, ["year", "release_year", "start_year", "season_year"]);
-}
-
-function normalizeEpisodeLabel(ep: any) {
-  const num = pickFirstNumber(ep, ["episode_number", "number", "episode", "ep_number"]);
-  const t = pickFirstString(ep, ["title", "name"]);
-  if (num != null && t) return `E${num}: ${t}`;
-  if (num != null) return `E${num}`;
-  if (t) return t;
-  return "Episode";
-}
-
-function normalizeChapterLabel(ch: any) {
-  const num = pickFirstNumber(ch, ["chapter_number", "number", "chapter"]);
-  const t = pickFirstString(ch, ["title", "name"]);
-  if (num != null && t) return `Ch ${num}: ${t}`;
-  if (num != null) return `Ch ${num}`;
-  if (t) return t;
-  return "Chapter";
-}
-
-type MediaMaps = {
-  animeById: Record<string, any>;
-  mangaById: Record<string, any>;
-  animeEpisodeById: Record<string, any>;
-  mangaChapterById: Record<string, any>;
-};
-
-async function hydrateMediaForRows(rows: JournalEntryRow[]): Promise<MediaMaps> {
-  const animeIds = Array.from(new Set(rows.map((r) => r.anime_id).filter(Boolean) as string[]));
-  const mangaIds = Array.from(new Set(rows.map((r) => r.manga_id).filter(Boolean) as string[]));
-  const epIds = Array.from(new Set(rows.map((r) => r.anime_episode_id).filter(Boolean) as string[]));
-  const chIds = Array.from(new Set(rows.map((r) => r.manga_chapter_id).filter(Boolean) as string[]));
-
-  const [animeRes, mangaRes, epRes, chRes] = await Promise.all([
-    animeIds.length
-      ? supabase.from("anime").select("*").in("id", animeIds)
-      : Promise.resolve({ data: [], error: null } as any),
-    mangaIds.length
-      ? supabase.from("manga").select("*").in("id", mangaIds)
-      : Promise.resolve({ data: [], error: null } as any),
-    epIds.length
-      ? supabase.from("anime_episodes").select("*").in("id", epIds)
-      : Promise.resolve({ data: [], error: null } as any),
-    chIds.length
-      ? supabase.from("manga_chapters").select("*").in("id", chIds)
-      : Promise.resolve({ data: [], error: null } as any),
-  ]);
-
-  const animeById: Record<string, any> = {};
-  const mangaById: Record<string, any> = {};
-  const animeEpisodeById: Record<string, any> = {};
-  const mangaChapterById: Record<string, any> = {};
-
-  for (const a of animeRes.data ?? []) animeById[a.id] = a;
-  for (const m of mangaRes.data ?? []) mangaById[m.id] = m;
-  for (const e of epRes.data ?? []) animeEpisodeById[e.id] = e;
-  for (const c of chRes.data ?? []) mangaChapterById[c.id] = c;
-
-  return { animeById, mangaById, animeEpisodeById, mangaChapterById };
-}
-
-/* ---------------------- review -> post id map (for linking icon) ---------------------- */
-
-type ReviewPostMap = Record<string, string>; // review_id -> post_id
-
-async function hydratePostsForReviews(rows: JournalEntryRow[]): Promise<ReviewPostMap> {
-  const reviewIds = Array.from(new Set(rows.map((r) => r.review_id).filter(Boolean) as string[]));
-  if (!reviewIds.length) return {};
-
-  const { data, error } = await supabase.from("posts").select("id, review_id").in("review_id", reviewIds);
-
-  if (error) return {};
-
-  const map: ReviewPostMap = {};
-  for (const p of data ?? []) {
-    if (p?.review_id && p?.id) map[p.review_id] = p.id;
-  }
-  return map;
-}
-
-async function fetchPostIdForReviewId(reviewId: string): Promise<string | null> {
-  const { data, error } = await supabase.from("posts").select("id").eq("review_id", reviewId).limit(1).maybeSingle();
-  if (error) return null;
-  return data?.id ?? null;
 }
 
 /* ---------------------- rating UI ---------------------- */
@@ -288,58 +218,44 @@ function StarRating({
   );
 }
 
-/* ---------------------- review modal ---------------------- */
-
-type ReviewModalState = {
-  open: boolean;
-  saving: boolean;
-  error: string | null;
-
-  log: JournalEntryRow | null;
-
-  title: string;
-
-  reviewId: string | null;
-  content: string;
-  rating: number | null;
-  containsSpoilers: boolean;
-  visibility: "public" | "friends" | "private";
-  authorLiked: boolean;
-};
-
-function newModalState(): ReviewModalState {
-  return {
-    open: false,
-    saving: false,
-    error: null,
-    log: null,
-    title: "Review",
-    reviewId: null,
-    content: "",
-    rating: null,
-    containsSpoilers: false,
-    visibility: "public",
-    authorLiked: false,
-  };
-}
-
 /* ---------------------- page body (inside ProfileLayout) ---------------------- */
 
-function JournalBody({ profileId }: { profileId: string }) {
-  const [rows, setRows] = useState<JournalEntryRow[]>([]);
-  const [media, setMedia] = useState<MediaMaps>({
-    animeById: {},
-    mangaById: {},
-    animeEpisodeById: {},
-    mangaChapterById: {},
-  });
+function getIsPhoneNow() {
+  // Tailwind "sm" starts at 640px, so phone is < 640px
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(max-width: 639px)").matches;
+}
 
+async function fetchUserJournalItems(params: {
+  userId: string;
+  limit: number;
+  beforeLoggedAt?: string | null;
+}) {
+  let q = supabase
+    .from("user_journal_items")
+    .select("*")
+    .eq("user_id", params.userId)
+    .order("logged_at", { ascending: false })
+    .limit(params.limit);
+
+  if (params.beforeLoggedAt) {
+    q = q.lt("logged_at", params.beforeLoggedAt);
+  }
+
+  const { data, error } = await q;
+  if (error) return { rows: [] as UiJournalRow[], error };
+
+  return { rows: (data ?? []) as unknown as UiJournalRow[], error: null as any };
+}
+
+function JournalBody({ profileId }: { profileId: string }) {
+  const PAGE_SIZE = 50;
+
+  const [rows, setRows] = useState<UiJournalRow[]>([]);
   const [viewerId, setViewerId] = useState<string | null>(null);
   const isOwner = viewerId != null && viewerId === profileId;
 
   const reviews_locked = true; // set to true to temporarily disable review editing
-
-  const [postIdByReviewId, setPostIdByReviewId] = useState<ReviewPostMap>({});
 
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -348,6 +264,29 @@ function JournalBody({ profileId }: { profileId: string }) {
 
   const [reviewModal, setReviewModal] = useState<ReviewModalState>(newModalState);
 
+  // ✅ mount-only switching (desktop mounts only when NOT phone, phone mounts only when phone)
+  const [isPhone, setIsPhone] = useState<boolean>(() => getIsPhoneNow());
+
+  // "has more" so we don’t show a fake load-more when we hit the end
+  const [hasMore, setHasMore] = useState(true);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const mql = window.matchMedia("(max-width: 639px)");
+    const onChange = () => setIsPhone(mql.matches);
+
+    onChange();
+
+    if (typeof mql.addEventListener === "function") mql.addEventListener("change", onChange);
+    else mql.addListener(onChange);
+
+    return () => {
+      if (typeof mql.removeEventListener === "function") mql.removeEventListener("change", onChange);
+      else mql.removeListener(onChange);
+    };
+  }, []);
+
   const cursor = useMemo(() => {
     if (!rows.length) return null;
     return rows[rows.length - 1].logged_at;
@@ -355,54 +294,27 @@ function JournalBody({ profileId }: { profileId: string }) {
 
   const groups = useMemo(() => groupByMonth(rows), [rows]);
 
-  function getDisplay(r: JournalEntryRow) {
-    const anime = r.anime_id ? media.animeById[r.anime_id] : null;
-    const manga = r.manga_id ? media.mangaById[r.manga_id] : null;
-    const ep = r.anime_episode_id ? media.animeEpisodeById[r.anime_episode_id] : null;
-    const ch = r.manga_chapter_id ? media.mangaChapterById[r.manga_chapter_id] : null;
+  function getDisplay(r: UiJournalRow) {
+    const title = (r.media_title ?? "Untitled").trim() || "Untitled";
+    const subtitle = (r.entry_label ?? null) as string | null;
+    const year = typeof r.media_year === "number" ? r.media_year : null;
+    const posterUrl = (r.poster_url ?? null) as string | null;
 
-    let title = "Untitled";
-    let subtitle: string | null = null;
-    let year: number | null = null;
-    let posterUrl: string | null = null;
     let href: string | null = null;
+    const slug = (r.media_slug ?? null) as string | null;
 
-    if (r.kind === "anime_episode") {
-      title = anime ? normalizeTitle(anime) : "Anime";
-      subtitle = ep ? normalizeEpisodeLabel(ep) : "Episode";
-      year = anime ? normalizeYear(anime) : null;
-      posterUrl = anime ? pickPosterUrl(anime) : null;
-      const slug = anime ? pickSlug(anime) : null;
-      href = slug ? `/anime/${slug}` : null;
-    } else if (r.kind === "anime_series") {
-      title = anime ? normalizeTitle(anime) : "Anime";
-      subtitle = null;
-      year = anime ? normalizeYear(anime) : null;
-      posterUrl = anime ? pickPosterUrl(anime) : null;
-      const slug = anime ? pickSlug(anime) : null;
-      href = slug ? `/anime/${slug}` : null;
-    } else if (r.kind === "manga_chapter") {
-      title = manga ? normalizeTitle(manga) : "Manga";
-      subtitle = ch ? normalizeChapterLabel(ch) : "Chapter";
-      year = manga ? normalizeYear(manga) : null;
-      posterUrl = manga ? pickPosterUrl(manga) : null;
-      const slug = manga ? pickSlug(manga) : null;
-      href = slug ? `/manga/${slug}` : null;
-    } else {
-      title = manga ? normalizeTitle(manga) : "Manga";
-      subtitle = null;
-      year = manga ? normalizeYear(manga) : null;
-      posterUrl = manga ? pickPosterUrl(manga) : null;
-      const slug = manga ? pickSlug(manga) : null;
-      href = slug ? `/manga/${slug}` : null;
+    if (slug) {
+      if (r.anime_id) href = `/anime/${slug}`;
+      else if (r.manga_id) href = `/manga/${slug}`;
     }
 
     return { title, subtitle, year, posterUrl, href };
   }
 
-  function postHrefForReviewId(reviewId: string) {
-    const postId = postIdByReviewId[reviewId];
-    return postId ? `/posts/${postId}` : null;
+  function postHrefForRow(r: UiJournalRow) {
+    // ✅ row already contains review_post_id
+    if (r.review_post_id) return `/posts/${r.review_post_id}`;
+    return null;
   }
 
   async function loadViewer() {
@@ -414,80 +326,59 @@ function JournalBody({ profileId }: { profileId: string }) {
     setLoading(true);
     setErrorMsg(null);
 
-    const { rows: r, error } = await listJournalEntriesByUserId(profileId, { limit: 50 });
+    const { rows: r, error } = await fetchUserJournalItems({ userId: profileId, limit: PAGE_SIZE });
 
     if (error) {
-      setErrorMsg(error.message ?? "Failed to load journal.");
+      setErrorMsg((error as any)?.message ?? "Failed to load journal.");
       setRows([]);
+      setHasMore(true);
       setLoading(false);
       return;
     }
 
     setRows(r);
-    const hydrated = await hydrateMediaForRows(r);
-    setMedia(hydrated);
-
-    const postMap = await hydratePostsForReviews(r);
-    setPostIdByReviewId(postMap);
-
+    setHasMore(r.length === PAGE_SIZE);
     setLoading(false);
   }
 
   async function loadMore() {
     if (!cursor) return;
+    if (!hasMore) return;
+
     setLoadingMore(true);
     setErrorMsg(null);
 
-    const { rows: more, error } = await listJournalEntriesByUserId(profileId, {
-      limit: 50,
+    const { rows: more, error } = await fetchUserJournalItems({
+      userId: profileId,
+      limit: PAGE_SIZE,
       beforeLoggedAt: cursor,
     });
 
     if (error) {
-      setErrorMsg(error.message ?? "Failed to load more.");
+      setErrorMsg((error as any)?.message ?? "Failed to load more.");
       setLoadingMore(false);
       return;
     }
 
-    const combined = [...rows, ...more];
-    setRows(combined);
-
-    const hydrated = await hydrateMediaForRows(combined);
-    setMedia(hydrated);
-
-    const postMap = await hydratePostsForReviews(combined);
-    setPostIdByReviewId(postMap);
-
+    setRows((prev) => [...prev, ...more]);
+    setHasMore(more.length === PAGE_SIZE);
     setLoadingMore(false);
   }
 
   useEffect(() => {
-    let cancelled = false;
-
     (async () => {
       setRows([]);
-      setMedia({
-        animeById: {},
-        mangaById: {},
-        animeEpisodeById: {},
-        mangaChapterById: {},
-      });
-      setPostIdByReviewId({});
+      setHasMore(true);
       await Promise.all([loadViewer(), loadInitial()]);
     })();
-
-    return () => {
-      cancelled = true;
-      void cancelled;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileId]);
 
-  function patchRow(logId: string, patch: Partial<JournalEntryRow>) {
-    setRows((prev) => prev.map((r) => (r.log_id === logId ? { ...r, ...patch } : r)));
+  function patchRow(logId: string, patch: Partial<UiJournalRow>) {
+    setRows((prev) => prev.map((r) => (r.log_id === logId ? ({ ...r, ...patch } as UiJournalRow) : r)));
   }
 
-  async function onChangeRating(r: JournalEntryRow, next: number | null) {
+  async function onChangeRating(r: UiJournalRow, next: number | null) {
     setBusyRow(r.log_id);
     setErrorMsg(null);
 
@@ -507,7 +398,7 @@ function JournalBody({ profileId }: { profileId: string }) {
     setBusyRow(null);
   }
 
-  async function onToggleLike(r: JournalEntryRow) {
+  async function onToggleLike(r: UiJournalRow) {
     const next = !Boolean(r.liked);
     setBusyRow(r.log_id);
     setErrorMsg(null);
@@ -528,10 +419,10 @@ function JournalBody({ profileId }: { profileId: string }) {
     setBusyRow(null);
   }
 
-  async function openReviewEditor(r: JournalEntryRow) {
-    if (reviews_locked) {
-      const display = getDisplay(r);
+  async function openReviewEditor(r: UiJournalRow) {
+    const display = getDisplay(r);
 
+    if (reviews_locked) {
       setReviewModal({
         ...newModalState(),
         open: true,
@@ -543,14 +434,12 @@ function JournalBody({ profileId }: { profileId: string }) {
         reviewId: r.review_id ?? null,
         rating: r.rating == null ? null : Math.round(Number(r.rating)),
         containsSpoilers: Boolean(r.contains_spoilers),
-        visibility: r.visibility ?? "public",
+        visibility: (r.visibility as any) ?? "public",
         authorLiked: Boolean(r.liked),
         content: "",
       });
-
       return;
     }
-    const display = getDisplay(r);
 
     setReviewModal({
       ...newModalState(),
@@ -563,7 +452,7 @@ function JournalBody({ profileId }: { profileId: string }) {
       reviewId: r.review_id ?? null,
       rating: r.rating == null ? null : Math.round(Number(r.rating)),
       containsSpoilers: Boolean(r.contains_spoilers),
-      visibility: r.visibility ?? "public",
+      visibility: (r.visibility as any) ?? "public",
       authorLiked: Boolean(r.liked),
       content: "",
     });
@@ -581,7 +470,7 @@ function JournalBody({ profileId }: { profileId: string }) {
           content: review.content ?? "",
           rating: review.rating ?? m.rating,
           containsSpoilers: Boolean(review.contains_spoilers),
-          visibility: review.visibility ?? m.visibility,
+          visibility: (review.visibility as any) ?? m.visibility,
           authorLiked: Boolean(review.author_liked),
         }));
       }
@@ -641,15 +530,10 @@ function JournalBody({ profileId }: { profileId: string }) {
       rating: reviewModal.rating,
       liked: reviewModal.authorLiked,
       contains_spoilers: reviewModal.containsSpoilers,
-      visibility: reviewModal.visibility,
+      visibility: reviewModal.visibility as any,
     });
 
-    // make the link work immediately after first save
-    if (finalReviewId && !postIdByReviewId[finalReviewId]) {
-      const postId = await fetchPostIdForReviewId(finalReviewId);
-      if (postId) setPostIdByReviewId((prev) => ({ ...prev, [finalReviewId]: postId }));
-    }
-
+    // Note: review_post_id is now expected to be maintained in user_journal_items by your DB logic.
     setReviewModal((m) => ({ ...m, saving: false, open: false }));
   }
 
@@ -661,189 +545,195 @@ function JournalBody({ profileId }: { profileId: string }) {
         </div>
       )}
 
-      {/* ✅ Desktop (unchanged layout; only review cell behavior) */}
-      <div className="hidden sm:block">
-        {/* Table */}
-        <div className="overflow-hidden rounded-md border border border-black bg-white">
-          {/* header row */}
-          <div className="grid grid-cols-[56px_1fr_90px_140px_70px_70px] gap-0 border-b border-black bg-zinc-50 px-4 py-3 text-xs text-zinc-600">
-            <div>DAY</div>
-            <div>TITLE</div>
-            <div className="text-center">YEAR</div>
-            <div className="text-center">RATING</div>
-            <div className="text-center">LIKE</div>
-            <div className="text-center">REVIEW</div>
-          </div>
+      {/* ✅ Desktop (only mounts when NOT phone) */}
+      {!isPhone && (
+        <div>
+          <div className="overflow-hidden rounded-md border border-black bg-white">
+            <div className="grid grid-cols-[56px_1fr_90px_140px_70px_70px] gap-0 border-b border-black bg-zinc-50 px-4 py-3 text-xs text-zinc-600">
+              <div>DAY</div>
+              <div>TITLE</div>
+              <div className="text-center">YEAR</div>
+              <div className="text-center">RATING</div>
+              <div className="text-center">LIKE</div>
+              <div className="text-center">REVIEW</div>
+            </div>
 
-          {loading ? (
-            <div className="px-4 py-8 text-sm text-zinc-700">Loading…</div>
-          ) : rows.length === 0 ? (
-            <div className="px-4 py-8 text-sm text-zinc-700">No journal entries (or they’re private).</div>
-          ) : (
-            <div>
-              {groups.map((g) => (
-                <div key={g.key} className="border-b border-black last:border-b-0">
-                  <div className="px-4 py-3 text-xs font-semibold tracking-wide text-zinc-700">{g.label}</div>
+            {loading ? (
+              <div className="px-4 py-8 text-sm text-zinc-700">Loading…</div>
+            ) : rows.length === 0 ? (
+              <div className="px-4 py-8 text-sm text-zinc-700">No journal entries (or they’re private).</div>
+            ) : (
+              <div>
+                {groups.map((g) => (
+                  <div key={g.key} className="border-b border-black last:border-b-0">
+                    <div className="px-4 py-3 text-xs font-semibold tracking-wide text-zinc-700">{g.label}</div>
 
-                  {g.items.map((r) => {
-                    const d = new Date(r.logged_at);
-                    const day = dayNumber(d);
-                    const display = getDisplay(r);
-                    const isBusy = busyRow === r.log_id;
+                    {g.items.map((r) => {
+                      const d = new Date(r.logged_at);
+                      const day = dayNumber(d);
+                      const display = getDisplay(r);
+                      const isBusy = busyRow === r.log_id;
 
-                    const postHref = r.review_id ? postHrefForReviewId(r.review_id) : null;
+                      const postHref = postHrefForRow(r);
 
-                    return (
-                      <div
-                        key={`${r.kind}:${r.log_id}`}
-                        className="grid grid-cols-[56px_1fr_90px_140px_70px_70px] items-center gap-0 border-t border-black px-4 py-3 text-sm text-zinc-900 hover:bg-zinc-100"
-                      >
-                        <div className="flex items-center justify-end pr-5">
-                          <div className="w-[2ch] text-right tabular-nums text-3xl font-semibold leading-none text-zinc-600">
-                            {day}
+                      return (
+                        <div
+                          key={`${r.kind}:${r.log_id}`}
+                          className="grid grid-cols-[56px_1fr_90px_140px_70px_70px] items-center gap-0 border-t border-black px-4 py-3 text-sm text-zinc-900 hover:bg-zinc-100"
+                        >
+                          <div className="flex items-center justify-end pr-5">
+                            <div className="w-[2ch] text-right tabular-nums text-3xl font-semibold leading-none text-zinc-600">
+                              {day}
+                            </div>
                           </div>
-                        </div>
 
-                        {/* title cell */}
-                        <div className="flex min-w-0 items-center gap-3">
-                          {display.posterUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={display.posterUrl}
-                              alt=""
-                              className="h-[84px] w-[56px] shrink-0 rounded object-cover ring-1 ring-zinc-200"
-                              loading="lazy"
+                          {/* title cell */}
+                          <div className="flex min-w-0 items-center gap-3">
+                            {display.posterUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={display.posterUrl}
+                                alt=""
+                                className="h-[84px] w-[56px] shrink-0 rounded object-cover ring-1 ring-zinc-200"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="h-[84px] w-[56px] shrink-0 rounded bg-zinc-100 ring-1 ring-zinc-200" />
+                            )}
+
+                            <div className="min-w-0">
+                              <div className="flex items-baseline gap-2">
+                                {display.href ? (
+                                  <Link
+                                    href={display.href}
+                                    className="truncate text-xl font-bold text-zinc-900 hover:text-black hover:underline"
+                                  >
+                                    {display.title}
+                                  </Link>
+                                ) : (
+                                  <div className="truncate text-xl font-bold text-zinc-900">{display.title}</div>
+                                )}
+                              </div>
+
+                              {display.subtitle ? (
+                                <div className="truncate text-lg font-bold text-zinc-900">{display.subtitle}</div>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          {/* year */}
+                          <div className="flex items-center justify-center text-lg leading-none text-zinc-600">
+                            {typeof display.year === "number" ? display.year : null}
+                          </div>
+
+                          {/* rating */}
+                          <div className="flex items-center justify-center">
+                            <StarRating
+                              value={r.rating == null ? null : Math.round(Number(r.rating))}
+                              disabled={isBusy}
+                              onChange={(next) => onChangeRating(r, next)}
                             />
-                          ) : (
-                            <div className="h-[42px] w-[28px] rounded bg-zinc-100 ring-1 ring-zinc-200" />
-                          )}
+                          </div>
 
-                          <div className="min-w-0">
-                            <div className="flex items-baseline gap-2">
-                              {display.href ? (
+                          {/* like */}
+                          <div className="flex items-center justify-center">
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() => onToggleLike(r)}
+                              className="inline-flex items-center justify-center rounded-md p-1 hover:bg-zinc-100 disabled:opacity-50"
+                              title="Like"
+                            >
+                              <Heart
+                                className={`h-5 w-5 ${r.liked ? "text-rose-400" : "text-zinc-600"}`}
+                                fill={r.liked ? "currentColor" : "none"}
+                              />
+                            </button>
+                          </div>
+
+                          {/* review column */}
+                          <div className="flex items-center justify-center">
+                            <div className="relative h-[28px] w-[28px]">
+                              {r.review_id && postHref ? (
                                 <Link
-                                  href={display.href}
-                                  className="truncate text-xl font-bold text-zinc-900 hover:text-black hover:underline"
+                                  href={postHref}
+                                  className="absolute inset-0 inline-flex items-center justify-center rounded-md p-1 hover:bg-zinc-100"
+                                  title="Open review"
                                 >
-                                  {display.title}
+                                  <MessageSquare className="h-5 w-5 text-zinc-700" />
                                 </Link>
+                              ) : r.review_id ? (
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() => openReviewEditor(r)}
+                                  className="absolute inset-0 inline-flex items-center justify-center rounded-md p-1 hover:bg-zinc-100 disabled:opacity-50"
+                                  title="Edit review"
+                                >
+                                  <MessageSquare className="h-5 w-5 text-zinc-700" />
+                                </button>
                               ) : (
-                                <div className="truncate font-semibold text-zinc-900">{display.title}</div>
+                                <div className="absolute inset-0 inline-flex items-center justify-center p-1" title="No review">
+                                  <MessageSquare className="h-5 w-5 text-zinc-300" />
+                                </div>
+                              )}
+
+                              {isOwner && (
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() => openReviewEditor(r)}
+                                  className="absolute left-1/2 top-full mt-1 -translate-x-1/2 rounded-md px-2 py-[3px] text-[11px] font-semibold text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+                                  title="Edit review"
+                                >
+                                  Edit
+                                </button>
                               )}
                             </div>
-
-                            {display.subtitle ? (
-                              <div className="truncate text-lg font-bold text-zinc-900">{display.subtitle}</div>
-                            ) : null}
                           </div>
                         </div>
+                      );
+                    })}
+                  </div>
+                ))}
 
-                        {/* year */}
-                        <div className="flex items-center justify-center text-lg leading-none text-zinc-600">
-                          {typeof display.year === "number" ? display.year : null}
-                        </div>
-
-                        {/* rating */}
-                        <div className="flex items-center justify-center">
-                          <StarRating
-                            value={r.rating == null ? null : Math.round(Number(r.rating))}
-                            disabled={isBusy}
-                            onChange={(next) => onChangeRating(r, next)}
-                          />
-                        </div>
-
-                        {/* like */}
-                        <div className="flex items-center justify-center">
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => onToggleLike(r)}
-                            className="inline-flex items-center justify-center rounded-md p-1 hover:bg-zinc-100 disabled:opacity-50"
-                            title="Like"
-                          >
-                            <Heart
-                              className={`h-5 w-5 ${r.liked ? "text-rose-400" : "text-zinc-600"}`}
-                              fill={r.liked ? "currentColor" : "none"}
-                            />
-                          </button>
-                        </div>
-
-                        {/* review column (icon position unchanged; Edit is absolute under it) */}
-                        <div className="flex items-center justify-center">
-                          <div className="relative h-[28px] w-[28px]">
-                            {r.review_id && postHref ? (
-                              <Link
-                                href={postHref}
-                                className="absolute inset-0 inline-flex items-center justify-center rounded-md p-1 hover:bg-zinc-100"
-                                title="Open review"
-                              >
-                                <MessageSquare className="h-5 w-5 text-zinc-700" />
-                              </Link>
-                            ) : r.review_id ? (
-                              // review exists but no post found yet — keep icon in same spot (still clickable to edit)
-                              <button
-                                type="button"
-                                disabled={isBusy}
-                                onClick={() => openReviewEditor(r)}
-                                className="absolute inset-0 inline-flex items-center justify-center rounded-md p-1 hover:bg-zinc-100 disabled:opacity-50"
-                                title="Edit review"
-                              >
-                                <MessageSquare className="h-5 w-5 text-zinc-700" />
-                              </button>
-                            ) : (
-                              <div className="absolute inset-0 inline-flex items-center justify-center p-1" title="No review">
-                                <MessageSquare className="h-5 w-5 text-zinc-300" />
-                              </div>
-                            )}
-
-                            {isOwner && (
-                              <button
-                                type="button"
-                                disabled={isBusy}
-                                onClick={() => openReviewEditor(r)}
-                                className="absolute left-1/2 top-full mt-1 -translate-x-1/2 rounded-md px-2 py-[3px] text-[11px] font-semibold text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
-                                title="Edit review"
-                              >
-                                Edit
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="px-4 py-4">
+                  <button
+                    className="w-full rounded-lg border border-zinc-200 bg-zinc-50 py-2 text-sm text-zinc-800 hover:bg-zinc-100 disabled:opacity-50"
+                    onClick={loadMore}
+                    disabled={loadingMore || !cursor || !hasMore}
+                  >
+                    {loadingMore ? "Loading…" : hasMore ? "Load more" : "That’s everything"}
+                  </button>
                 </div>
-              ))}
-
-              <div className="px-4 py-4">
-                <button
-                  className="w-full rounded-lg border border-zinc-200 bg-zinc-50 py-2 text-sm text-zinc-800 hover:bg-zinc-100 disabled:opacity-50"
-                  onClick={loadMore}
-                  disabled={loadingMore || !cursor}
-                >
-                  {loadingMore ? "Loading…" : "Load more"}
-                </button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* ✅ Phone (EXACTLY as you had it) */}
-      <div className="sm:hidden">
+      {/* ✅ Phone (only mounts when phone) */}
+      {isPhone && (
         <ProfileJournalPhone
-          rows={rows}
-          media={media}
+          rows={rows as UiJournalRow[]}
           loading={loading}
           loadingMore={loadingMore}
           cursor={cursor}
           busyRow={busyRow}
-          onLoadMore={loadMore}
-          onToggleLike={onToggleLike}
-          onChangeRating={onChangeRating}
-          onOpenReviewEditor={openReviewEditor}
+          onLoadMore={() => {
+            void loadMore();
+          }}
+          onToggleLike={(r) => {
+            void onToggleLike(r);
+          }}
+          onChangeRating={(r, next) => {
+            void onChangeRating(r, next);
+          }}
+          onOpenReviewEditor={(r) => {
+            void openReviewEditor(r);
+          }}
         />
-      </div>
+      )}
 
       {/* Review Modal */}
       {reviewModal.open && (
@@ -878,7 +768,12 @@ function JournalBody({ profileId }: { profileId: string }) {
                   <select
                     className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
                     value={reviewModal.visibility}
-                    onChange={(e) => setReviewModal((m) => ({ ...m, visibility: e.target.value as any }))}
+                    onChange={(e) =>
+                      setReviewModal((m) => ({
+                        ...m,
+                        visibility: e.target.value as "public" | "friends" | "private",
+                      }))
+                    }
                     disabled={reviewModal.saving}
                   >
                     <option value="public">public</option>
@@ -964,7 +859,7 @@ function JournalBody({ profileId }: { profileId: string }) {
   );
 }
 
-/* ---------------------- page wrapper (uses shared profile layout) ---------------------- */
+/* ---------------------- page wrapper ---------------------- */
 
 const UsernameJournalPage: NextPage = () => {
   return (
