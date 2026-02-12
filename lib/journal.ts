@@ -32,20 +32,25 @@ export type JournalEntryRow = {
   anime_episode_id: string | null;
   manga_id: string | null;
   manga_chapter_id: string | null;
+
+  /* ---------------------- hydrated display columns ---------------------- */
+  media_title: string | null;
+  entry_label: string | null;
+  media_year: number | null;
+  poster_url: string | null;
+  media_slug: string | null;
+  review_post_id: string | null;
 };
 
 export async function listJournalEntriesByUserId(
   userId: string,
-  opts?: {
-    limit?: number;
-    beforeLoggedAt?: string | null; // cursor: fetch rows older than this logged_at
-  }
+  opts?: { limit?: number; beforeLoggedAt?: string | null }
 ) {
   const limit = opts?.limit ?? 50;
   const beforeLoggedAt = opts?.beforeLoggedAt ?? null;
 
   let q = supabase
-    .from("journal_entries")
+    .from("user_journal_items")
     .select("*")
     .eq("user_id", userId)
     .order("logged_at", { ascending: false })
@@ -55,10 +60,7 @@ export async function listJournalEntriesByUserId(
 
   const { data, error } = await q;
 
-  return {
-    rows: (data ?? []) as JournalEntryRow[],
-    error,
-  };
+  return { rows: (data ?? []) as JournalEntryRow[], error };
 }
 
 function kindToLogTable(kind: JournalKind) {
@@ -152,7 +154,10 @@ export async function upsertReviewForLog(args: {
   // Create or update review row.
   // NOTE: reviews.content is NOT NULL in your schema, so content must be non-empty.
   if (!args.content.trim()) {
-    return { reviewId: null as string | null, error: new Error("Review text cannot be empty.") };
+    return {
+      reviewId: null as string | null,
+      error: new Error("Review text cannot be empty."),
+    };
   }
 
   if (args.review_id) {

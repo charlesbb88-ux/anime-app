@@ -1,10 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Heart, MessageSquare } from "lucide-react";
 import type { JournalEntryRow } from "@/lib/journal";
 import { supabase } from "@/lib/supabaseClient";
+
+/**
+ * Phone journal reads ONLY from denormalized fields on user_journal_items:
+ *   media_title, entry_label, poster_url, media_slug, media_year, review_post_id
+ */
+
+type UiJournalRow = JournalEntryRow & {
+  media_title?: string | null;
+  entry_label?: string | null;
+  poster_url?: string | null;
+  media_slug?: string | null;
+  media_year?: number | null;
+  review_post_id?: string | null;
+
+  anime_id?: string | null;
+  manga_id?: string | null;
+};
 
 /* -------- helpers copied from page (keep behavior identical) -------- */
 
@@ -13,9 +30,9 @@ function monthLabel(d: Date) {
   return `${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-type Group = { key: string; label: string; items: JournalEntryRow[] };
+type Group = { key: string; label: string; items: UiJournalRow[] };
 
-function groupByMonth(rows: JournalEntryRow[]): Group[] {
+function groupByMonth(rows: UiJournalRow[]): Group[] {
   const groups: Group[] = [];
   const map = new Map<string, Group>();
 
@@ -23,13 +40,16 @@ function groupByMonth(rows: JournalEntryRow[]): Group[] {
     const d = new Date(r.logged_at);
     const label = monthLabel(d);
     const key = label;
+
     if (!map.has(key)) {
       const g: Group = { key, label, items: [] };
       map.set(key, g);
       groups.push(g);
     }
+
     map.get(key)!.items.push(r);
   }
+
   return groups;
 }
 
@@ -37,68 +57,25 @@ function dayNumber(d: Date) {
   return d.getDate();
 }
 
-function pickFirstString(obj: any, keys: string[]) {
-  for (const k of keys) {
-    const v = obj?.[k];
-    if (typeof v === "string" && v.trim()) return v.trim();
+function countMonthStats(items: UiJournalRow[]) {
+  let chapters = 0;
+  let episodes = 0;
+
+  for (const r of items) {
+    if (r.kind === "manga_chapter") chapters += 1;
+    if (r.kind === "anime_episode") episodes += 1;
   }
-  return null;
+
+  return { chapters, episodes };
 }
 
-function pickFirstNumber(obj: any, keys: string[]) {
-  for (const k of keys) {
-    const v = obj?.[k];
-    if (typeof v === "number" && !Number.isNaN(v)) return v;
-    if (typeof v === "string" && v.trim() && !Number.isNaN(Number(v))) return Number(v);
-  }
-  return null;
-}
-
-function pickPosterUrl(obj: any) {
-  return pickFirstString(obj, [
-    "poster_url",
-    "poster",
-    "cover_url",
-    "cover",
-    "image_url",
-    "image",
-    "thumbnail_url",
-    "thumb_url",
-  ]);
-}
-
-function pickSlug(obj: any) {
-  return pickFirstString(obj, ["slug", "handle", "url_slug"]);
-}
-
-function normalizeTitle(obj: any) {
+function StatPill({ label, value }: { label: string; value: number }) {
   return (
-    pickFirstString(obj, ["title_english", "title_romaji", "title", "name"]) ??
-    pickFirstString(obj, ["title_native", "romanized_title"]) ??
-    "Untitled"
+    <div className="inline-flex items-center gap-1 rounded-xs border border-black bg-white px-1 py-.5 text-[11px] font-semibold text-black">
+      <span className="text-zinc-700">{label}</span>
+      <span className="tabular-nums">{value}</span>
+    </div>
   );
-}
-
-function normalizeYear(obj: any) {
-  return pickFirstNumber(obj, ["year", "release_year", "start_year", "season_year"]);
-}
-
-function normalizeEpisodeLabel(ep: any) {
-  const num = pickFirstNumber(ep, ["episode_number", "number", "episode", "ep_number"]);
-  const t = pickFirstString(ep, ["title", "name"]);
-  if (num != null && t) return `E${num}: ${t}`;
-  if (num != null) return `E${num}`;
-  if (t) return t;
-  return "Episode";
-}
-
-function normalizeChapterLabel(ch: any) {
-  const num = pickFirstNumber(ch, ["chapter_number", "number", "chapter"]);
-  const t = pickFirstString(ch, ["title", "name"]);
-  if (num != null && t) return `Ch ${num}: ${t}`;
-  if (num != null) return `Ch ${num}`;
-  if (t) return t;
-  return "Chapter";
 }
 
 /* -------- rating UI copied (smaller on phone) -------- */
@@ -220,62 +197,30 @@ function StarRatingPhone({
 
 /* -------- component -------- */
 
-type MediaMaps = {
-  animeById: Record<string, any>;
-  mangaById: Record<string, any>;
-  animeEpisodeById: Record<string, any>;
-  mangaChapterById: Record<string, any>;
-};
+function getDisplay(r: UiJournalRow) {
+  const title = (r.media_title ?? "Untitled").trim() || "Untitled";
+  const subtitle = (r.entry_label ?? null) as string | null;
+  const year = typeof r.media_year === "number" ? r.media_year : null;
+  const posterUrl = (r.poster_url ?? null) as string | null;
 
-type ReviewPostMap = Record<string, string>; // review_id -> post_id
+  let href: string | null = null;
+  const slug = (r.media_slug ?? null) as string | null;
 
-async function hydratePostsForReviews(rows: JournalEntryRow[]): Promise<ReviewPostMap> {
-  const reviewIds = Array.from(new Set(rows.map((r) => r.review_id).filter(Boolean) as string[]));
-  if (!reviewIds.length) return {};
-
-  const { data, error } = await supabase.from("posts").select("id, review_id").in("review_id", reviewIds);
-  if (error) return {};
-
-  const map: ReviewPostMap = {};
-  for (const p of data ?? []) {
-    if (p?.review_id && p?.id) map[p.review_id] = p.id;
-  }
-  return map;
-}
-
-function countMonthStats(items: JournalEntryRow[]) {
-  // Count only actual logs:
-  // - chapters read: manga_chapter
-  // - episodes watched: anime_episode
-  let chapters = 0;
-  let episodes = 0;
-
-  for (const r of items) {
-    if (r.kind === "manga_chapter") chapters += 1;
-    if (r.kind === "anime_episode") episodes += 1;
+  if (slug) {
+    if (r.anime_id) href = `/anime/${slug}`;
+    else if (r.manga_id) href = `/manga/${slug}`;
   }
 
-  return { chapters, episodes };
+  return { title, subtitle, year, posterUrl, href };
 }
 
-function StatPill({
-  label,
-  value,
-}: {
-  label: string;
-  value: number;
-}) {
-  return (
-    <div className="inline-flex items-center gap-1 rounded-xs border border-black bg-white px-1 py-.5 text-[11px] font-semibold text-black">
-      <span className="text-zinc-700">{label}</span>
-      <span className="tabular-nums">{value}</span>
-    </div>
-  );
+function postHrefForRow(r: UiJournalRow) {
+  if (r.review_post_id) return `/posts/${r.review_post_id}`;
+  return null;
 }
 
 export default function ProfileJournalPhone({
   rows,
-  media,
   loading,
   loadingMore,
   cursor,
@@ -285,25 +230,21 @@ export default function ProfileJournalPhone({
   onChangeRating,
   onOpenReviewEditor,
 }: {
-  rows: JournalEntryRow[];
-  media: MediaMaps;
+  rows: UiJournalRow[];
   loading: boolean;
   loadingMore: boolean;
   cursor: string | null;
   busyRow: string | null;
   onLoadMore: () => void;
-  onToggleLike: (r: JournalEntryRow) => void;
-  onChangeRating: (r: JournalEntryRow, next: number | null) => void;
-  onOpenReviewEditor: (r: JournalEntryRow) => void;
+  onToggleLike: (r: UiJournalRow) => void;
+  onChangeRating: (r: UiJournalRow, next: number | null) => void;
+  onOpenReviewEditor: (r: UiJournalRow) => void;
 }) {
-  const groups = groupByMonth(rows);
+  const groups = useMemo(() => groupByMonth(rows), [rows]);
   const loadmore_ref = useRef<HTMLDivElement | null>(null);
 
-  // ✅ who is viewing (for Edit button visibility)
+  // who is viewing (for Edit visibility)
   const [viewerId, setViewerId] = useState<string | null>(null);
-
-  // ✅ review_id -> post_id (for linking review icon to /posts/:postId)
-  const [postIdByReviewId, setPostIdByReviewId] = useState<ReviewPostMap>({});
 
   useEffect(() => {
     (async () => {
@@ -312,129 +253,55 @@ export default function ProfileJournalPhone({
     })();
   }, []);
 
-  // keep map up-to-date as rows change
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const m = await hydratePostsForReviews(rows);
-      if (!cancelled) setPostIdByReviewId(m);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [rows]);
-
-  // Defensive: if "load more" returns no new rows, stop auto-loading.
-  const [exhausted, setExhausted] = useState(false);
-
-  // If parent correctly nulls cursor, treat that as end.
-  useEffect(() => {
-    if (!cursor) setExhausted(true);
-  }, [cursor]);
-
-  const tryLoadMore = useCallback(() => {
-    if (!cursor) return;
-    if (loading) return;
-    if (loadingMore) return;
-    if (exhausted) return;
-
-    const before = rows.length;
-
-    onLoadMore();
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const after = rows.length;
-        if (after <= before) setExhausted(true);
-      });
-    });
-  }, [cursor, exhausted, loading, loadingMore, onLoadMore, rows.length]);
+  /**
+   * REAL infinite scroll:
+   * - when sentinel becomes visible, call onLoadMore()
+   * - guard with loading/loadingMore/cursor
+   * - prevent rapid double-fires with a ref
+   */
+  const requested_ref = useRef(false);
+  const last_len_ref = useRef<number>(rows.length);
 
   useEffect(() => {
-    if (!cursor) return;
-    if (loading) return;
-    if (loadingMore) return;
-    if (exhausted) return;
+    if (rows.length !== last_len_ref.current) {
+      last_len_ref.current = rows.length;
+      requested_ref.current = false; // new rows arrived -> allow next request
+    }
+  }, [rows.length]);
 
+  useEffect(() => {
+    if (!loadingMore) {
+      requested_ref.current = false; // fetch ended -> allow next request
+    }
+  }, [loadingMore]);
+
+  useEffect(() => {
     const el = loadmore_ref.current;
     if (!el) return;
-
-    let didfire = false;
 
     const obs = new IntersectionObserver(
       (entries) => {
         const first = entries[0];
         if (!first?.isIntersecting) return;
-        if (didfire) return;
 
-        if (!cursor) return;
+        if (!cursor) return; // parent has no cursor => end
+        if (loading) return;
         if (loadingMore) return;
-        if (exhausted) return;
+        if (requested_ref.current) return;
 
-        didfire = true;
-        tryLoadMore();
+        requested_ref.current = true;
+        onLoadMore();
       },
       {
         root: null,
-        rootMargin: "600px 0px",
+        rootMargin: "900px 0px",
         threshold: 0,
       }
     );
 
     obs.observe(el);
-
-    return () => {
-      obs.disconnect();
-    };
-  }, [cursor, exhausted, loading, loadingMore, tryLoadMore]);
-
-  function getDisplay(r: JournalEntryRow) {
-    const anime = r.anime_id ? media.animeById[r.anime_id] : null;
-    const manga = r.manga_id ? media.mangaById[r.manga_id] : null;
-    const ep = r.anime_episode_id ? media.animeEpisodeById[r.anime_episode_id] : null;
-    const ch = r.manga_chapter_id ? media.mangaChapterById[r.manga_chapter_id] : null;
-
-    let title = "Untitled";
-    let subtitle: string | null = null;
-    let year: number | null = null;
-    let posterUrl: string | null = null;
-    let href: string | null = null;
-
-    if (r.kind === "anime_episode") {
-      title = anime ? normalizeTitle(anime) : "Anime";
-      subtitle = ep ? normalizeEpisodeLabel(ep) : "Episode";
-      year = anime ? normalizeYear(anime) : null;
-      posterUrl = anime ? pickPosterUrl(anime) : null;
-      const slug = anime ? pickSlug(anime) : null;
-      href = slug ? `/anime/${slug}` : null;
-    } else if (r.kind === "anime_series") {
-      title = anime ? normalizeTitle(anime) : "Anime";
-      year = anime ? normalizeYear(anime) : null;
-      posterUrl = anime ? pickPosterUrl(anime) : null;
-      const slug = anime ? pickSlug(anime) : null;
-      href = slug ? `/anime/${slug}` : null;
-    } else if (r.kind === "manga_chapter") {
-      title = manga ? normalizeTitle(manga) : "Manga";
-      subtitle = ch ? normalizeChapterLabel(ch) : "Chapter";
-      year = manga ? normalizeYear(manga) : null;
-      posterUrl = manga ? pickPosterUrl(manga) : null;
-      const slug = manga ? pickSlug(manga) : null;
-      href = slug ? `/manga/${slug}` : null;
-    } else {
-      title = manga ? normalizeTitle(manga) : "Manga";
-      year = manga ? normalizeYear(manga) : null;
-      posterUrl = manga ? pickPosterUrl(manga) : null;
-      const slug = manga ? pickSlug(manga) : null;
-      href = slug ? `/manga/${slug}` : null;
-    }
-
-    return { title, subtitle, year, posterUrl, href };
-  }
-
-  function postHrefForReviewId(reviewId: string) {
-    const postId = postIdByReviewId[reviewId];
-    return postId ? `/posts/${postId}` : null;
-  }
+    return () => obs.disconnect();
+  }, [cursor, loading, loadingMore, onLoadMore]);
 
   return (
     <div className="space-y-3">
@@ -451,17 +318,14 @@ export default function ProfileJournalPhone({
 
             return (
               <div key={g.key} className="overflow-hidden rounded-xl border border-black bg-white">
-                {/* Month header (updated) */}
                 <div className="border-b border-black bg-zinc-50 px-4 py-2.5">
                   <div className="flex items-center justify-between gap-3">
-                    {/* bigger month text + matches page style */}
                     <div className="min-w-0">
                       <div className="truncate text-[14px] font-extrabold tracking-wide text-zinc-900">
                         {g.label}
                       </div>
                     </div>
 
-                    {/* month stats */}
                     <div className="flex shrink-0 items-center gap-2">
                       <StatPill label="Chapters" value={stats.chapters} />
                       <StatPill label="Episodes" value={stats.episodes} />
@@ -476,10 +340,8 @@ export default function ProfileJournalPhone({
                     const display = getDisplay(r);
                     const isBusy = busyRow === r.log_id;
 
-                    const isOwner =
-                      viewerId != null && (r as any).user_id != null && viewerId === (r as any).user_id;
-
-                    const postHref = r.review_id ? postHrefForReviewId(r.review_id) : null;
+                    const isOwner = viewerId != null && r.user_id != null && viewerId === r.user_id;
+                    const postHref = r.review_id ? postHrefForRow(r) : null;
 
                     return (
                       <div key={`${r.kind}:${r.log_id}`} className="pl-2 pr-3 py-1">
@@ -491,6 +353,7 @@ export default function ProfileJournalPhone({
                           {/* ✅ DO NOT CHANGE: this padding defines the row height */}
                           <div className="py-1 shrink-0">
                             {display.posterUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
                               <img
                                 src={display.posterUrl}
                                 alt=""
@@ -538,7 +401,6 @@ export default function ProfileJournalPhone({
                                     />
                                   </button>
 
-                                  {/* REVIEW ICON + EDIT (absolute, does not shift row) */}
                                   <div className="relative h-[28px] w-[28px]">
                                     {r.review_id && postHref ? (
                                       <Link
@@ -595,7 +457,7 @@ export default function ProfileJournalPhone({
             );
           })}
 
-          {/* ✅ invisible infinite-scroll sentinel (no UI) */}
+          {/* sentinel */}
           <div ref={loadmore_ref} className="h-1 w-full" />
         </>
       )}

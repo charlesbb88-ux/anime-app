@@ -62,7 +62,7 @@ export default function CompletionListItem({ item, onSelect }: Props) {
 
     return (
         <button type="button" onClick={() => onSelect(item)} className="w-full">
-            <div className="flex items-center gap-3 rounded-xs border border-black bg-white px-3 py-2 hover:bg-slate-50 active:translate-y-[1px]">
+            <div className="flex items-center gap-2 sm:gap-3 rounded-xs border border-black bg-white px-1.5 py-1.5 hover:bg-slate-50 active:translate-y-[1px]">
                 {/* poster */}
                 <div className="h-18 w-18 shrink-0 overflow-hidden rounded-md bg-slate-100">
                     {item.image_url ? (
@@ -78,17 +78,18 @@ export default function CompletionListItem({ item, onSelect }: Props) {
 
                 {/* text */}
                 <div className="min-w-0 flex-1 text-left">
-                    <div className="truncate text-lg font-semibold text-slate-900">{displayTitle}</div>
-
+                    <div className="text-xs sm:text-lg font-semibold text-slate-900 line-clamp-3 sm:truncate">
+                        {displayTitle}
+                    </div>
                     <div className="mt-0.5 flex items-center gap-2 text-xs text-black">
-                        <span className="rounded-md border border-black bg-white px-1.5 py-0.5">
+                        <span className="rounded-sm border border-black bg-white px-1 py-0 text-[10px] sm:rounded-md sm:px-1.5 sm:py-0.5 sm:text-xs">
                             {item.kind === "manga" ? "Manga" : "Anime"}
                         </span>
                     </div>
                 </div>
 
                 {/* mini rings (right side) */}
-                <div className="pointer-events-none flex shrink-0 items-center gap-2">
+                <div className="pointer-events-none flex shrink-0 items-center gap-1.5">
                     {/* progress */}
                     <MiniProgressRing
                         current={progressCurrent}

@@ -1,41 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { supabase } from "../../lib/supabaseClient";
 import ProfileLayout from "../../components/profile/ProfileLayout";
 import ReviewIcon from "@/components/icons/ReviewIcon";
 import ProfileLibraryPhone from "@/components/profile/phone/ProfileLibraryPhone";
+import { supabase } from "../../lib/supabaseClient";
 
-type AnimeCard = {
-  id: string;
-  slug: string | null;
-  title: string | null;
-  title_english: string | null;
-  image_url: string | null;
-};
-
-type MangaCard = {
-  id: string;
-  slug: string | null;
-  title: string | null;
-  title_english: string | null;
-  image_url: string | null;
-};
-
-type MarkRow = {
-  id: string;
+type LibraryRow = {
   user_id: string;
-  kind: string | null;
+  kind: "anime" | "manga";
+  media_id: string;
 
-  anime_id: string | null;
-  anime_episode_id: string | null;
+  slug: string | null;
+  title: string | null;
+  title_english: string | null;
+  image_url: string | null;
 
-  manga_id: string | null;
-  manga_chapter_id: string | null;
+  liked: boolean;
+  stars: number | null; // 0..10 in DB
 
-  stars: number | null;
-  created_at: string | null;
+  reviewed: boolean;
+  review_post_id: string | null;
+
+  marked_at: string | null;
 };
 
 type LibraryItem = {
@@ -45,13 +33,12 @@ type LibraryItem = {
   posterUrl: string | null;
   title: string;
 
-  stars: number | null;
+  stars: number | null; // 0..5 normalized for UI
   liked: boolean;
 
   reviewed: boolean;
-  reviewPostId: string | null; // ✅ if reviewed, link to /posts/[id]
+  reviewPostId: string | null;
 
-  // ✅ watched/read timestamp (from user_marks.created_at)
   markedAt: string | null;
 };
 
@@ -63,7 +50,7 @@ function roundToHalf(n: number) {
   return Math.round(n * 2) / 2;
 }
 
-function normalizeStars(raw: unknown): number | null {
+function normalizeStarsFromDb(raw: unknown): number | null {
   if (raw === null || raw === undefined) return null;
 
   const n0 = typeof raw === "number" ? raw : Number(raw);
@@ -71,7 +58,6 @@ function normalizeStars(raw: unknown): number | null {
 
   // DB stars are 0..10 (half-star steps). Convert to 0..5.
   const scaled = n0 / 2;
-
   return roundToHalf(clamp(scaled, 0, 5));
 }
 
@@ -86,255 +72,160 @@ function renderStars(stars: number) {
   return out;
 }
 
+const PAGE_SIZE = 180;
+
 function LibraryBody({ profileId }: { profileId: string }) {
   const [loadingLibrary, setLoadingLibrary] = useState(false);
   const [items, setItems] = useState<LibraryItem[]>([]);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // keyset cursor
+  const cursor = useMemo(() => {
+    const last = items[items.length - 1];
+    if (!last) return null;
+    return {
+      markedAt: last.markedAt ?? null,
+      kind: last.kind,
+      id: last.id,
+    };
+  }, [items]);
 
   function itemHref(it: LibraryItem) {
     if (!it.slug) return "#";
     return it.kind === "anime" ? `/anime/${it.slug}` : `/manga/${it.slug}`;
   }
 
+  const mapRow = useCallback((r: LibraryRow): LibraryItem | null => {
+    const title = ((r.title_english || r.title || "") as string).trim() || "Untitled";
+
+    return {
+      kind: r.kind,
+      id: r.media_id,
+      slug: r.slug ?? null,
+      posterUrl: r.image_url ?? null,
+      title,
+
+      stars: normalizeStarsFromDb(r.stars),
+      liked: !!r.liked,
+
+      reviewed: !!r.reviewed,
+      reviewPostId: r.review_post_id ?? null,
+
+      markedAt: r.marked_at ?? null,
+    };
+  }, []);
+
   useEffect(() => {
     if (!profileId) return;
 
     let cancelled = false;
 
-    async function loadLibrary() {
+    async function loadFirst() {
       setLoadingLibrary(true);
+      setLoadingMore(false);
+      setHasMore(true);
 
       try {
-        const { data: markRows, error: marksError } = await supabase
-          .from("user_marks")
-          .select("id, user_id, kind, anime_id, manga_id, stars, created_at, anime_episode_id, manga_chapter_id")
+        const { data, error } = await supabase
+          .from("user_library_items")
+          .select(
+            "user_id, kind, media_id, slug, title, title_english, image_url, liked, stars, reviewed, review_post_id, marked_at"
+          )
           .eq("user_id", profileId)
-          .in("kind", ["watched", "read", "liked", "rating"]);
+          .order("marked_at", { ascending: false, nullsFirst: false })
+          .order("kind", { ascending: true })
+          .order("media_id", { ascending: true })
+          .limit(PAGE_SIZE);
 
         if (cancelled) return;
 
-        if (marksError) {
+        if (error) {
           setItems([]);
+          setHasMore(false);
           return;
         }
 
-        const marks = (markRows || []) as MarkRow[];
-
-        // watched/read IDs
-        const watchedAnimeIds = new Set<string>();
-        const readMangaIds = new Set<string>();
-
-        // ✅ watched/read timestamps (keep latest if multiple)
-        const watchedAtAnime: Record<string, string> = {};
-        const readAtManga: Record<string, string> = {};
-
-        for (const mk of marks) {
-          const k = (mk.kind || "").toLowerCase();
-          const ts = mk.created_at ? String(mk.created_at) : null;
-
-          if (mk.anime_id && k === "watched") {
-            const id = String(mk.anime_id);
-            watchedAnimeIds.add(id);
-            if (ts && (!watchedAtAnime[id] || ts > watchedAtAnime[id])) watchedAtAnime[id] = ts;
-          }
-
-          if (mk.manga_id && k === "read") {
-            const id = String(mk.manga_id);
-            readMangaIds.add(id);
-            if (ts && (!readAtManga[id] || ts > readAtManga[id])) readAtManga[id] = ts;
-          }
-
-          // fallback: if you used watched for manga
-          if (mk.manga_id && k === "watched") {
-            const id = String(mk.manga_id);
-            readMangaIds.add(id);
-            if (ts && (!readAtManga[id] || ts > readAtManga[id])) readAtManga[id] = ts;
-          }
+        const mapped: LibraryItem[] = [];
+        for (const r of (data || []) as LibraryRow[]) {
+          const it = mapRow(r);
+          if (it) mapped.push(it);
         }
 
-        const animeIds = Array.from(watchedAnimeIds);
-        const mangaIds = Array.from(readMangaIds);
-
-        const likedAnime = new Set<string>();
-        const likedManga = new Set<string>();
-        const ratingAnime: Record<string, number> = {};
-        const ratingManga: Record<string, number> = {};
-
-        for (const mk of marks) {
-          const k = (mk.kind || "").toLowerCase();
-
-          if (k === "liked") {
-            if (mk.anime_id) likedAnime.add(String(mk.anime_id));
-            if (mk.manga_id) likedManga.add(String(mk.manga_id));
-          }
-
-          if (k === "rating") {
-            const s = normalizeStars(mk.stars);
-            if (s == null) continue;
-            if (mk.anime_id) ratingAnime[String(mk.anime_id)] = s;
-            if (mk.manga_id) ratingManga[String(mk.manga_id)] = s;
-          }
-        }
-
-        const [animeRes, mangaRes] = await Promise.all([
-          animeIds.length
-            ? supabase.from("anime").select("id, slug, title, title_english, image_url").in("id", animeIds)
-            : Promise.resolve({ data: [] as any[] }),
-          mangaIds.length
-            ? supabase.from("manga").select("id, slug, title, title_english, image_url").in("id", mangaIds)
-            : Promise.resolve({ data: [] as any[] }),
-        ]);
-
-        if (cancelled) return;
-
-        const animeById: Record<string, AnimeCard> = {};
-        (animeRes.data || []).forEach((a: any) => {
-          if (!a?.id) return;
-          animeById[String(a.id)] = {
-            id: String(a.id),
-            slug: a.slug ?? null,
-            title: a.title ?? null,
-            title_english: a.title_english ?? null,
-            image_url: a.image_url ?? null,
-          };
-        });
-
-        const mangaById: Record<string, MangaCard> = {};
-        (mangaRes.data || []).forEach((m: any) => {
-          if (!m?.id) return;
-          mangaById[String(m.id)] = {
-            id: String(m.id),
-            slug: m.slug ?? null,
-            title: m.title ?? null,
-            title_english: m.title_english ?? null,
-            image_url: m.image_url ?? null,
-          };
-        });
-
-        // ---------------- REVIEWS -> POSTS ----------------
-
-        const reviewedAnime = new Set<string>();
-        const reviewedManga = new Set<string>();
-
-        const reviewIdByAnimeId: Record<string, string> = {};
-        const reviewIdByMangaId: Record<string, string> = {};
-
-        let reviewIdToPostId: Record<string, string> = {};
-
-        try {
-          const [revAnimeRes, revMangaRes] = await Promise.all([
-            animeIds.length
-              ? supabase.from("reviews").select("id, anime_id").eq("user_id", profileId).in("anime_id", animeIds)
-              : Promise.resolve({ data: [] as any[] }),
-            mangaIds.length
-              ? supabase.from("reviews").select("id, manga_id").eq("user_id", profileId).in("manga_id", mangaIds)
-              : Promise.resolve({ data: [] as any[] }),
-          ]);
-
-          (revAnimeRes.data || []).forEach((r: any) => {
-            if (!r?.id || !r?.anime_id) return;
-            const aid = String(r.anime_id);
-            reviewedAnime.add(aid);
-            reviewIdByAnimeId[aid] = String(r.id);
-          });
-
-          (revMangaRes.data || []).forEach((r: any) => {
-            if (!r?.id || !r?.manga_id) return;
-            const mid = String(r.manga_id);
-            reviewedManga.add(mid);
-            reviewIdByMangaId[mid] = String(r.id);
-          });
-
-          const reviewIds = Array.from(
-            new Set([...Object.values(reviewIdByAnimeId), ...Object.values(reviewIdByMangaId)])
-          );
-
-          if (reviewIds.length) {
-            const postsRes = await supabase
-              .from("posts")
-              .select("id, review_id")
-              .eq("user_id", profileId)
-              .in("review_id", reviewIds.slice(0, 1000));
-
-            if (postsRes.data) {
-              for (const p of postsRes.data as any[]) {
-                if (!p?.id || !p?.review_id) continue;
-                reviewIdToPostId[String(p.review_id)] = String(p.id);
-              }
-            }
-          }
-        } catch {
-          // ignore if schema differs
-        }
-
-        // ---------------- BUILD ITEMS ----------------
-
-        const combined: LibraryItem[] = [];
-
-        for (const id of animeIds) {
-          const meta = animeById[id];
-          if (!meta) continue;
-
-          const title = (meta.title_english || meta.title || "").trim() || "Untitled";
-          const reviewId = reviewIdByAnimeId[id];
-          const postId = reviewId ? reviewIdToPostId[reviewId] : undefined;
-
-          combined.push({
-            kind: "anime",
-            id,
-            slug: meta.slug ?? null,
-            posterUrl: meta.image_url ?? null,
-            title,
-            stars: ratingAnime[id] ?? null,
-            liked: likedAnime.has(id),
-            reviewed: reviewedAnime.has(id),
-            reviewPostId: postId ?? null,
-            markedAt: watchedAtAnime[id] ?? null,
-          });
-        }
-
-        for (const id of mangaIds) {
-          const meta = mangaById[id];
-          if (!meta) continue;
-
-          const title = (meta.title_english || meta.title || "").trim() || "Untitled";
-          const reviewId = reviewIdByMangaId[id];
-          const postId = reviewId ? reviewIdToPostId[reviewId] : undefined;
-
-          combined.push({
-            kind: "manga",
-            id,
-            slug: meta.slug ?? null,
-            posterUrl: meta.image_url ?? null,
-            title,
-            stars: ratingManga[id] ?? null,
-            liked: likedManga.has(id),
-            reviewed: reviewedManga.has(id),
-            reviewPostId: postId ?? null,
-            markedAt: readAtManga[id] ?? null,
-          });
-        }
-
-        // ✅ Sort by most recently watched/read (newest first)
-        // created_at is ISO-ish, so string compare works fine. Missing dates go last.
-        combined.sort((a, b) => {
-          const at = a.markedAt ?? "";
-          const bt = b.markedAt ?? "";
-          if (bt !== at) return bt.localeCompare(at);
-          return a.title.toLowerCase().localeCompare(b.title.toLowerCase());
-        });
-
-        if (!cancelled) setItems(combined);
+        setItems(mapped);
+        setHasMore(mapped.length === PAGE_SIZE);
       } finally {
         if (!cancelled) setLoadingLibrary(false);
       }
     }
 
-    loadLibrary();
-
+    loadFirst();
     return () => {
       cancelled = true;
     };
-  }, [profileId]);
+  }, [profileId, mapRow]);
+
+  const loadMore = useCallback(async () => {
+    if (!profileId || loadingLibrary || loadingMore || !hasMore) return;
+    if (!cursor || !cursor.markedAt) {
+      setHasMore(false);
+      return;
+    }
+
+    setLoadingMore(true);
+    try {
+      // Keyset pagination:
+      // fetch rows strictly "after" the last row in our ordering
+      //
+      // ordering is:
+      // marked_at desc, kind asc, media_id asc
+      //
+      // so "after" means:
+      // marked_at < cursor.markedAt
+      // OR (marked_at = cursor.markedAt AND kind > cursor.kind)
+      // OR (marked_at = cursor.markedAt AND kind = cursor.kind AND media_id > cursor.id)
+
+      const { data, error } = await supabase
+        .from("user_library_items")
+        .select(
+          "user_id, kind, media_id, slug, title, title_english, image_url, liked, stars, reviewed, review_post_id, marked_at"
+        )
+        .eq("user_id", profileId)
+        .or(
+          [
+            `marked_at.lt.${cursor.markedAt}`,
+            `and(marked_at.eq.${cursor.markedAt},kind.gt.${cursor.kind})`,
+            `and(marked_at.eq.${cursor.markedAt},kind.eq.${cursor.kind},media_id.gt.${cursor.id})`,
+          ].join(",")
+        )
+        .order("marked_at", { ascending: false, nullsFirst: false })
+        .order("kind", { ascending: true })
+        .order("media_id", { ascending: true })
+        .limit(PAGE_SIZE);
+
+      if (error) return;
+
+      const mapped: LibraryItem[] = [];
+      for (const r of (data || []) as LibraryRow[]) {
+        const it = mapRow(r);
+        if (it) mapped.push(it);
+      }
+
+      setItems((prev) => {
+        const seen = new Set(prev.map((x) => `${x.kind}:${x.id}`));
+        const out = [...prev];
+        for (const it of mapped) {
+          const key = `${it.kind}:${it.id}`;
+          if (!seen.has(key)) out.push(it);
+        }
+        return out;
+      });
+
+      setHasMore(mapped.length === PAGE_SIZE);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [profileId, loadingLibrary, loadingMore, hasMore, cursor, mapRow]);
 
   return (
     <>
@@ -357,93 +248,102 @@ function LibraryBody({ profileId }: { profileId: string }) {
               Nothing in this library yet.
             </div>
           ) : (
-            <div className="grid [grid-template-columns:repeat(auto-fill,minmax(100px,1fr))] gap-x-2 gap-y-4">
-              {items.map((it) => {
-                const href = itemHref(it);
+            <>
+              <div className="grid [grid-template-columns:repeat(auto-fill,minmax(100px,1fr))] gap-x-2 gap-y-4">
+                {items.map((it) => {
+                  const href = itemHref(it);
 
-                return (
-                  <div key={`${it.kind}:${it.id}`} className="block">
-                    {/* ✅ only the poster is the media link */}
-                    <Link href={href} title={it.title} className="block">
-                      {/* ✅ HOVER TRIGGER IS ONLY THIS POSTER BOX (NOT THE STARS ROW) */}
-                      <div className="group relative w-full aspect-[2/3] overflow-visible">
-                        <div className="relative w-full h-full overflow-hidden rounded-[4px] bg-slate-200 border-2 border-black group-hover:border-slate-400 transition">
+                  return (
+                    <div key={`${it.kind}:${it.id}`} className="block">
+                      {/* ✅ only the poster is the media link */}
+                      <Link href={href} title={it.title} className="block">
+                        {/* ✅ HOVER TRIGGER IS ONLY THIS POSTER BOX (NOT THE STARS ROW) */}
+                        <div className="group relative w-full aspect-[2/3] overflow-visible">
+                          <div className="relative w-full h-full overflow-hidden rounded-[4px] bg-slate-200 border-2 border-black group-hover:border-slate-400 transition">
+                            {it.posterUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={it.posterUrl} alt={it.title} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <span className="text-[10px] text-slate-500">No poster</span>
+                              </div>
+                            )}
+
+                            {it.posterUrl ? (
+                              <div className="pointer-events-none absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors" />
+                            ) : null}
+                          </div>
+
                           {it.posterUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={it.posterUrl} alt={it.title} className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <span className="text-[10px] text-slate-500">No poster</span>
-                            </div>
-                          )}
-
-                          {it.posterUrl ? (
-                            <div className="pointer-events-none absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors" />
-                          ) : null}
-                        </div>
-
-                        {it.posterUrl ? (
-                          <div className="pointer-events-none absolute inset-0 z-50 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <div className="flex-none w-[220px] aspect-[2/3] overflow-hidden rounded-[6px] ring-5 ring-black shadow-2xl bg-slate-200">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={it.posterUrl} alt={it.title} className="w-full h-full object-cover" />
+                            <div className="pointer-events-none absolute inset-0 z-50 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="flex-none w-[220px] aspect-[2/3] overflow-hidden rounded-[6px] ring-5 ring-black shadow-2xl bg-slate-200">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={it.posterUrl} alt={it.title} className="w-full h-full object-cover" />
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ) : null}
-                      </div>
-                    </Link>
+                          ) : null}
+                        </div>
+                      </Link>
 
-                    {/* ✅ not inside .group, so hovering here does NOTHING to the preview */}
-                    <div className="mt-0 flex items-center justify-between">
-                      <div className="min-h-[12px] leading-none">
-                        {(() => {
-                          const hasStars = typeof it.stars === "number" && it.stars > 0;
+                      {/* ✅ not inside .group, so hovering here does NOTHING to the preview */}
+                      <div className="mt-0 flex items-center justify-between">
+                        <div className="min-h-[12px] leading-none">
+                          {(() => {
+                            const hasStars = typeof it.stars === "number" && it.stars > 0;
 
-                          return (
-                            <div className="flex items-start">
-                              {hasStars ? (
-                                <span className="text-[14px] text-slate-1000 tracking-tight leading-none">
-                                  {renderStars(it.stars as number)}
-                                </span>
-                              ) : null}
+                            return (
+                              <div className="flex items-start">
+                                {hasStars ? (
+                                  <span className="text-[14px] text-slate-1000 tracking-tight leading-none">
+                                    {renderStars(it.stars as number)}
+                                  </span>
+                                ) : null}
 
-                              {it.liked ? (
-                                <span
-                                  className={[
-                                    "text-[15px] text-slate-1000 leading-none",
-                                    hasStars ? "ml-1 relative top-[.5px]" : "",
-                                  ].join(" ")}
-                                  aria-label="Liked"
-                                  title="Liked"
-                                >
-                                  ♥
-                                </span>
-                              ) : null}
-                            </div>
-                          );
-                        })()}
-                      </div>
+                                {it.liked ? (
+                                  <span
+                                    className={[
+                                      "text-[15px] text-slate-1000 leading-none",
+                                      hasStars ? "ml-1 relative top-[.5px]" : "",
+                                    ].join(" ")}
+                                    aria-label="Liked"
+                                    title="Liked"
+                                  >
+                                    ♥
+                                  </span>
+                                ) : null}
+                              </div>
+                            );
+                          })()}
+                        </div>
 
-                      <div className="flex items-center gap-1.5">
-                        {it.reviewed ? (
-                          it.reviewPostId ? (
-                            <Link href={`/posts/${it.reviewPostId}`} className="text-slate-600 hover:text-slate-900">
-                              <ReviewIcon size={12} />
-                            </Link>
-                          ) : (
-                            <span className="text-slate-600" aria-label="Reviewed" title="Reviewed">
-                              <ReviewIcon size={12} />
-                            </span>
-                          )
-                        ) : null}
+                        <div className="flex items-center gap-1.5">
+                          {it.reviewed ? (
+                            it.reviewPostId ? (
+                              <Link href={`/posts/${it.reviewPostId}`} className="text-slate-600 hover:text-slate-900">
+                                <ReviewIcon size={12} />
+                              </Link>
+                            ) : (
+                              <span className="text-slate-600" aria-label="Reviewed" title="Reviewed">
+                                <ReviewIcon size={12} />
+                              </span>
+                            )
+                          ) : null}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+
+              <InfiniteSentinel disabled={!hasMore || loadingLibrary || loadingMore} onVisible={loadMore} />
+
+              {loadingMore ? <div className="py-4 text-xs text-slate-600">Loading more…</div> : null}
+              {!loadingLibrary && !loadingMore && items.length > 0 && !hasMore ? (
+                <div className="py-4 text-xs text-slate-500">That’s everything.</div>
+              ) : null}
+            </>
           )}
         </>
       </div>
@@ -462,4 +362,28 @@ export default function UserLibraryPage() {
       {({ profile }) => <LibraryBody profileId={profile.id} />}
     </ProfileLayout>
   );
+}
+
+function InfiniteSentinel({ onVisible, disabled }: { onVisible: () => void; disabled?: boolean }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (disabled) return;
+
+    const el = ref.current;
+    if (!el) return;
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0];
+        if (first?.isIntersecting) onVisible();
+      },
+      { root: null, rootMargin: "800px", threshold: 0 }
+    );
+
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [onVisible, disabled]);
+
+  return <div ref={ref} className="h-1 w-full" />;
 }
