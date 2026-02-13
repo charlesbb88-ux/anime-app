@@ -3,7 +3,12 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { clampPan, computePanLimits, panToPctForDbFullWindow, clamp } from "@/lib/settings/backdropMath";
+import {
+  clampPan,
+  computePanLimits,
+  panToPctForDbFullWindow,
+  clamp,
+} from "@/lib/settings/backdropMath";
 
 type Applied = {
   url: string;
@@ -13,22 +18,20 @@ type Applied = {
 };
 
 type UseBackdropEditorArgs = {
-  open: boolean;
-  onClose: () => void;
+  isActive: boolean;
+  onClose?: () => void;
+  closeOnSave?: boolean;
 
   userId: string;
 
-  // preview sizes + overlay behavior
-  previewBackdropH: number; // e.g. 150
-  previewHiddenBottomPx: number; // e.g. 40 (in preview px, not editor px)
+  previewBackdropH: number;
+  previewHiddenBottomPx: number;
 
-  // defaults
-  defaultX?: number; // default 50
-  defaultY?: number; // default 50
-  defaultZoom?: number; // default 1
+  defaultX?: number;
+  defaultY?: number;
+  defaultZoom?: number;
 
-  // storage
-  bucket?: string; // default "backdrops"
+  bucket?: string;
 
   onSaved?: (args: {
     backdrop_url: string;
@@ -39,8 +42,9 @@ type UseBackdropEditorArgs = {
 };
 
 export function useBackdropEditor({
-  open,
+  isActive,
   onClose,
+  closeOnSave = false,
   userId,
   previewBackdropH,
   previewHiddenBottomPx,
@@ -59,11 +63,12 @@ export function useBackdropEditor({
   const [pickedUrl, setPickedUrl] = useState<string | null>(null);
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
 
-  // measured container sizes
   const [editorBox, setEditorBox] = useState<{ w: number; h: number }>({ w: 1, h: 1 });
-  const [previewBackdropBox, setPreviewBackdropBox] = useState<{ w: number; h: number }>({ w: 1, h: 1 });
+  const [previewBackdropBox, setPreviewBackdropBox] = useState<{ w: number; h: number }>({
+    w: 1,
+    h: 1,
+  });
 
-  // pan in editor pixels (image translation)
   const [panPx, setPanPx] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(defaultZoom);
 
@@ -80,9 +85,7 @@ export function useBackdropEditor({
     startPanY: number;
   } | null>(null);
 
-  // ---------------------------
   // FILE -> OBJECT URL
-  // ---------------------------
   useEffect(() => {
     if (!pickedFile) {
       setPickedUrl(null);
@@ -93,9 +96,7 @@ export function useBackdropEditor({
     return () => URL.revokeObjectURL(url);
   }, [pickedFile]);
 
-  // ---------------------------
   // NATURAL IMAGE SIZE
-  // ---------------------------
   useEffect(() => {
     if (!pickedUrl) {
       setImgSize(null);
@@ -121,11 +122,9 @@ export function useBackdropEditor({
     };
   }, [pickedUrl]);
 
-  // ---------------------------
   // RESIZE OBSERVER
-  // ---------------------------
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!isActive) return;
 
     const editorEl = editorRef.current;
     const pvEl = previewBackdropRef.current;
@@ -155,42 +154,37 @@ export function useBackdropEditor({
     }
 
     return () => ro.disconnect();
-  }, [open]);
+  }, [isActive]);
 
-  // ---------------------------
-  // RESET ON CLOSE
-  // ---------------------------
+  // RESET WHEN NOT ACTIVE
   useEffect(() => {
-    if (!open) {
-      setPickedFile(null);
-      setPickedUrl(null);
-      setImgSize(null);
-      setPanPx({ x: 0, y: 0 });
-      setZoom(defaultZoom);
-      setApplied(null);
-      setSaving(false);
-      setErr(null);
-      dragRef.current = null;
-    }
-  }, [open, defaultZoom]);
+    if (isActive) return;
 
-  // ---------------------------
-  // ESC CLOSE
-  // ---------------------------
+    setPickedFile(null);
+    setPickedUrl(null);
+    setImgSize(null);
+    setPanPx({ x: 0, y: 0 });
+    setZoom(defaultZoom);
+    setApplied(null);
+    setSaving(false);
+    setErr(null);
+    dragRef.current = null;
+  }, [isActive, defaultZoom]);
+
+  // ESC CLOSE (modal only)
   useEffect(() => {
-    if (!open) return;
+    if (!isActive) return;
+    if (!onClose) return;
+
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onClose?.();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [isActive, onClose]);
 
-  // ---------------------------
   // OUTER + INNER BOXES
-  // ---------------------------
   const outer = useMemo(() => {
-    // preview window is previewBackdropBox.w x previewBackdropH
     const pvW = Math.max(1, previewBackdropBox.w);
     const pvH = previewBackdropH;
 
@@ -209,7 +203,6 @@ export function useBackdropEditor({
   }, [editorBox.w, editorBox.h, previewBackdropBox.w, previewBackdropH]);
 
   const inner = useMemo(() => {
-    // bottom hidden in preview px -> convert to editor px using outer.s
     const hiddenPreviewPx = clamp(previewHiddenBottomPx, 0, Math.max(0, previewBackdropH - 1));
     const hiddenEditorPx = Math.round(hiddenPreviewPx * (outer.s || 1));
 
@@ -223,9 +216,6 @@ export function useBackdropEditor({
     };
   }, [outer, previewHiddenBottomPx, previewBackdropH]);
 
-  // ---------------------------
-  // CLAMP PAN (uses your backdropMath signature)
-  // ---------------------------
   function clampPanLocal(next: { x: number; y: number }, zOverride?: number) {
     if (!imgSize) return next;
 
@@ -240,16 +230,12 @@ export function useBackdropEditor({
     });
   }
 
-  // keep pan valid when things change
   useEffect(() => {
-    if (!open) return;
+    if (!isActive) return;
     setPanPx((p) => clampPanLocal(p));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, outer.w, outer.h, inner.hiddenEditorPx, imgSize?.w, imgSize?.h, zoom]);
+  }, [isActive, outer.w, outer.h, inner.hiddenEditorPx, imgSize?.w, imgSize?.h, zoom]);
 
-  // ---------------------------
-  // DRAG HANDLERS
-  // ---------------------------
   function beginDrag(e: React.PointerEvent<HTMLDivElement>) {
     if (!pickedUrl || !imgSize) return;
     setErr(null);
@@ -286,17 +272,11 @@ export function useBackdropEditor({
     dragRef.current = null;
   }
 
-  // ---------------------------
-  // PREVIEW PAN (editor px -> preview px)
-  // ---------------------------
   const previewPanPx = useMemo(() => {
     const s = outer.s || 1;
     return { x: panPx.x / s, y: panPx.y / s };
   }, [panPx.x, panPx.y, outer.s]);
 
-  // ---------------------------
-  // IMAGE BASE SIZES (cover @ zoom=1)
-  // ---------------------------
   const previewBase = useMemo(() => {
     if (!imgSize) return null;
     const { baseW, baseH } = computePanLimits({
@@ -321,9 +301,6 @@ export function useBackdropEditor({
     return { baseW, baseH };
   }, [imgSize?.w, imgSize?.h, outer.w, outer.h]);
 
-  // ---------------------------
-  // APPLY (compute DB % and lock preview state)
-  // ---------------------------
   function applyNow() {
     if (!imgSize || !pickedUrl) return;
 
@@ -346,9 +323,6 @@ export function useBackdropEditor({
     setErr(null);
   }
 
-  // ---------------------------
-  // SAVE (upload + update profiles)
-  // ---------------------------
   async function saveBackdropToDb() {
     setErr(null);
 
@@ -394,7 +368,8 @@ export function useBackdropEditor({
       if (dbErr) throw dbErr;
 
       onSaved?.(updates);
-      onClose();
+
+      if (closeOnSave) onClose?.();
     } catch (e: any) {
       setErr(e?.message || "Failed to save backdrop.");
     } finally {
@@ -402,9 +377,6 @@ export function useBackdropEditor({
     }
   }
 
-  // ---------------------------
-  // FILE PICKER HELPERS
-  // ---------------------------
   function pickFile(f: File | null) {
     setPickedFile(f);
     setApplied(null);
@@ -422,9 +394,6 @@ export function useBackdropEditor({
     fileInputRef.current?.click();
   }
 
-  // ---------------------------
-  // ZOOM CHANGE (keeps pan clamped)
-  // ---------------------------
   function setZoomClamped(nextZoom: number) {
     const z = clamp(nextZoom, 1, 3);
     setZoom(z);
@@ -432,12 +401,10 @@ export function useBackdropEditor({
   }
 
   return {
-    // refs
     fileInputRef,
     editorRef,
     previewBackdropRef,
 
-    // raw state
     pickedFile,
     pickedUrl,
     imgSize,
@@ -452,14 +419,12 @@ export function useBackdropEditor({
     saving,
     err,
 
-    // computed geometry
     outer,
     inner,
     previewPanPx,
     previewBase,
     editorBase,
 
-    // actions/handlers
     setErr,
     setEditorBox,
     setPreviewBackdropBox,
