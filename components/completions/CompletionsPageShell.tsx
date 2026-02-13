@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CompletionsCarouselRow from "./CompletionsCarouselRow";
+import CompletionsCarouselRowPhone from "./CompletionsCarouselRowPhone";
 import CompletionListItem from "./CompletionListItem";
 import {
   fetchCompletionBucketCounts,
@@ -64,7 +65,7 @@ export default function CompletionsPageShell({ userId }: Props) {
   const [modalOpen, setModalOpen] = useState(false);
 
   // fixed carousel row size (normal posters only)
-  const rowLimit = 40;
+  const rowLimit = 25;
 
   const bounds = useMemo(() => progressBounds(filters.progress), [filters.progress]);
 
@@ -253,13 +254,27 @@ export default function CompletionsPageShell({ userId }: Props) {
 
       {viewMode === "carousel" ? (
         <>
-          {rows.map((rowItems, idx) => (
-            <CompletionsCarouselRow
-              key={`completions-row-${idx}`}
-              items={rowItems}
-              onSelect={(it) => openDetails(it as CompletionItem)}
-            />
-          ))}
+          {/* PC only */}
+          <div className="hidden sm:block">
+            {rows.map((rowItems, idx) => (
+              <CompletionsCarouselRow
+                key={`completions-row-pc-${idx}`}
+                items={rowItems}
+                onSelect={(it) => openDetails(it as CompletionItem)}
+              />
+            ))}
+          </div>
+
+          {/* Phone only */}
+          <div className="sm:hidden">
+            {rows.map((rowItems, idx) => (
+              <CompletionsCarouselRowPhone
+                key={`completions-row-phone-${idx}`}
+                items={rowItems}
+                onSelect={(it) => openDetails(it as CompletionItem)}
+              />
+            ))}
+          </div>
         </>
       ) : null}
 

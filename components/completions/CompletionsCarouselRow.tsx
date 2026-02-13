@@ -1,11 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-
-type Item = {
-  id: string;
-  title: string;
-  kind: "anime" | "manga";
-  image_url?: string | null;
-};
+import type { CompletionItem } from "@/lib/completions";
+type Item = CompletionItem;
 
 type Props = {
   items: Item[];
