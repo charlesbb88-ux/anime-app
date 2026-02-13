@@ -30,7 +30,7 @@ type Props = {
   previewBackdropH: number;
   overlaySrc: string;
 
-  applied: Applied | null;
+  applied: Applied | null; // (kept for compatibility, unused now)
 };
 
 export default function ProfileBackdropPreviewHeader({
@@ -45,7 +45,6 @@ export default function ProfileBackdropPreviewHeader({
   avatarInitial,
   previewBackdropH,
   overlaySrc,
-  applied,
 }: Props) {
   return (
     <div className="rounded-xl overflow-hidden border border-slate-200 bg-white">
@@ -112,31 +111,10 @@ export default function ProfileBackdropPreviewHeader({
           </div>
         </div>
 
-        <div className="p-3">
-          <div className="text-[11px] text-slate-500">
-            {applied ? (
-              <>This is what your header will look like.</>
-            ) : (
-              <>
-                Click <span className="font-semibold">Apply</span> to lock the preview.
-              </>
-            )}
-          </div>
-        </div>
+        {/* ✅ removed the “Click Apply…” / “This is what…” message block */}
       </div>
 
-      {/* keep the duplicate block since your original had it */}
-      <div className="p-3">
-        <div className="text-[11px] text-slate-500">
-          {applied ? (
-            <>This is what your header will look like.</>
-          ) : (
-            <>
-              Click <span className="font-semibold">Apply</span> to lock the preview.
-            </>
-          )}
-        </div>
-      </div>
+      {/* ✅ removed the duplicate message block too */}
     </div>
   );
 }

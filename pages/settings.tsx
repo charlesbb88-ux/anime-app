@@ -5,26 +5,17 @@ import type { NextPage } from "next";
 import Link from "next/link";
 import { useState } from "react";
 
-import ProfileBackdropModal from "@/components/settings/ProfileBackdropModal";
 import SettingsProfileTab from "@/components/settings/SettingsProfileTab";
 import SettingsAvatarTab from "@/components/settings/SettingsAvatarTab";
+import SettingsBannerTab from "@/components/settings/SettingsBannerTab";
 import { useMyProfile } from "@/lib/hooks/useMyProfile";
 
-type TabKey = "profile" | "avatar";
+type TabKey = "profile" | "avatar" | "banner";
 
 const SettingsPage: NextPage = () => {
-  const {
-    authUser,
-    profile,
-    loading,
-    error,
-    setProfileOptimistic,
-  } = useMyProfile();
-
+  const { authUser, profile, loading, error, setProfileOptimistic } = useMyProfile();
   const [activeTab, setActiveTab] = useState<TabKey>("profile");
-  const [openBackdropModal, setOpenBackdropModal] = useState(false);
 
-  // ---------- RENDER GUARDS ----------
   if (loading) {
     return (
       <main className="min-h-screen bg-slate-100 flex items-center justify-center">
@@ -98,6 +89,7 @@ const SettingsPage: NextPage = () => {
                     Profile
                   </button>
                 </li>
+
                 <li className={tabLiClass("avatar")}>
                   <button
                     type="button"
@@ -107,13 +99,23 @@ const SettingsPage: NextPage = () => {
                     Avatar
                   </button>
                 </li>
+
+                <li className={tabLiClass("banner")}>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("banner")}
+                    className="focus:outline-none"
+                  >
+                    Banner
+                  </button>
+                </li>
               </ul>
             </nav>
 
             <section className="text-right">
               <p className="text-[11px] text-slate-500">
-                Upgrade to <span className="font-semibold">Pro</span> for
-                additional features
+                Upgrade to <span className="font-semibold">Pro</span> for additional
+                features
               </p>
             </section>
           </div>
@@ -126,25 +128,24 @@ const SettingsPage: NextPage = () => {
               <SettingsProfileTab
                 profile={profile}
                 onUpdated={(next) => setProfileOptimistic(next)}
-                onOpenBackdrop={() => setOpenBackdropModal(true)}
+                onOpenBackdrop={() => setActiveTab("banner")}
               />
-            ) : (
+            ) : activeTab === "avatar" ? (
               <SettingsAvatarTab
                 profile={profile}
                 onUpdated={(next) => setProfileOptimistic(next)}
+              />
+            ) : (
+              <SettingsBannerTab
+                userId={profile.id}
+                username={profile.username}
+                avatarUrl={profile.avatar_url}
+                isActive={activeTab === "banner"}
               />
             )}
           </div>
         </section>
       </div>
-
-      <ProfileBackdropModal
-        open={openBackdropModal}
-        onClose={() => setOpenBackdropModal(false)}
-        userId={profile.id}
-        username={profile.username}
-        avatarUrl={profile.avatar_url}
-      />
     </main>
   );
 };

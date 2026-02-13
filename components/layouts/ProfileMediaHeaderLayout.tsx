@@ -1,9 +1,10 @@
 // components/layouts/ProfileMediaHeaderLayout.tsx
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
+import { computePanLimits } from "@/lib/settings/backdropMath";
 
 type Tab = "posts" | "watchlist" | "activity" | "journal" | "library" | "completions";
 
@@ -31,7 +32,7 @@ type Props = {
   rightPinned?: React.ReactNode;
   reserveRightClassName?: string;
 
-  /** ✅ how many pixels at the bottom are “visually hidden” by your overlay fade */
+  /** how many pixels at the bottom are “visually hidden” by your overlay fade */
   overlayHiddenBottomPx?: number;
 };
 
@@ -56,7 +57,6 @@ export default function ProfileMediaHeaderLayout({
   rightPinned,
   reserveRightClassName = "pr-[260px]",
 
-  // ✅ tune this until the real page matches your editor preview behavior
   overlayHiddenBottomPx = 150,
 }: Props) {
   const router = useRouter();
@@ -75,10 +75,12 @@ export default function ProfileMediaHeaderLayout({
     return router.asPath === path || router.asPath.startsWith(`${path}/`);
   }
 
-  // ✅ match ProfileTopNav colors exactly (slate)
-  function tabClass(isActive: boolean) {
-    return `pb-2 ${isActive ? "border-b-2 border-slate-900 text-slate-900" : "text-slate-500 hover:text-slate-800"
-      }`;
+  function tabClass(isActiveTab: boolean) {
+    return `pb-2 ${
+      isActiveTab
+        ? "border-b-2 border-slate-900 text-slate-900"
+        : "text-slate-500 hover:text-slate-800"
+    }`;
   }
 
   const computedActive: Tab = useMemo(() => {
@@ -92,29 +94,120 @@ export default function ProfileMediaHeaderLayout({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, router.asPath, baseProfilePath]);
 
-  // ✅ sanitize DB values
+  // sanitize DB values
   const posX = Number.isFinite(backdropPosX as number) ? (backdropPosX as number) : 50;
   const posY = Number.isFinite(backdropPosY as number) ? (backdropPosY as number) : 20;
   const zoomRaw = Number.isFinite(backdropZoom as number) ? (backdropZoom as number) : 1;
   const zoom = clamp(zoomRaw, 1, 3);
 
-  // ✅ key: position background against ONLY the “visible” viewport (not the overlay-hidden bottom)
   const hideBottom = Math.max(0, Math.round(overlayHiddenBottomPx ?? 0));
+
+  // ------------------------------------------------------------
+  // ✅ NEW: match preview/editor rendering model on the real page
+  // ------------------------------------------------------------
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const [viewportBox, setViewportBox] = useState<{ w: number; h: number }>({ w: 1, h: 1 });
+  const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
+
+  // measure the "visible viewport" (the area excluding hideBottom)
+  useLayoutEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+
+    const ro = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect();
+      setViewportBox({ w: Math.max(1, r.width), h: Math.max(1, r.height) });
+    });
+
+    ro.observe(el);
+
+    // initial
+    const r = el.getBoundingClientRect();
+    setViewportBox({ w: Math.max(1, r.width), h: Math.max(1, r.height) });
+
+    return () => ro.disconnect();
+  }, [hideBottom]);
+
+  // load natural image size for correct "cover base" math
+  useEffect(() => {
+    if (!showBackdropImage || !backdropUrl) {
+      setImgSize(null);
+      return;
+    }
+
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => {
+      if (cancelled) return;
+      const w = (img as any).naturalWidth || img.width;
+      const h = (img as any).naturalHeight || img.height;
+      if (w && h) setImgSize({ w, h });
+    };
+    img.onerror = () => {
+      if (!cancelled) setImgSize(null);
+    };
+    img.src = backdropUrl;
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showBackdropImage, backdropUrl]);
+
+  // base sizerefactor: same as preview: render baseW/baseH at z=1 then scale(zoom)
+  const base = useMemo(() => {
+    if (!imgSize) return null;
+    const { baseW, baseH } = computePanLimits({
+      cw: viewportBox.w,
+      ch: viewportBox.h,
+      iw: imgSize.w,
+      ih: imgSize.h,
+      z: 1,
+    });
+    return { baseW, baseH };
+  }, [imgSize, viewportBox.w, viewportBox.h]);
+
+  // convert saved % back into pan pixels for this viewport (inverse of panToPctForDbFullWindow)
+  const panPx = useMemo(() => {
+    if (!imgSize) return { x: 0, y: 0 };
+
+    const { maxPanX, maxPanY, rangeX, rangeY } = computePanLimits({
+      cw: viewportBox.w,
+      ch: viewportBox.h,
+      iw: imgSize.w,
+      ih: imgSize.h,
+      z: zoom,
+    });
+
+    const x = rangeX <= 0 ? 0 : clamp(maxPanX * (1 - posX / 50), -maxPanX, maxPanX);
+    const y = rangeY <= 0 ? 0 : clamp(maxPanY * (1 - posY / 50), -maxPanY, maxPanY);
+
+    return { x, y };
+  }, [imgSize, viewportBox.w, viewportBox.h, zoom, posX, posY]);
 
   return (
     <div className="mx-auto max-w-6xl px-4 pt-0 pb-0">
-      {/* Backdrop (keep exactly like your "good" version, but with a visible-viewport wrapper) */}
+      {/* Backdrop */}
       <div className={`relative w-full overflow-hidden ${backdropHeightClassName} -mt-10`}>
-        {/* ✅ Visible viewport (background is positioned relative to THIS) */}
-        <div className="absolute inset-x-0 top-0 overflow-hidden" style={{ bottom: hideBottom }}>
-          {showBackdropImage ? (
-            <div
-              className="absolute inset-0"
+        {/* ✅ Visible viewport: this matches the editor/preview “window” concept */}
+        <div
+          ref={viewportRef}
+          className="absolute inset-x-0 top-0 overflow-hidden"
+          style={{ bottom: hideBottom }}
+        >
+          {showBackdropImage && imgSize && base ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={backdropUrl as string}
+              alt=""
+              draggable={false}
+              className="absolute left-1/2 top-1/2"
               style={{
-                backgroundImage: `url(${backdropUrl})`,
-                backgroundRepeat: "no-repeat",
-                backgroundPosition: `${posX}% ${posY}%`,
-                backgroundSize: `${zoom * 100}%`,
+                width: `${base.baseW}px`,
+                height: `${base.baseH}px`,
+                transform: `translate(-50%, -50%) translate(${panPx.x}px, ${panPx.y}px) scale(${zoom})`,
+                transformOrigin: "center",
+                objectFit: "cover",
+                willChange: "transform",
               }}
             />
           ) : (
@@ -122,7 +215,7 @@ export default function ProfileMediaHeaderLayout({
           )}
         </div>
 
-        {/* ✅ Hidden bottom area: stays black behind the fade */}
+        {/* Hidden bottom area (behind the fade) */}
         {hideBottom > 0 ? (
           <div className="absolute inset-x-0 bottom-0 bg-black" style={{ height: hideBottom }} />
         ) : null}
@@ -139,16 +232,15 @@ export default function ProfileMediaHeaderLayout({
 
       {/* Foreground overlap */}
       <div className="-mt-35 relative z-10 px-3">
-        {/* Optional title */}
-        {title ? <h1 className="mb-3 text-4xl font-bold leading-tight text-white drop-shadow">{title}</h1> : null}
+        {title ? (
+          <h1 className="mb-3 text-4xl font-bold leading-tight text-white drop-shadow">{title}</h1>
+        ) : null}
 
-        {/* IMPORTANT: rightPinned should NOT affect centering of the tabs */}
         <div className="relative w-full">
           {rightPinned ? <div className="absolute right-0 top-1">{rightPinned}</div> : null}
 
-          {/* Only reserve space for the *left header row* so the button never overlaps it */}
           <div className={`min-w-0 ${rightPinned ? reserveRightClassName : ""}`}>
-            {/* Avatar + username (LEFT) */}
+            {/* Avatar + username */}
             <div className="-mt-50 flex items-center gap-3 pl-2">
               <div className="w-38 h-38 rounded-full bg-slate-200 overflow-hidden shrink-0 ring-3 ring-black">
                 {avatarUrl ? (
@@ -164,7 +256,7 @@ export default function ProfileMediaHeaderLayout({
               <div className="text-3xl font-bold text-slate-900">@{username}</div>
             </div>
 
-            {/* Bio (LEFT) */}
+            {/* Bio */}
             {bio ? (
               <div className="mt-2">
                 <p className="text-sm text-slate-800 whitespace-pre-line max-w-2xl">{bio}</p>
@@ -172,7 +264,7 @@ export default function ProfileMediaHeaderLayout({
             ) : null}
           </div>
 
-          {/* Tabs row: centered on desktop, scrollable on mobile (prevents page widening) */}
+          {/* Tabs row */}
           <div className="mt-4">
             <div className="grid grid-cols-[1fr_auto_1fr] items-end">
               <div />

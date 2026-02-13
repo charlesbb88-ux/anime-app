@@ -1,3 +1,4 @@
+// components/settings/ProfileBackdropModal.tsx
 "use client";
 
 import React, { useMemo } from "react";
@@ -67,8 +68,9 @@ export default function ProfileBackdropModal({
     applyNow,
     saveBackdropToDb,
   } = useBackdropEditor({
-    open,
+    isActive: open,
     onClose,
+    closeOnSave: true, // ✅ modal closes on save
     userId,
     previewBackdropH: PREVIEW_BACKDROP_H,
     previewHiddenBottomPx: PREVIEW_HIDDEN_BOTTOM_PX,
@@ -119,18 +121,8 @@ export default function ProfileBackdropModal({
                 editorBase={editorBase}
                 panPx={panPx}
                 zoom={zoom}
-                outer={{
-                  left: outer.left,
-                  top: outer.top,
-                  w: outer.w,
-                  h: outer.h,
-                }}
-                inner={{
-                  left: inner.left,
-                  top: inner.top,
-                  w: inner.w,
-                  h: inner.h,
-                }}
+                outer={{ left: outer.left, top: outer.top, w: outer.w, h: outer.h }}
+                inner={{ left: inner.left, top: inner.top, w: inner.w, h: inner.h }}
                 beginDrag={beginDrag}
                 moveDrag={moveDrag}
                 endDrag={endDrag}
