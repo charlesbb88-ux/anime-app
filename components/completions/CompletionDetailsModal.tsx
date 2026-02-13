@@ -643,6 +643,7 @@ function ModalBody({
                 reviewed={Math.max(0, reviewed)}
                 rated={Math.max(0, rated)}
                 hrefBase={seriesHref ? (it.kind === "manga" ? `${seriesHref}/chapter/` : `${seriesHref}/episode/`) : null}
+                posterUrl={it.image_url ?? null}
                 label={it.kind === "manga" ? "Chapters" : "Episodes"}
                 initialBatch={30}
                 batchSize={30}

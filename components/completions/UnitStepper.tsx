@@ -2,23 +2,18 @@
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useEpisodeThumbs } from "@/components/completions/useEpisodeThumbs";
 
 type Props = {
   total: number;
-
-  /** watched/read count */
   current: number;
-
-  /** reviewed count */
   reviewed?: number;
-
-  /** rated count */
   rated?: number;
-
-  /** used for: current border (only) */
   accent?: string;
-
   hrefBase?: string | null;
+
+  // (kept so your caller doesn't break; we just don't use it anymore)
+  posterUrl?: string | null;
 
   label?: string;
   rightHint?: string;
@@ -27,21 +22,22 @@ type Props = {
   batchSize?: number;
   endlessScroll?: boolean;
 
-  /** optional override colors (defaults match your rings) */
-  colorProgress?: string; // blue
-  colorReviewed?: string; // green
-  colorRated?: string; // red
+  colorProgress?: string;
+  colorReviewed?: string;
+  colorRated?: string;
 };
 
-const COLS = 5;
-
-// ✅ Subtle connectors that sit behind tiles
 const CONNECTOR_W = 2;
 const CONNECTOR_EMPTY = "rgba(15,23,42,0.14)";
 const CONNECTOR_OPACITY = 0.9;
 
-// ✅ ONE KNOB: change this and ALL “fully done” black updates everywhere
 const FULLY_DONE_COLOR = "#000000";
+
+function parseAnimeSlugFromHrefBase(hrefBase: string | null) {
+  if (!hrefBase) return null;
+  const m = hrefBase.match(/\/anime\/([^/]+)\/episode\/?$/);
+  return m?.[1] ? decodeURIComponent(m[1]) : null;
+}
 
 export default function UnitStepper({
   total,
@@ -51,6 +47,9 @@ export default function UnitStepper({
 
   accent = "#0EA5E9",
   hrefBase = null,
+
+  // kept but intentionally unused now
+  posterUrl: _posterUrl = null,
 
   label,
   rightHint,
@@ -69,10 +68,8 @@ export default function UnitStepper({
 
   const safeTotal = clampInt(total, 1, Number.MAX_SAFE_INTEGER);
 
-  // ✅ focus = "current unit" (1-based), used for current border
   const focus = clampInt(current < 1 ? 1 : current, 1, safeTotal);
 
-  // ✅ completion states (0..total)
   const safeCurrent = clampInt(current, 0, safeTotal);
   const safeReviewed = clampInt(reviewed, 0, safeTotal);
   const safeRated = clampInt(rated, 0, safeTotal);
@@ -91,9 +88,20 @@ export default function UnitStepper({
     return arr;
   }, [shown]);
 
-  const wrapRef = useRef<HTMLDivElement | null>(null);
+  // ----------------- ANIME: episode thumbs -----------------
+  const animeSlug = useMemo(() => parseAnimeSlugFromHrefBase(hrefBase), [hrefBase]);
+  const isAnime = !!animeSlug;
 
-  // ✅ IMPORTANT: we measure a stable, non-inline box (the tile container div)
+  // NOTE: this expects your hook to expose `loadedByNumber` (true once fetch resolves for that episode)
+  const { metaByNumber, loadedByNumber } = useEpisodeThumbs({
+    slug: animeSlug,
+    numbers: units,
+    enabled: isAnime,
+  });
+
+  const cols = isAnime ? 3 : 5;
+
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [paths, setPaths] = useState<Array<{ d: string; stroke: string }>>([]);
   const [svgSize, setSvgSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
@@ -143,7 +151,6 @@ export default function UnitStepper({
         return { left, right, top, bottom, cx, cy };
       };
 
-      // ✅ fully done: progress + review + rate
       const fullyDone = (n: number) => n <= safeCurrent && n <= safeReviewed && n <= safeRated;
 
       for (let i = 1; i < shown; i++) {
@@ -155,23 +162,17 @@ export default function UnitStepper({
         const B = getRel(b);
 
         const sameRow = Math.abs(A.cy - B.cy) < EPS_SAME_ROW;
-        const isRowBreak = i % COLS === 0;
+        const isRowBreak = i % cols === 0;
 
         if (!sameRow && !isRowBreak) continue;
 
-        // ✅ connector “coming out of” tile i:
-        // fully done -> FULLY_DONE_COLOR, else -> empty gray
         const stroke = fullyDone(i) ? FULLY_DONE_COLOR : CONNECTOR_EMPTY;
 
         if (sameRow) {
-          next.push({
-            stroke,
-            d: [`M ${A.right} ${A.cy}`, `L ${B.left} ${B.cy}`].join(" "),
-          });
+          next.push({ stroke, d: [`M ${A.right} ${A.cy}`, `L ${B.left} ${B.cy}`].join(" ") });
           continue;
         }
 
-        // Row break: route inside the vertical gap between rows
         const startX = A.cx;
         const startY = A.bottom;
         const endX = B.cx;
@@ -207,7 +208,7 @@ export default function UnitStepper({
       ro.disconnect();
       window.removeEventListener("scroll", onScroll, true);
     };
-  }, [shown, safeCurrent, safeReviewed, safeRated]);
+  }, [shown, safeCurrent, safeReviewed, safeRated, cols]);
 
   return (
     <div className="w-full">
@@ -218,7 +219,7 @@ export default function UnitStepper({
         </div>
       )}
 
-      <div className={(label || rightHint) ? "mt-2" : ""}>
+      <div className={label || rightHint ? "mt-2" : ""}>
         <div ref={wrapRef} className="relative w-full overflow-hidden">
           {/* Connector overlay (behind tiles) */}
           <svg width={svgSize.w} height={svgSize.h} className="pointer-events-none absolute inset-0" style={{ zIndex: 0 }}>
@@ -237,7 +238,7 @@ export default function UnitStepper({
           </svg>
 
           {/* Tiles above connectors */}
-          <div className="relative z-[1] grid grid-cols-5 gap-4">
+          <div className={["relative z-[1] grid gap-4", isAnime ? "grid-cols-3" : "grid-cols-5"].join(" ")}>
             {units.map((n, idx) => (
               <StepperCell
                 key={n}
@@ -255,6 +256,9 @@ export default function UnitStepper({
                 colorProgress={colorProgress}
                 colorReviewed={colorReviewed}
                 colorRated={colorRated}
+                isAnime={isAnime}
+                thumbUrl={isAnime ? metaByNumber[n]?.imageUrl ?? null : null}
+                thumbLoaded={isAnime ? !!loadedByNumber?.[n] : true}
               />
             ))}
           </div>
@@ -293,6 +297,10 @@ const StepperCell = React.forwardRef(function StepperCell(
     colorProgress,
     colorReviewed,
     colorRated,
+
+    isAnime,
+    thumbUrl,
+    thumbLoaded,
   }: {
     n: number;
     total: number;
@@ -307,6 +315,10 @@ const StepperCell = React.forwardRef(function StepperCell(
     colorProgress: string;
     colorReviewed: string;
     colorRated: string;
+
+    isAnime: boolean;
+    thumbUrl: string | null;
+    thumbLoaded: boolean;
   },
   ref: React.ForwardedRef<HTMLDivElement>
 ) {
@@ -315,49 +327,138 @@ const StepperCell = React.forwardRef(function StepperCell(
   const anyFilled = didProgress || didReview || didRate;
   const isFullyDone = didProgress && didReview && didRate;
 
+  // ✅ NEW: number color logic
+  const numberWhite = isFullyDone || didReview;
+
   const aria = `Go to ${n} of ${total}`;
 
-  // measured box
-  const boxClass = "w-full h-10 rounded-lg border-2 overflow-hidden relative select-none";
+  // ✅ MANGA
+  const renderMangaLike = () => {
+    const boxClass = "w-full h-10 rounded-lg border-2 overflow-hidden relative select-none";
 
-  const boxStyle: React.CSSProperties = {
-    // ✅ fully done = FULLY_DONE_COLOR
-    // ✅ otherwise = black border
-    borderColor: isFullyDone ? FULLY_DONE_COLOR : "#000000",
-    backgroundColor: "white",
-  };
+    const boxStyle: React.CSSProperties = {
+      borderColor: isFullyDone ? FULLY_DONE_COLOR : "#000000",
+      backgroundColor: "white",
+    };
 
-  const content = (
-    <div className={boxClass} style={boxStyle}>
-      {/* background */}
-      {isFullyDone ? (
-        <div className="absolute inset-0" style={{ backgroundColor: FULLY_DONE_COLOR }} />
-      ) : (
-        <>
+    return (
+      <div className={boxClass} style={boxStyle}>
+        {isFullyDone ? (
+          <div className="absolute inset-0" style={{ backgroundColor: FULLY_DONE_COLOR }} />
+        ) : (
           <div className="absolute inset-0 grid grid-cols-3">
             <div style={{ backgroundColor: didProgress ? colorProgress : "transparent" }} />
             <div style={{ backgroundColor: didReview ? colorReviewed : "transparent" }} />
             <div style={{ backgroundColor: didRate ? colorRated : "transparent" }} />
           </div>
-        </>
-      )}
+        )}
 
-      {/* number OR checkmark */}
-      <div
-        className="absolute inset-0 grid place-items-center text-[14px] font-bold"
-        style={
-          anyFilled || isFullyDone
-            ? { color: "white", textShadow: "0 1px 1px rgba(0,0,0,0.25)" }
-            : { color: "#000000" }
-        }
-      >
-        {isFullyDone ? "✓" : n}
+        <div
+          className="absolute inset-0 grid place-items-center text-[14px] font-bold"
+          style={
+            numberWhite
+              ? { color: "white", textShadow: "0 1px 1px rgba(0,0,0,0.25)" }
+              : { color: "#000000" }
+          }
+        >
+          {isFullyDone ? "✓" : n}
+        </div>
+
+        {!anyFilled && !isFullyDone ? <div className="absolute inset-0 hover:bg-slate-50/70" /> : null}
       </div>
+    );
+  };
 
-      {/* hover hint */}
-      {!anyFilled && !isFullyDone ? <div className="absolute inset-0 hover:bg-slate-50/70" /> : null}
-    </div>
-  );
+  /**
+   * ✅ ANIME:
+   * - If episode image exists: show image (and your bottom status bar rules)
+   * - If episode image does NOT exist (after thumbLoaded): use "manga-style" fallback
+   *   BUT keep the anime episode box shape (16:9).
+   *
+   * No poster. No fallback image. Ever.
+   */
+  const renderAnime = () => {
+    const boxClass = ["w-full rounded-lg border-2 overflow-hidden relative select-none", "aspect-[16/9]", "min-h-[74px]"].join(" ");
+
+    const boxStyle: React.CSSProperties = {
+      borderColor: isFullyDone ? FULLY_DONE_COLOR : "#000000",
+      backgroundColor: "white",
+    };
+
+    const BAR_H = 16;
+    const showBar = anyFilled || isFullyDone;
+    const EMPTY_SEG = "rgba(255,255,255,0.18)";
+
+    // while fetching: neutral placeholder so we don't "decide" wrongly
+    if (!thumbLoaded) {
+      return <div className={[boxClass, "bg-slate-100 animate-pulse"].join(" ")} style={boxStyle} />;
+    }
+
+    const hasEpisodeImage = !!thumbUrl;
+
+    // --- (A) NO EPISODE IMAGE -> manga-style fill across the whole tile ---
+    if (!hasEpisodeImage) {
+      return (
+        <div className={boxClass} style={boxStyle}>
+          {isFullyDone ? (
+            <div className="absolute inset-0" style={{ backgroundColor: FULLY_DONE_COLOR }} />
+          ) : (
+            <div className="absolute inset-0 grid grid-cols-3">
+              <div style={{ backgroundColor: didProgress ? colorProgress : "transparent" }} />
+              <div style={{ backgroundColor: didReview ? colorReviewed : "transparent" }} />
+              <div style={{ backgroundColor: didRate ? colorRated : "transparent" }} />
+            </div>
+          )}
+
+          <div
+            className="absolute inset-0 grid place-items-center text-[22px] font-extrabold"
+            style={
+              numberWhite
+                ? { color: "white", textShadow: "0 2px 6px rgba(0,0,0,0.35)" }
+                : { color: "#000000" }
+            }
+          >
+            {isFullyDone ? "✓" : n}
+          </div>
+
+          {isCurrent ? <div className="pointer-events-none absolute inset-0 ring-2 ring-sky-400/95" /> : null}
+          {!anyFilled && !isFullyDone ? <div className="absolute inset-0 hover:bg-slate-50/60" /> : null}
+        </div>
+      );
+    }
+
+    // --- (B) HAS EPISODE IMAGE -> your existing image + bottom bar behavior ---
+    return (
+      <div className={boxClass} style={boxStyle}>
+        <img src={thumbUrl} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} loading="lazy" decoding="async" />
+
+        {/* number */}
+        <div className="absolute left-2 top-2 text-[13px] font-extrabold" style={{ color: "white", textShadow: "0 1px 2px rgba(0,0,0,0.75)" }}>
+          {n}
+        </div>
+
+        {/* bottom status bar (only if at least one done OR fully done) */}
+        {showBar ? (
+          isFullyDone ? (
+            <div className="absolute left-0 right-0 bottom-0 flex items-center justify-center" style={{ height: BAR_H, backgroundColor: FULLY_DONE_COLOR }}>
+              <div className="text-[10px] font-extrabold tracking-wide text-white">COMPLETED</div>
+            </div>
+          ) : (
+            <div className="absolute left-0 right-0 bottom-0 grid grid-cols-3" style={{ height: BAR_H }}>
+              <div style={{ backgroundColor: didProgress ? colorProgress : EMPTY_SEG }} />
+              <div style={{ backgroundColor: didReview ? colorReviewed : EMPTY_SEG }} />
+              <div style={{ backgroundColor: didRate ? colorRated : EMPTY_SEG }} />
+            </div>
+          )
+        ) : null}
+
+        {isCurrent ? <div className="pointer-events-none absolute inset-0 ring-2 ring-sky-400/95" /> : null}
+        {!anyFilled && !isFullyDone ? <div className="absolute inset-0 hover:bg-white/10" /> : null}
+      </div>
+    );
+  };
+
+  const content = isAnime ? renderAnime() : renderMangaLike();
 
   return (
     <div ref={ref} className="w-full">
@@ -373,7 +474,6 @@ const StepperCell = React.forwardRef(function StepperCell(
     </div>
   );
 });
-
 
 function clampInt(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Math.floor(Number.isFinite(n) ? n : 0)));
