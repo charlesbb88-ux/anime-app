@@ -12,6 +12,7 @@ import ReviewPostRow from "../components/ReviewPostRow";
 
 import { useUserPosts } from "../lib/hooks/useUserPosts";
 import ProfileMediaHeaderLayout from "@/components/layouts/ProfileMediaHeaderLayout";
+import ProfileAboutSection from "@/components/profile/ProfileAboutSection";
 
 type Profile = {
   id: string;
@@ -20,11 +21,15 @@ type Profile = {
   bio: string | null;
   created_at: string;
 
-  // ✅ NEW: backdrop data (must match your DB column names)
+  // ✅ backdrop
   backdrop_url: string | null;
   backdrop_pos_x: number | null;
   backdrop_pos_y: number | null;
   backdrop_zoom: number | null;
+
+  // ✅ NEW: AniList about
+  about_markdown: string | null;
+  about_html: string | null;
 };
 
 type Post = {
@@ -140,7 +145,9 @@ export default function UserProfilePage() {
 
       const { data: rows, error } = await supabase
         .from("profiles")
-        .select("id, username, avatar_url, bio, created_at, backdrop_url, backdrop_pos_x, backdrop_pos_y, backdrop_zoom")
+        .select(
+          "id, username, avatar_url, bio, created_at, backdrop_url, backdrop_pos_x, backdrop_pos_y, backdrop_zoom, about_markdown, about_html"
+        )
         .eq("username", unameLower)
         .limit(1);
 
@@ -273,14 +280,14 @@ export default function UserProfilePage() {
 
   return (
     <main className="min-h-screen">
-<ProfileMediaHeaderLayout
-  backdropUrl={profile.backdrop_url}
-  backdropPosX={profile.backdrop_pos_x}
-  backdropPosY={profile.backdrop_pos_y}
-  backdropZoom={profile.backdrop_zoom}
-  username={profile.username}
-  avatarUrl={profile.avatar_url}
-  bio={profile.bio}
+      <ProfileMediaHeaderLayout
+        backdropUrl={profile.backdrop_url}
+        backdropPosX={profile.backdrop_pos_x}
+        backdropPosY={profile.backdrop_pos_y}
+        backdropZoom={profile.backdrop_zoom}
+        username={profile.username}
+        avatarUrl={profile.avatar_url}
+        bio={profile.bio}
         rightPinned={
           isOwner ? (
             <Link
@@ -297,9 +304,11 @@ export default function UserProfilePage() {
 
       {/* ✅ Everything below stays your normal feed width */}
       <div className="max-w-3xl mx-auto px-4 pb-8">
+        {/* ✅ AniList about block (under header, above feed) */}
+        <ProfileAboutSection html={profile.about_html ?? ""} />
+
         {/* Posts feed */}
         <section>
-
           {isLoadingPosts ? null : posts.length === 0 ? (
             <p className="text-sm text-slate-500">This user hasn’t posted anything yet.</p>
           ) : (
