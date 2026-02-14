@@ -32,9 +32,9 @@ export default function SettingsBannerTab({ userId, username, avatarUrl, isActiv
     imgSize,
     panPx,
     zoom,
-    applied,
     saving,
     err,
+    saveOk,
 
     outer,
     inner,
@@ -48,7 +48,6 @@ export default function SettingsBannerTab({ userId, username, avatarUrl, isActiv
     beginDrag,
     moveDrag,
     endDrag,
-    applyNow,
     saveBackdropToDb,
   } = useBackdropEditor({
     isActive,
@@ -63,13 +62,6 @@ export default function SettingsBannerTab({ userId, username, avatarUrl, isActiv
   return (
     <div className="max-w-5xl space-y-4">
       <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <div className="mb-2">
-          <div className="text-sm font-semibold text-slate-900">Banner</div>
-          <div className="text-[11px] text-slate-500">
-            Outer box = full backdrop window (reference). Inner box = what’s visible after your overlay.
-          </div>
-        </div>
-
         {err ? <div className="mb-3 text-xs text-red-600">{err}</div> : null}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -92,6 +84,7 @@ export default function SettingsBannerTab({ userId, username, avatarUrl, isActiv
               editorH={EDITOR_H}
             />
 
+            {/* buttons row */}
             <div className="mt-3 flex items-center gap-3">
               <input
                 ref={fileInputRef}
@@ -109,23 +102,24 @@ export default function SettingsBannerTab({ userId, username, avatarUrl, isActiv
                 Upload image
               </button>
 
-              <button
-                type="button"
-                disabled={!pickedUrl || !imgSize}
-                onClick={applyNow}
-                className="inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-full border border-slate-300 bg-white text-slate-900 hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-white"
-              >
-                Apply
-              </button>
+              {/* push the right-side group to the far right */}
+              <div className="ml-auto flex items-center gap-2">
+                {/* ✅ Saved indicator placed right next to Save */}
+                {saveOk ? (
+                  <div className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1">
+                    Saved
+                  </div>
+                ) : null}
 
-              <button
-                type="button"
-                disabled={!pickedUrl || saving || !imgSize}
-                onClick={saveBackdropToDb}
-                className="ml-auto inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-full bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60"
-              >
-                {saving ? "Saving…" : "Save banner"}
-              </button>
+                <button
+                  type="button"
+                  disabled={!pickedUrl || saving || !imgSize}
+                  onClick={saveBackdropToDb}
+                  className="inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-full bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60"
+                >
+                  {saving ? "Saving…" : "Save banner"}
+                </button>
+              </div>
             </div>
 
             <div className="mt-3 flex items-center gap-3">
@@ -160,7 +154,6 @@ export default function SettingsBannerTab({ userId, username, avatarUrl, isActiv
               avatarInitial={avatarInitial}
               previewBackdropH={PREVIEW_BACKDROP_H}
               overlaySrc="/overlays/my-overlay4.png"
-              applied={applied}
             />
           </div>
         </div>
