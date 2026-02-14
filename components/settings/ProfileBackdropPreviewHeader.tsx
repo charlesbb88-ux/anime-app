@@ -7,13 +7,6 @@ type Base = {
   baseH: number;
 };
 
-type Applied = {
-  url: string;
-  x: number; // 0..100
-  y: number; // 0..100
-  zoom: number; // 1..3
-};
-
 type Props = {
   previewBackdropRef: React.RefObject<HTMLDivElement | null>;
 
@@ -29,8 +22,6 @@ type Props = {
 
   previewBackdropH: number;
   overlaySrc: string;
-
-  applied: Applied | null; // (kept for compatibility, unused now)
 };
 
 export default function ProfileBackdropPreviewHeader({
@@ -52,7 +43,7 @@ export default function ProfileBackdropPreviewHeader({
         <div className="relative">
           <div
             ref={previewBackdropRef}
-            className="relative w-full overflow-hidden bg-black"
+            className="relative w-full overflow-hidden bg-[#dfe4e9]"
             style={{ height: previewBackdropH }}
           >
             {pickedUrl && imgSize && previewBase ? (

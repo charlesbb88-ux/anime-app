@@ -10,13 +10,6 @@ import {
   clamp,
 } from "@/lib/settings/backdropMath";
 
-type Applied = {
-  url: string;
-  x: number; // 0..100
-  y: number; // 0..100
-  zoom: number; // 1..3
-};
-
 type UseBackdropEditorArgs = {
   isActive: boolean;
   onClose?: () => void;
@@ -72,10 +65,12 @@ export function useBackdropEditor({
   const [panPx, setPanPx] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(defaultZoom);
 
-  const [applied, setApplied] = useState<Applied | null>(null);
-
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // ✅ NEW: success toast flag
+  const [saveOk, setSaveOk] = useState(false);
+  const saveOkTimerRef = useRef<number | null>(null);
 
   const dragRef = useRef<{
     pointerId: number;
@@ -165,9 +160,15 @@ export function useBackdropEditor({
     setImgSize(null);
     setPanPx({ x: 0, y: 0 });
     setZoom(defaultZoom);
-    setApplied(null);
     setSaving(false);
     setErr(null);
+
+    setSaveOk(false);
+    if (saveOkTimerRef.current) {
+      window.clearTimeout(saveOkTimerRef.current);
+      saveOkTimerRef.current = null;
+    }
+
     dragRef.current = null;
   }, [isActive, defaultZoom]);
 
@@ -239,6 +240,7 @@ export function useBackdropEditor({
   function beginDrag(e: React.PointerEvent<HTMLDivElement>) {
     if (!pickedUrl || !imgSize) return;
     setErr(null);
+    setSaveOk(false);
 
     dragRef.current = {
       pointerId: e.pointerId,
@@ -301,31 +303,9 @@ export function useBackdropEditor({
     return { baseW, baseH };
   }, [imgSize?.w, imgSize?.h, outer.w, outer.h]);
 
-  function applyNow() {
-    if (!imgSize || !pickedUrl) return;
-
-    const { xPct, yPct } = panToPctForDbFullWindow({
-      imgSize,
-      pvW: outer.pvW,
-      pvH: previewBackdropH,
-      zoom,
-      previewPanPx,
-      hiddenBottomPx: previewHiddenBottomPx, // ✅ critical fix
-      defaultX,
-      defaultY,
-    });
-
-    setApplied({
-      url: pickedUrl,
-      x: xPct,
-      y: yPct,
-      zoom: clamp(zoom, 1, 3),
-    });
-    setErr(null);
-  }
-
   async function saveBackdropToDb() {
     setErr(null);
+    setSaveOk(false);
 
     if (!pickedFile) return setErr("Upload an image first.");
     if (!userId) return setErr("Missing user id.");
@@ -338,10 +318,12 @@ export function useBackdropEditor({
       const ext = ["jpg", "jpeg", "png", "webp"].includes(rawExt) ? rawExt : "jpg";
       const path = `${userId}/${Date.now()}.${ext}`;
 
-      const { data: uploadData, error: uploadError } = await supabase.storage.from(bucket).upload(path, pickedFile, {
-        upsert: true,
-        contentType: pickedFile.type || undefined,
-      });
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from(bucket)
+        .upload(path, pickedFile, {
+          upsert: true,
+          contentType: pickedFile.type || undefined,
+        });
 
       if (uploadError) throw uploadError;
 
@@ -354,7 +336,7 @@ export function useBackdropEditor({
         pvH: previewBackdropH,
         zoom,
         previewPanPx,
-        hiddenBottomPx: previewHiddenBottomPx, // ✅ critical fix
+        hiddenBottomPx: previewHiddenBottomPx,
         defaultX,
         defaultY,
       });
@@ -371,6 +353,14 @@ export function useBackdropEditor({
 
       onSaved?.(updates);
 
+      // ✅ show "Saved!" for ~2 seconds
+      setSaveOk(true);
+      if (saveOkTimerRef.current) window.clearTimeout(saveOkTimerRef.current);
+      saveOkTimerRef.current = window.setTimeout(() => {
+        setSaveOk(false);
+        saveOkTimerRef.current = null;
+      }, 2000);
+
       if (closeOnSave) onClose?.();
     } catch (e: any) {
       setErr(e?.message || "Failed to save backdrop.");
@@ -381,10 +371,10 @@ export function useBackdropEditor({
 
   function pickFile(f: File | null) {
     setPickedFile(f);
-    setApplied(null);
     setPanPx({ x: 0, y: 0 });
     setZoom(defaultZoom);
     setErr(null);
+    setSaveOk(false);
   }
 
   function onFileInputChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -417,9 +407,9 @@ export function useBackdropEditor({
     panPx,
     zoom,
 
-    applied,
     saving,
     err,
+    saveOk, // ✅ NEW
 
     outer,
     inner,
@@ -441,7 +431,6 @@ export function useBackdropEditor({
     moveDrag,
     endDrag,
 
-    applyNow,
     saveBackdropToDb,
   };
 }
