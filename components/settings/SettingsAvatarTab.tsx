@@ -67,7 +67,6 @@ export default function SettingsAvatarTab({ profile, onUpdated }: Props) {
           />
         )}
 
-        {/* Toolbar bottom */}
         <div className="px-6 py-4 bg-slate-50 border-t border-slate-200">
           <input
             id={inputId}
