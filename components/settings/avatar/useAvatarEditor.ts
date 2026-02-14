@@ -130,6 +130,9 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
         });
         onUpdated(updated);
 
+        setCrop({ x: 0, y: 0 });
+        setZoom(1);
+
         setAvatarFile(null);
         setAvatarPreviewUrl(null);
         setCroppedAreaPixels(null);
@@ -162,6 +165,9 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
       });
 
       onUpdated(updated);
+
+      setCrop({ x: 0, y: 0 });
+      setZoom(1);
 
       setAvatarFile(null);
       setAvatarPreviewUrl(null);
