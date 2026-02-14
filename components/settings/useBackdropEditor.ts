@@ -310,6 +310,7 @@ export function useBackdropEditor({
       pvH: previewBackdropH,
       zoom,
       previewPanPx,
+      hiddenBottomPx: previewHiddenBottomPx, // ✅ critical fix
       defaultX,
       defaultY,
     });
@@ -353,6 +354,7 @@ export function useBackdropEditor({
         pvH: previewBackdropH,
         zoom,
         previewPanPx,
+        hiddenBottomPx: previewHiddenBottomPx, // ✅ critical fix
         defaultX,
         defaultY,
       });

@@ -38,6 +38,10 @@ export function computePanLimits(args: { cw: number; ch: number; iw: number; ih:
   };
 }
 
+/**
+ * Clamp pan given an "outer" viewport and an additional hidden-bottom allowance.
+ * This matches your editor behavior: you can pan UP extra to keep content behind the overlay fade.
+ */
 export function clampPan(args: {
   next: { x: number; y: number };
   imgSize: { w: number; h: number };
@@ -66,16 +70,28 @@ export function clampPan(args: {
   };
 }
 
+/**
+ * ✅ NEW: Convert pan(px) -> percent(0..100) INCLUDING the hidden-bottom extra-pan range.
+ * This prevents the "top chunk" from collapsing into y=100.
+ *
+ * - For X, it's the normal [-maxPanX .. +maxPanX] range.
+ * - For Y, it's [-maxPanY - hiddenBottomPx .. +maxPanY]
+ *
+ * Convention stays the same:
+ * - pct 0   => pan at max (image pushed down: shows more TOP)
+ * - pct 100 => pan at min (image pushed up: shows more BOTTOM)
+ */
 export function panToPctForDbFullWindow(args: {
   imgSize: { w: number; h: number };
   pvW: number;
   pvH: number;
   zoom: number;
   previewPanPx: { x: number; y: number };
+  hiddenBottomPx: number;
   defaultX: number;
   defaultY: number;
 }) {
-  const { imgSize, pvW, pvH, zoom, previewPanPx, defaultX, defaultY } = args;
+  const { imgSize, pvW, pvH, zoom, previewPanPx, hiddenBottomPx, defaultX, defaultY } = args;
 
   const { maxPanX, maxPanY, rangeX, rangeY } = computePanLimits({
     cw: pvW,
@@ -85,11 +101,63 @@ export function panToPctForDbFullWindow(args: {
     z: zoom,
   });
 
+  // X range (no extra)
+  const minX = rangeX <= 0 ? 0 : -maxPanX;
+  const maxX = rangeX <= 0 ? 0 : +maxPanX;
+
+  // Y range (includes extra up)
+  const extraUp = Math.max(0, hiddenBottomPx || 0);
+  const minY = rangeY <= 0 ? 0 : -maxPanY - extraUp;
+  const maxY = rangeY <= 0 ? 0 : +maxPanY;
+
   const xPct =
-    rangeX <= 0 ? defaultX : clamp(((-previewPanPx.x + maxPanX) / (2 * maxPanX)) * 100, 0, 100);
+    rangeX <= 0
+      ? defaultX
+      : clamp(((maxX - previewPanPx.x) / (maxX - minX)) * 100, 0, 100);
 
   const yPct =
-    rangeY <= 0 ? defaultY : clamp(((-previewPanPx.y + maxPanY) / (2 * maxPanY)) * 100, 0, 100);
+    rangeY <= 0
+      ? defaultY
+      : clamp(((maxY - previewPanPx.y) / (maxY - minY)) * 100, 0, 100);
 
   return { xPct, yPct };
+}
+
+/**
+ * ✅ NEW: Convert percent(0..100) -> pan(px) using the SAME ranges as panToPctForDbFullWindow.
+ * Use this on the real page so the saved values reproduce 1:1.
+ */
+export function pctToPanPxForRender(args: {
+  imgSize: { w: number; h: number };
+  cw: number;
+  ch: number;
+  zoom: number;
+  xPct: number;
+  yPct: number;
+  hiddenBottomPx: number;
+}) {
+  const { imgSize, cw, ch, zoom, xPct, yPct, hiddenBottomPx } = args;
+
+  const { maxPanX, maxPanY, rangeX, rangeY } = computePanLimits({
+    cw,
+    ch,
+    iw: imgSize.w,
+    ih: imgSize.h,
+    z: zoom,
+  });
+
+  const minX = rangeX <= 0 ? 0 : -maxPanX;
+  const maxX = rangeX <= 0 ? 0 : +maxPanX;
+
+  const extraUp = Math.max(0, hiddenBottomPx || 0);
+  const minY = rangeY <= 0 ? 0 : -maxPanY - extraUp;
+  const maxY = rangeY <= 0 ? 0 : +maxPanY;
+
+  const xp = clamp(xPct, 0, 100);
+  const yp = clamp(yPct, 0, 100);
+
+  const x = rangeX <= 0 ? 0 : maxX - (xp / 100) * (maxX - minX);
+  const y = rangeY <= 0 ? 0 : maxY - (yp / 100) * (maxY - minY);
+
+  return { x, y };
 }
