@@ -47,8 +47,8 @@ export default function ProfileBackdropPreviewHeader({
   overlaySrc,
 }: Props) {
   return (
-    <div className="rounded-xl overflow-hidden border border-slate-200 bg-white">
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+    <div className="rounded-xl overflow-hidden border border-slate-200 bg-[#dfe4e9]">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-[#dfe4e9]">
         <div className="relative">
           <div
             ref={previewBackdropRef}
@@ -85,9 +85,9 @@ export default function ProfileBackdropPreviewHeader({
             />
           </div>
 
-          <div className="relative px-4 pb-3">
-            <div className="-mt-8 flex items-center gap-3">
-              <div className="w-14 h-14 rounded-full bg-slate-200 overflow-hidden shrink-0 ring-2 ring-black">
+          <div className="relative px-3 pb-3">
+            <div className="-mt-15 flex items-center gap-2">
+              <div className="w-13 h-13 rounded-full bg-slate-200 overflow-hidden shrink-0 ring-2 ring-black">
                 {avatarUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={avatarUrl} alt={username} className="w-full h-full object-cover" />

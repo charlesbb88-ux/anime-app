@@ -75,21 +75,37 @@ export default function BackdropPositionEditor({
 
           <div className="absolute inset-0 pointer-events-none">
             <div className="absolute left-0 right-0 bg-black/55" style={{ top: 0, height: outer.top }} />
-            <div className="absolute left-0 right-0 bg-black/55" style={{ top: outer.top + outer.h, bottom: 0 }} />
+            {/* bottom shade (aligned to INNER box) */}
+            <div
+              className="absolute left-0 right-0 bg-black/55"
+              style={{ top: inner.top + inner.h, bottom: 0 }}
+            />
             <div className="absolute bg-black/55" style={{ left: 0, top: outer.top, width: outer.left, height: outer.h }} />
             <div
               className="absolute bg-black/55"
               style={{ left: outer.left + outer.w, top: outer.top, right: 0, height: outer.h }}
             />
 
+            {/* OUTER BORDER (top + right only) */}
             <div
-              className="absolute border-2 border-blue-500/70"
-              style={{ left: outer.left, top: outer.top, width: outer.w, height: outer.h }}
+              className="absolute border-t-2 border-r-2 border-blue-500/70"
+              style={{
+                left: outer.left,
+                top: outer.top,
+                width: outer.w,
+                height: outer.h,
+              }}
             />
 
+            {/* INNER BORDER (top + right + bottom, no left) */}
             <div
-              className="absolute border-2 border-blue-500"
-              style={{ left: inner.left, top: inner.top, width: inner.w, height: inner.h }}
+              className="absolute border-t-2 border-r-2 border-b-2 border-blue-500"
+              style={{
+                left: inner.left,
+                top: inner.top,
+                width: inner.w,
+                height: inner.h,
+              }}
             />
           </div>
         </>

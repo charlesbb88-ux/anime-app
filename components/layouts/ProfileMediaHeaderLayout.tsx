@@ -4,7 +4,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { computePanLimits } from "@/lib/settings/backdropMath";
+import { computePanLimits, pctToPanPxForRender } from "@/lib/settings/backdropMath";
 
 type Tab = "posts" | "watchlist" | "activity" | "journal" | "library" | "completions";
 
@@ -103,32 +103,31 @@ export default function ProfileMediaHeaderLayout({
   const hideBottom = Math.max(0, Math.round(overlayHiddenBottomPx ?? 0));
 
   // ------------------------------------------------------------
-  // ✅ NEW: match preview/editor rendering model on the real page
+  // ✅ Measure the ACTUAL full backdrop window (not the cropped “visible” inner)
+  // and use pct<->pan math that includes hidden-bottom extra range.
   // ------------------------------------------------------------
-  const viewportRef = useRef<HTMLDivElement | null>(null);
-  const [viewportBox, setViewportBox] = useState<{ w: number; h: number }>({ w: 1, h: 1 });
+  const backdropBoxRef = useRef<HTMLDivElement | null>(null);
+  const [backdropBox, setBackdropBox] = useState<{ w: number; h: number }>({ w: 1, h: 1 });
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
 
-  // measure the "visible viewport" (the area excluding hideBottom)
   useLayoutEffect(() => {
-    const el = viewportRef.current;
+    const el = backdropBoxRef.current;
     if (!el) return;
 
     const ro = new ResizeObserver(() => {
       const r = el.getBoundingClientRect();
-      setViewportBox({ w: Math.max(1, r.width), h: Math.max(1, r.height) });
+      setBackdropBox({ w: Math.max(1, r.width), h: Math.max(1, r.height) });
     });
 
     ro.observe(el);
 
-    // initial
     const r = el.getBoundingClientRect();
-    setViewportBox({ w: Math.max(1, r.width), h: Math.max(1, r.height) });
+    setBackdropBox({ w: Math.max(1, r.width), h: Math.max(1, r.height) });
 
     return () => ro.disconnect();
-  }, [hideBottom]);
+  }, []);
 
-  // load natural image size for correct "cover base" math
+  // natural image size
   useEffect(() => {
     if (!showBackdropImage || !backdropUrl) {
       setImgSize(null);
@@ -153,69 +152,63 @@ export default function ProfileMediaHeaderLayout({
     };
   }, [showBackdropImage, backdropUrl]);
 
-  // base sizerefactor: same as preview: render baseW/baseH at z=1 then scale(zoom)
+  // base size at z=1 (cover)
   const base = useMemo(() => {
     if (!imgSize) return null;
     const { baseW, baseH } = computePanLimits({
-      cw: viewportBox.w,
-      ch: viewportBox.h,
+      cw: backdropBox.w,
+      ch: backdropBox.h,
       iw: imgSize.w,
       ih: imgSize.h,
       z: 1,
     });
     return { baseW, baseH };
-  }, [imgSize, viewportBox.w, viewportBox.h]);
+  }, [imgSize, backdropBox.w, backdropBox.h]);
 
-  // convert saved % back into pan pixels for this viewport (inverse of panToPctForDbFullWindow)
+  // ✅ percent -> pan px (includes hidden-bottom range to prevent "stuck" region)
   const panPx = useMemo(() => {
     if (!imgSize) return { x: 0, y: 0 };
 
-    const { maxPanX, maxPanY, rangeX, rangeY } = computePanLimits({
-      cw: viewportBox.w,
-      ch: viewportBox.h,
-      iw: imgSize.w,
-      ih: imgSize.h,
-      z: zoom,
+    return pctToPanPxForRender({
+      imgSize,
+      cw: backdropBox.w,
+      ch: backdropBox.h,
+      zoom,
+      xPct: posX,
+      yPct: posY,
+      hiddenBottomPx: hideBottom,
     });
-
-    const x = rangeX <= 0 ? 0 : clamp(maxPanX * (1 - posX / 50), -maxPanX, maxPanX);
-    const y = rangeY <= 0 ? 0 : clamp(maxPanY * (1 - posY / 50), -maxPanY, maxPanY);
-
-    return { x, y };
-  }, [imgSize, viewportBox.w, viewportBox.h, zoom, posX, posY]);
+  }, [imgSize, backdropBox.w, backdropBox.h, zoom, posX, posY, hideBottom]);
 
   return (
     <div className="mx-auto max-w-6xl px-4 pt-0 pb-0">
       {/* Backdrop */}
-      <div className={`relative w-full overflow-hidden ${backdropHeightClassName} -mt-10`}>
-        {/* ✅ Visible viewport: this matches the editor/preview “window” concept */}
-        <div
-          ref={viewportRef}
-          className="absolute inset-x-0 top-0 overflow-hidden"
-          style={{ bottom: hideBottom }}
-        >
-          {showBackdropImage && imgSize && base ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={backdropUrl as string}
-              alt=""
-              draggable={false}
-              className="absolute left-1/2 top-1/2"
-              style={{
-                width: `${base.baseW}px`,
-                height: `${base.baseH}px`,
-                transform: `translate(-50%, -50%) translate(${panPx.x}px, ${panPx.y}px) scale(${zoom})`,
-                transformOrigin: "center",
-                objectFit: "cover",
-                willChange: "transform",
-              }}
-            />
-          ) : (
-            <div className="absolute inset-0 bg-black" />
-          )}
-        </div>
+      <div
+        ref={backdropBoxRef}
+        className={`relative w-full overflow-hidden ${backdropHeightClassName} -mt-10`}
+      >
+        {showBackdropImage && imgSize && base ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={backdropUrl as string}
+            alt=""
+            draggable={false}
+            className="absolute left-1/2 top-1/2"
+            style={{
+              width: `${base.baseW}px`,
+              height: `${base.baseH}px`,
+              transform: `translate(-50%, -50%) translate(${panPx.x}px, ${panPx.y}px) scale(${zoom})`,
+              transformOrigin: "center",
+              objectFit: "cover",
+              willChange: "transform",
+            }}
+          />
+        ) : (
+          <div className="absolute inset-0 bg-black" />
+        )}
 
-        {/* Hidden bottom area (behind the fade) */}
+        {/* Optional: you can keep this black strip if you want the faded area to never show empty.
+            It's not part of the "math" anymore; it's purely visual. */}
         {hideBottom > 0 ? (
           <div className="absolute inset-x-0 bottom-0 bg-black" style={{ height: hideBottom }} />
         ) : null}
