@@ -1,0 +1,89 @@
+"use client";
+
+import React from "react";
+
+type Props = {
+  inputId: string;
+  hasImage: boolean;
+
+  zoom: number;
+  onZoomChange: (n: number) => void;
+
+  saving: boolean;
+  onSave: () => void;
+  onRemove: () => void;
+};
+
+export default function AvatarToolbar({
+  inputId,
+  hasImage,
+  zoom,
+  onZoomChange,
+  saving,
+  onSave,
+  onRemove,
+}: Props) {
+  if (hasImage) {
+    return (
+      <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-slate-500">Zoom</span>
+          <input
+            type="range"
+            min={1}
+            max={3}
+            step={0.01}
+            value={zoom}
+            onChange={(e) => onZoomChange(parseFloat(e.target.value))}
+            className="w-40 md:w-64"
+          />
+        </div>
+
+        <div className="flex items-center gap-4 md:ml-auto">
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saving}
+            className="inline-flex items-center justify-center px-5 py-2 text-xs font-semibold rounded-full bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60 cursor-pointer"
+          >
+            {saving ? "Saving…" : "Save avatar"}
+          </button>
+
+          <label
+            htmlFor={inputId}
+            className="text-xs text-slate-600 hover:text-slate-800 cursor-pointer"
+          >
+            Change image
+          </label>
+
+          <button
+            type="button"
+            onClick={onRemove}
+            className="text-xs text-red-500 hover:text-red-600 cursor-pointer"
+          >
+            Remove
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-3 items-center">
+      <div />
+      <label
+        htmlFor={inputId}
+        className="justify-self-center inline-flex items-center justify-center px-5 py-2 text-xs font-semibold rounded-full bg-slate-900 text-white hover:bg-slate-800 cursor-pointer"
+      >
+        Select new avatar
+      </label>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="justify-self-end text-xs text-red-500 hover:text-red-600 cursor-pointer"
+      >
+        Remove
+      </button>
+    </div>
+  );
+}
