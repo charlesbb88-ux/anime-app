@@ -1,3 +1,4 @@
+// components/settings/avatar/useAvatarEditor.ts
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -59,6 +60,9 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
     ? null
     : avatarPreviewUrl || profile.avatar_url || null;
 
+  // ✅ only editable when a NEW file is selected
+  const canEdit = !!avatarFile;
+
   async function pumpPreviewQueue() {
     if (workingRef.current) return;
     if (!avatarPreviewUrl) return;
@@ -86,12 +90,18 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
   }
 
   function onCropAreaChange(_area: Area, pixels: Area) {
+    // preview only matters for new uploads
+    if (!avatarPreviewUrl) return;
+
     setCroppedAreaPixels(pixels);
     latestAreaRef.current = pixels;
     void pumpPreviewQueue();
   }
 
   function onCropComplete(_area: Area, pixels: Area) {
+    // preview only matters for new uploads
+    if (!avatarPreviewUrl) return;
+
     setCroppedAreaPixels(pixels);
     latestAreaRef.current = pixels;
     void pumpPreviewQueue();
@@ -139,12 +149,10 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
         setCroppedPreview(null);
         latestAreaRef.current = null;
         setAvatarRemoved(false);
-        setSaving(false);
         return;
       }
 
       if (!avatarFile) {
-        setSaving(false);
         return;
       }
 
@@ -166,6 +174,7 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
 
       onUpdated(updated);
 
+      // after save, we are no longer editing (file cleared -> canEdit false)
       setCrop({ x: 0, y: 0 });
       setZoom(1);
 
@@ -188,6 +197,8 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
 
     avatarInitial,
     baseAvatarImage,
+
+    canEdit,
 
     crop,
     setCrop,

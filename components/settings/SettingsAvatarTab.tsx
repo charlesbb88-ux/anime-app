@@ -1,3 +1,4 @@
+// components/settings/avatar/SettingsAvatarTab.tsx
 "use client";
 
 import React from "react";
@@ -23,6 +24,8 @@ export default function SettingsAvatarTab({ profile, onUpdated }: Props) {
 
     avatarInitial,
     baseAvatarImage,
+
+    canEdit,
 
     crop,
     setCrop,
@@ -51,6 +54,7 @@ export default function SettingsAvatarTab({ profile, onUpdated }: Props) {
             image={baseAvatarImage}
             crop={crop}
             zoom={zoom}
+            canEdit={canEdit}
             onCropChange={setCrop}
             onZoomChange={setZoom}
             onCropComplete={onCropComplete}
@@ -82,6 +86,7 @@ export default function SettingsAvatarTab({ profile, onUpdated }: Props) {
           <AvatarToolbar
             inputId={inputId}
             hasImage={!!baseAvatarImage}
+            canEdit={canEdit}
             zoom={zoom}
             onZoomChange={setZoom}
             saving={saving}
@@ -92,9 +97,8 @@ export default function SettingsAvatarTab({ profile, onUpdated }: Props) {
       </div>
 
       <p className="mt-3 text-[11px] text-slate-500 text-center max-w-3xl">
-        Avatars should be JPEG or PNG. Larger images will be resized. The
-        checkerboard area shows the whole image; the circle shows what will be
-        kept as your avatar.
+        Avatars should be JPEG or PNG. Larger images will be resized. The checkerboard
+        area shows the whole image; the circle shows what will be kept as your avatar.
       </p>
     </div>
   );
