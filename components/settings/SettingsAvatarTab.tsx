@@ -29,6 +29,7 @@ export default function SettingsAvatarTab({ profile, onUpdated }: Props) {
     zoom,
     setZoom,
     onCropComplete,
+    onCropAreaChange,
 
     croppedPreview,
 
@@ -53,6 +54,7 @@ export default function SettingsAvatarTab({ profile, onUpdated }: Props) {
             onCropChange={setCrop}
             onZoomChange={setZoom}
             onCropComplete={onCropComplete}
+            onCropAreaChange={onCropAreaChange}
             croppedPreview={croppedPreview}
             avatarInitial={avatarInitial}
             username={profile.username}

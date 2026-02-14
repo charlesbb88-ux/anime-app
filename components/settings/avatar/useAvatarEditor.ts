@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Area } from "react-easy-crop";
 
 import type { ProfileRow } from "@/lib/hooks/useMyProfile";
@@ -20,11 +20,17 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
 
   const [crop, setCrop] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
+
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [croppedPreview, setCroppedPreview] = useState<string | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ✅ queue state (latest wins)
+  const latestAreaRef = useRef<Area | null>(null);
+  const workingRef = useRef(false);
+  const disposedRef = useRef(false);
 
   // file -> object URL
   useEffect(() => {
@@ -37,26 +43,6 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
     return () => URL.revokeObjectURL(url);
   }, [avatarFile]);
 
-  // live cropped preview
-  useEffect(() => {
-    const run = async () => {
-      if (!avatarPreviewUrl || !croppedAreaPixels) {
-        setCroppedPreview(null);
-        return;
-      }
-      try {
-        const preview = await getCroppedImageDataUrl(
-          avatarPreviewUrl,
-          croppedAreaPixels
-        );
-        setCroppedPreview(preview);
-      } catch {
-        setCroppedPreview(null);
-      }
-    };
-    void run();
-  }, [avatarPreviewUrl, croppedAreaPixels]);
-
   const avatarInitial = useMemo(() => {
     const u = profile.username?.trim();
     return u && u.length > 0 ? u.charAt(0).toUpperCase() : "?";
@@ -66,9 +52,69 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
     ? null
     : avatarPreviewUrl || profile.avatar_url || null;
 
-  const onCropComplete = (_: Area, croppedPixels: Area) => {
-    setCroppedAreaPixels(croppedPixels);
-  };
+  // ✅ single queue runner
+  async function pumpPreviewQueue() {
+    if (workingRef.current) return;
+    if (!avatarPreviewUrl) return;
+
+    workingRef.current = true;
+
+    try {
+      while (!disposedRef.current) {
+        const area = latestAreaRef.current;
+        if (!area) break;
+
+        // "consume" current request
+        latestAreaRef.current = null;
+
+        try {
+          const preview = await getCroppedImageDataUrl(avatarPreviewUrl, area);
+          if (disposedRef.current) break;
+          setCroppedPreview(preview);
+        } catch {
+          if (disposedRef.current) break;
+          setCroppedPreview(null);
+        }
+
+        // if user moved again during await, latestAreaRef will be non-null
+        // loop continues and paints the newest request next
+      }
+    } finally {
+      workingRef.current = false;
+    }
+  }
+
+  // ✅ live pixels while dragging
+  function onCropAreaChange(_a: Area, pixels: Area) {
+    setCroppedAreaPixels(pixels); // keep for save
+    latestAreaRef.current = pixels; // request preview
+    void pumpPreviewQueue();
+  }
+
+  // keep onCropComplete too (end-state accuracy)
+  function onCropComplete(_a: Area, pixels: Area) {
+    setCroppedAreaPixels(pixels);
+    latestAreaRef.current = pixels;
+    void pumpPreviewQueue();
+  }
+
+  // cleanup
+  useEffect(() => {
+    disposedRef.current = false;
+    return () => {
+      disposedRef.current = true;
+      latestAreaRef.current = null;
+    };
+  }, []);
+
+  // reset preview if no image or no crop yet
+  useEffect(() => {
+    if (!avatarPreviewUrl) {
+      setCroppedPreview(null);
+      latestAreaRef.current = null;
+      return;
+    }
+  }, [avatarPreviewUrl]);
 
   function onFileSelected(file: File | null) {
     setAvatarFile(file);
@@ -76,6 +122,7 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
     setZoom(1);
     setCroppedAreaPixels(null);
     setCroppedPreview(null);
+    latestAreaRef.current = null;
     setAvatarRemoved(false);
     setError(null);
   }
@@ -85,6 +132,7 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
     setAvatarPreviewUrl(null);
     setCroppedAreaPixels(null);
     setCroppedPreview(null);
+    latestAreaRef.current = null;
     setAvatarRemoved(true);
     setError(null);
   }
@@ -94,7 +142,6 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
     setSaving(true);
 
     try {
-      // removal wins
       if (avatarRemoved) {
         const updated = await updateAvatarUrl({
           profileId: profile.id,
@@ -102,17 +149,16 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
         });
         onUpdated(updated);
 
-        // reset local edit state
         setAvatarFile(null);
         setAvatarPreviewUrl(null);
         setCroppedAreaPixels(null);
         setCroppedPreview(null);
+        latestAreaRef.current = null;
         setAvatarRemoved(false);
         setSaving(false);
         return;
       }
 
-      // must have a new file to save
       if (!avatarFile) {
         setSaving(false);
         return;
@@ -121,10 +167,7 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
       let uploadBlob: Blob = avatarFile;
 
       if (avatarPreviewUrl && croppedAreaPixels) {
-        uploadBlob = await getCroppedImageBlob(
-          avatarPreviewUrl,
-          croppedAreaPixels
-        );
+        uploadBlob = await getCroppedImageBlob(avatarPreviewUrl, croppedAreaPixels);
       }
 
       const publicUrl = await uploadAvatarPng({
@@ -139,11 +182,11 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
 
       onUpdated(updated);
 
-      // reset local state after save
       setAvatarFile(null);
       setAvatarPreviewUrl(null);
       setCroppedAreaPixels(null);
       setCroppedPreview(null);
+      latestAreaRef.current = null;
       setAvatarRemoved(false);
     } catch (e: any) {
       setError(e?.message || "Failed to save avatar.");
@@ -153,23 +196,21 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
   }
 
   return {
-    // status
     saving,
     error,
 
-    // derived
     avatarInitial,
     baseAvatarImage,
 
-    // crop state
     crop,
     setCrop,
     zoom,
     setZoom,
+
     onCropComplete,
+    onCropAreaChange, // ✅ NEW
     croppedPreview,
 
-    // actions
     onFileSelected,
     onRemove,
     saveAvatar,
