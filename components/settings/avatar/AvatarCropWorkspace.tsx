@@ -10,6 +10,8 @@ type Props = {
   crop: { x: number; y: number };
   zoom: number;
 
+  canEdit: boolean;
+
   onCropChange: (next: { x: number; y: number }) => void;
   onZoomChange: (next: number) => void;
 
@@ -26,6 +28,7 @@ export default function AvatarCropWorkspace({
   image,
   crop,
   zoom,
+  canEdit,
   onCropChange,
   onZoomChange,
   onCropComplete,
@@ -42,18 +45,47 @@ export default function AvatarCropWorkspace({
           className="relative w-full h-96 md:h-[28rem] overflow-hidden"
           style={checkerboardStyle}
         >
-          <Cropper
-            image={image}
-            crop={crop}
-            zoom={zoom}
-            aspect={1}
-            showGrid={false}
-            onCropChange={onCropChange}
-            onZoomChange={onZoomChange}
-            onCropComplete={onCropComplete}
-            onCropAreaChange={onCropAreaChange}
-            cropShape="round"
-          />
+          {canEdit ? (
+            <Cropper
+              image={image}
+              crop={crop}
+              zoom={zoom}
+              aspect={1}
+              showGrid={false}
+              onCropChange={onCropChange}
+              onZoomChange={onZoomChange}
+              onCropComplete={onCropComplete}
+              onCropAreaChange={onCropAreaChange}
+              cropShape="round"
+            />
+          ) : (
+            // ✅ post-save view: show a true circular mask (no square)
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="relative w-[22rem] h-[22rem] max-w-[90%] max-h-[90%]">
+                {/* the circle image */}
+                <div className="absolute inset-0 rounded-full overflow-hidden bg-slate-200">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={image}
+                    alt="Avatar"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+
+                {/* dark mask outside the circle */}
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    boxShadow: "0 0 0 9999px rgba(0,0,0,0.55)",
+                    borderRadius: "9999px",
+                  }}
+                />
+
+                {/* optional: subtle ring to match Cropper’s look */}
+                <div className="absolute inset-0 rounded-full ring-2 ring-white/80" />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

@@ -1,3 +1,4 @@
+// components/settings/avatar/AvatarToolbar.tsx
 "use client";
 
 import React from "react";
@@ -5,6 +6,9 @@ import React from "react";
 type Props = {
   inputId: string;
   hasImage: boolean;
+
+  // ✅ NEW: when false, hide/disable edit controls (post-save view-only)
+  canEdit: boolean;
 
   zoom: number;
   onZoomChange: (n: number) => void;
@@ -17,6 +21,7 @@ type Props = {
 export default function AvatarToolbar({
   inputId,
   hasImage,
+  canEdit,
   zoom,
   onZoomChange,
   saving,
@@ -34,8 +39,12 @@ export default function AvatarToolbar({
             max={3}
             step={0.01}
             value={zoom}
-            onChange={(e) => onZoomChange(parseFloat(e.target.value))}
-            className="w-40 md:w-64"
+            disabled={!canEdit || saving}
+            onChange={(e) => {
+              if (!canEdit || saving) return;
+              onZoomChange(parseFloat(e.target.value));
+            }}
+            className="w-40 md:w-64 disabled:opacity-50"
           />
         </div>
 
@@ -43,7 +52,7 @@ export default function AvatarToolbar({
           <button
             type="button"
             onClick={onSave}
-            disabled={saving}
+            disabled={saving || !canEdit}
             className="inline-flex items-center justify-center px-5 py-2 text-xs font-semibold rounded-full bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60 cursor-pointer"
           >
             {saving ? "Saving…" : "Save avatar"}
@@ -59,7 +68,8 @@ export default function AvatarToolbar({
           <button
             type="button"
             onClick={onRemove}
-            className="text-xs text-red-500 hover:text-red-600 cursor-pointer"
+            disabled={saving}
+            className="text-xs text-red-500 hover:text-red-600 disabled:opacity-60 cursor-pointer"
           >
             Remove
           </button>
