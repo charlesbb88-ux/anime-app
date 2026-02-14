@@ -38,8 +38,8 @@ export default function ProfileBackdropPreviewHeader({
   overlaySrc,
 }: Props) {
   return (
-    <div className="rounded-xl overflow-hidden border border-slate-200 bg-[#dfe4e9]">
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-[#dfe4e9]">
+    <div className="rounded-md overflow-hidden border border-black bg-[#dfe4e9]">
+      <div className="overflow-hidden rounded-md border border-black bg-[#dfe4e9]">
         <div className="relative">
           <div
             ref={previewBackdropRef}

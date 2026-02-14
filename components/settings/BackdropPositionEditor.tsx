@@ -46,7 +46,7 @@ export default function BackdropPositionEditor({
   return (
     <div
       ref={editorRef}
-      className="relative w-full rounded-xl overflow-hidden border border-slate-200 bg-black touch-none select-none"
+      className="relative w-full rounded-md overflow-hidden border-2 border-black bg-black touch-none select-none"
       style={{ height: editorH }}
       onPointerDown={beginDrag}
       onPointerMove={moveDrag}

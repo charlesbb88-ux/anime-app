@@ -61,7 +61,7 @@ export default function SettingsBannerTab({ userId, username, avatarUrl, isActiv
 
   return (
     <div className="max-w-5xl space-y-4">
-      <div className="bg-white rounded-xl border border-slate-200 p-5">
+      <div className="bg-white rounded-xs border-2 border-black p-5">
         {err ? <div className="mb-3 text-xs text-red-600">{err}</div> : null}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -97,7 +97,8 @@ export default function SettingsBannerTab({ userId, username, avatarUrl, isActiv
               <button
                 type="button"
                 onClick={openFileDialog}
-                className="inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-full bg-slate-900 text-white hover:bg-slate-800"
+                className="inline-flex items-center justify-center px-4 py-2 text-xs font-semibold
+             rounded-sm bg-blue-500 text-white hover:bg-blue-600"
               >
                 Upload image
               </button>
@@ -106,7 +107,7 @@ export default function SettingsBannerTab({ userId, username, avatarUrl, isActiv
               <div className="ml-auto flex items-center gap-2">
                 {/* ✅ Saved indicator placed right next to Save */}
                 {saveOk ? (
-                  <div className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1">
+                  <div className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-sm px-3 py-1">
                     Saved
                   </div>
                 ) : null}
@@ -115,7 +116,7 @@ export default function SettingsBannerTab({ userId, username, avatarUrl, isActiv
                   type="button"
                   disabled={!pickedUrl || saving || !imgSize}
                   onClick={saveBackdropToDb}
-                  className="inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-full bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60"
+                  className="inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-sm bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60"
                 >
                   {saving ? "Saving…" : "Save banner"}
                 </button>

@@ -20,14 +20,13 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
 
   const [crop, setCrop] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
-
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [croppedPreview, setCroppedPreview] = useState<string | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ queue state (latest wins)
+  // latest-wins preview queue
   const latestAreaRef = useRef<Area | null>(null);
   const workingRef = useRef(false);
   const disposedRef = useRef(false);
@@ -43,6 +42,14 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
     return () => URL.revokeObjectURL(url);
   }, [avatarFile]);
 
+  useEffect(() => {
+    disposedRef.current = false;
+    return () => {
+      disposedRef.current = true;
+      latestAreaRef.current = null;
+    };
+  }, []);
+
   const avatarInitial = useMemo(() => {
     const u = profile.username?.trim();
     return u && u.length > 0 ? u.charAt(0).toUpperCase() : "?";
@@ -52,19 +59,16 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
     ? null
     : avatarPreviewUrl || profile.avatar_url || null;
 
-  // ✅ single queue runner
   async function pumpPreviewQueue() {
     if (workingRef.current) return;
     if (!avatarPreviewUrl) return;
 
     workingRef.current = true;
-
     try {
       while (!disposedRef.current) {
         const area = latestAreaRef.current;
         if (!area) break;
 
-        // "consume" current request
         latestAreaRef.current = null;
 
         try {
@@ -75,46 +79,23 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
           if (disposedRef.current) break;
           setCroppedPreview(null);
         }
-
-        // if user moved again during await, latestAreaRef will be non-null
-        // loop continues and paints the newest request next
       }
     } finally {
       workingRef.current = false;
     }
   }
 
-  // ✅ live pixels while dragging
-  function onCropAreaChange(_a: Area, pixels: Area) {
-    setCroppedAreaPixels(pixels); // keep for save
-    latestAreaRef.current = pixels; // request preview
-    void pumpPreviewQueue();
-  }
-
-  // keep onCropComplete too (end-state accuracy)
-  function onCropComplete(_a: Area, pixels: Area) {
+  function onCropAreaChange(_area: Area, pixels: Area) {
     setCroppedAreaPixels(pixels);
     latestAreaRef.current = pixels;
     void pumpPreviewQueue();
   }
 
-  // cleanup
-  useEffect(() => {
-    disposedRef.current = false;
-    return () => {
-      disposedRef.current = true;
-      latestAreaRef.current = null;
-    };
-  }, []);
-
-  // reset preview if no image or no crop yet
-  useEffect(() => {
-    if (!avatarPreviewUrl) {
-      setCroppedPreview(null);
-      latestAreaRef.current = null;
-      return;
-    }
-  }, [avatarPreviewUrl]);
+  function onCropComplete(_area: Area, pixels: Area) {
+    setCroppedAreaPixels(pixels);
+    latestAreaRef.current = pixels;
+    void pumpPreviewQueue();
+  }
 
   function onFileSelected(file: File | null) {
     setAvatarFile(file);
@@ -208,7 +189,8 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
     setZoom,
 
     onCropComplete,
-    onCropAreaChange, // ✅ NEW
+    onCropAreaChange,
+
     croppedPreview,
 
     onFileSelected,
