@@ -38,8 +38,7 @@ export default function ProfileBackdropPreviewHeader({
   overlaySrc,
 }: Props) {
   return (
-    <div className="rounded-md overflow-hidden border border-black bg-[#dfe4e9]">
-      <div className="overflow-hidden rounded-md border border-black bg-[#dfe4e9]">
+    <div className="rounded-md overflow-hidden border-2 border-black bg-[#dfe4e9]">
         <div className="relative">
           <div
             ref={previewBackdropRef}
@@ -98,7 +97,6 @@ export default function ProfileBackdropPreviewHeader({
                 <span className="pb-2">Bookmarks</span>
                 <span className="pb-2">Watchlist</span>
               </div>
-            </div>
           </div>
         </div>
 
