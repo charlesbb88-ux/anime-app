@@ -102,7 +102,7 @@ export default function ProfileAboutEditor({ initialMarkdown, onSaved }: Props) 
   }
 
   // -----------------------------
-  // Toolbar actions (simple)
+  // Toolbar actions
   // -----------------------------
   function actionBold() {
     wrapSelection("**", "**", "bold");
@@ -117,9 +117,15 @@ export default function ProfileAboutEditor({ initialMarkdown, onSaved }: Props) 
     wrapSelection("~! ", " !~", "spoiler text");
   }
   function actionHeading() {
-    const { selected } = getSelection();
-    if (selected.trim()) wrapSelection("## ", "", selected.trim());
-    else insertAtCursor("## Heading\n");
+    // If selection exists, make it a heading line; otherwise insert a heading line.
+    const { start, end, selected } = getSelection();
+    if (selected.trim()) {
+      const lines = selected.split("\n");
+      const headed = lines.map((l) => (l.trim().length ? `## ${l.replace(/^#+\s*/, "")}` : l)).join("\n");
+      replaceRange(start, end, headed, true);
+    } else {
+      insertAtCursor("## Heading\n");
+    }
   }
   function actionCode() {
     const { selected } = getSelection();
@@ -127,7 +133,6 @@ export default function ProfileAboutEditor({ initialMarkdown, onSaved }: Props) 
     else insertAtCursor("```\ncode\n```\n");
   }
   function actionCenter() {
-    // use AniList-ish tags we support server-side
     const { selected } = getSelection();
     if (selected.trim()) wrapSelection("[center]\n", "\n[/center]", selected);
     else insertAtCursor("[center]\ncentered text\n[/center]\n");
@@ -140,7 +145,7 @@ export default function ProfileAboutEditor({ initialMarkdown, onSaved }: Props) 
     }
     const listed = selected
       .split("\n")
-      .map((l) => (l.trim().length ? `- ${l}` : l))
+      .map((l) => (l.trim().length ? `- ${l.replace(/^-+\s*/, "")}` : l))
       .join("\n");
     replaceRange(start, end, listed, true);
   }
@@ -155,7 +160,8 @@ export default function ProfileAboutEditor({ initialMarkdown, onSaved }: Props) 
     const listed = lines
       .map((l) => {
         if (!l.trim().length) return l;
-        const out = `${n}. ${l}`;
+        const clean = l.replace(/^\d+\.\s*/, "");
+        const out = `${n}. ${clean}`;
         n += 1;
         return out;
       })
@@ -175,9 +181,9 @@ export default function ProfileAboutEditor({ initialMarkdown, onSaved }: Props) 
       url: "",
       text:
         kind === "link"
-          ? (selected.trim() ? selected.trim() : "link text")
+          ? selected.trim() ? selected.trim() : "link text"
           : kind === "image"
-            ? (selected.trim() ? selected.trim() : "image")
+            ? selected.trim() ? selected.trim() : "image"
             : "",
     });
   }
@@ -192,11 +198,9 @@ export default function ProfileAboutEditor({ initialMarkdown, onSaved }: Props) 
 
     const url = modal.url.trim();
     const text = modal.text.trim();
-
     if (!url) return;
 
     if (modal.kind === "link") {
-      // If user has selection, we keep selection as text; otherwise use modal.text
       const { selected, start, end } = getSelection();
       const linkText = selected.trim() ? selected.trim() : (text || "link");
       replaceRange(start, end, `[${linkText}](${url})`, false);
@@ -205,7 +209,6 @@ export default function ProfileAboutEditor({ initialMarkdown, onSaved }: Props) 
     }
 
     if (modal.kind === "image") {
-      // Inserts image markdown, selection is replaced
       const { start, end } = getSelection();
       const alt = text || "image";
       replaceRange(start, end, `![${alt}](${url})`, false);
@@ -250,7 +253,7 @@ export default function ProfileAboutEditor({ initialMarkdown, onSaved }: Props) 
           if (!cancelled && reqId === previewReqIdRef.current) setPreviewLoading(false);
         }
       })();
-    }, 250);
+    }, 200);
 
     return () => {
       cancelled = true;
@@ -316,7 +319,7 @@ export default function ProfileAboutEditor({ initialMarkdown, onSaved }: Props) 
         type="button"
         title={props.title}
         onClick={props.onClick}
-        className="h-8 w-8 rounded-md border border-transparent text-white/70 hover:text-white hover:bg-white/10 hover:border-white/10 active:scale-[0.98] transition"
+        className="h-8 w-8 rounded-md border border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100 hover:border-slate-200 active:scale-[0.98] transition"
       >
         <span className="inline-flex items-center justify-center w-full h-full">{props.children}</span>
       </button>
@@ -344,14 +347,14 @@ export default function ProfileAboutEditor({ initialMarkdown, onSaved }: Props) 
           : "https://example.com/video.webm";
 
   return (
-    <section className="rounded-xl border border-white/10 bg-white/5 p-4">
+    <section>
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-white/90">About</h2>
-        <div className="text-xs text-white/60">{chars.toLocaleString()}/20,000</div>
+        <h2 className="text-sm font-semibold text-slate-900">About</h2>
+        <div className="text-xs text-slate-500">{chars.toLocaleString()}/20,000</div>
       </div>
 
       {/* Toolbar */}
-      <div className="mt-3 flex flex-wrap items-center gap-1 rounded-lg border border-white/10 bg-black/20 px-2 py-2">
+      <div className="mt-3 flex flex-wrap items-center gap-1 rounded-xs border-2 border-black bg-white px-2 py-2">
         <ToolBtn title="Bold" onClick={actionBold}>
           <span className="font-black">B</span>
         </ToolBtn>
@@ -365,7 +368,7 @@ export default function ProfileAboutEditor({ initialMarkdown, onSaved }: Props) 
           🙈
         </ToolBtn>
 
-        <div className="mx-1 h-5 w-px bg-white/10" />
+        <div className="mx-1 h-5 w-px bg-slate-200" />
 
         <ToolBtn title="Link" onClick={() => openModal("link")}>
           🔗
@@ -380,7 +383,7 @@ export default function ProfileAboutEditor({ initialMarkdown, onSaved }: Props) 
           🎞️
         </ToolBtn>
 
-        <div className="mx-1 h-5 w-px bg-white/10" />
+        <div className="mx-1 h-5 w-px bg-slate-200" />
 
         <ToolBtn title="Ordered List" onClick={actionOl}>
           1.
@@ -403,7 +406,7 @@ export default function ProfileAboutEditor({ initialMarkdown, onSaved }: Props) 
       <div className="mt-3 grid gap-4">
         <textarea
           ref={taRef}
-          className="min-h-[220px] w-full rounded-lg border border-white/10 bg-black/30 p-3 text-sm text-white/90 outline-none focus:border-white/25"
+          className="min-h-[220px] w-full rounded-xs border-2 border-black bg-white p-3 text-sm text-slate-900 outline-none focus:border-blue-500"
           value={value}
           onChange={(e) => setValue(clampLen(e.target.value, 20000))}
           placeholder="A little about yourself…"
@@ -414,34 +417,33 @@ export default function ProfileAboutEditor({ initialMarkdown, onSaved }: Props) 
             type="button"
             onClick={save}
             disabled={saving}
-            className="rounded-lg bg-sky-500 px-3 py-2 text-sm font-semibold text-black disabled:opacity-60"
+            className="rounded-sm bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
           >
             {saving ? "Saving..." : "Save"}
           </button>
 
           {msg ? (
-            <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-white/80">
+            <span className="inline-flex items-center rounded-full border border-black bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
               {msg}
             </span>
           ) : null}
         </div>
 
         {/* Preview */}
-        <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+        <div className="rounded-xs border-2 border-black bg-white p-4">
           <div className="flex items-center justify-between">
-            <div className="text-xs font-semibold uppercase tracking-wide text-white/70">Preview</div>
-            {previewLoading ? <div className="text-xs text-white/50">Rendering…</div> : null}
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Preview</div>
+            {previewLoading ? <div className="text-xs text-slate-400">Rendering…</div> : null}
           </div>
 
           <div
             className={[
-              "mt-3 text-sm text-white/90",
-              "prose prose-invert max-w-none",
-              "prose-a:text-sky-400 prose-a:underline hover:prose-a:text-sky-300",
-              "prose-a:text-sky-300 prose-a:no-underline hover:prose-a:underline",
+              "mt-3 text-sm text-slate-900",
+              "prose max-w-none",
+              "prose-a:text-blue-600 prose-a:underline hover:prose-a:text-blue-700",
               "prose-img:rounded-lg",
 
-              "[&_a]:text-sky-400 [&_a]:underline [&_a:hover]:text-sky-300",
+              "[&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-700",
 
               "[&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2",
               "[&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-4 [&_h2]:mb-2",
@@ -456,42 +458,36 @@ export default function ProfileAboutEditor({ initialMarkdown, onSaved }: Props) 
             dangerouslySetInnerHTML={{ __html: previewHtml }}
           />
         </div>
-
-        <div className="text-xs text-white/50">
-          Supports Markdown + spoilers + embeds. Use the toolbar for best results.
-        </div>
       </div>
 
       {/* Modal */}
       {modal?.open ? (
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 px-4"
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 px-4"
           onMouseDown={(e) => {
-            // click outside closes
             if (e.target === e.currentTarget) closeModal();
           }}
         >
-          <div className="w-full max-w-md rounded-xl border border-white/10 bg-slate-950 p-4 shadow-xl">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold text-white/90">{modalTitle}</h3>
+              <h3 className="text-sm font-semibold text-slate-900">{modalTitle}</h3>
               <button
                 type="button"
                 onClick={closeModal}
-                className="rounded-md px-2 py-1 text-xs text-white/70 hover:bg-white/10"
+                className="rounded-md px-2 py-1 text-xs text-slate-500 hover:bg-slate-100"
               >
                 Close
               </button>
             </div>
 
             <div className="mt-3 grid gap-3">
-              {/* link text / image alt */}
               {modal.kind === "link" || modal.kind === "image" ? (
                 <label className="grid gap-1">
-                  <span className="text-xs text-white/60">
+                  <span className="text-xs text-slate-500">
                     {modal.kind === "link" ? "Text" : "Alt text"}
                   </span>
                   <input
-                    className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/90 outline-none focus:border-white/25"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
                     value={modal.text}
                     onChange={(e) => setModal({ ...modal, text: e.target.value })}
                     placeholder={modal.kind === "link" ? "link text" : "image"}
@@ -500,10 +496,10 @@ export default function ProfileAboutEditor({ initialMarkdown, onSaved }: Props) 
               ) : null}
 
               <label className="grid gap-1">
-                <span className="text-xs text-white/60">URL</span>
+                <span className="text-xs text-slate-500">URL</span>
                 <input
                   autoFocus
-                  className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/90 outline-none focus:border-white/25"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
                   value={modal.url}
                   onChange={(e) => setModal({ ...modal, url: e.target.value })}
                   placeholder={urlPlaceholder}
@@ -514,20 +510,20 @@ export default function ProfileAboutEditor({ initialMarkdown, onSaved }: Props) 
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-white/80 hover:bg-white/10"
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={confirmModal}
-                  className="rounded-lg bg-sky-500 px-3 py-2 text-sm font-semibold text-black"
+                  className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
                 >
                   Insert
                 </button>
               </div>
 
-              <div className="text-[11px] text-white/50">
+              <div className="text-[11px] text-slate-500">
                 Tip: everything updates instantly in the preview below.
               </div>
             </div>
