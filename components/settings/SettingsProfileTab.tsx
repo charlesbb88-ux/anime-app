@@ -4,6 +4,7 @@
 import React, { useEffect, useState } from "react";
 import type { ProfileRow } from "@/lib/hooks/useMyProfile";
 import { isUsernameTaken, updateProfile } from "@/lib/settings/profileService";
+import { supabase } from "@/lib/supabaseClient";
 
 type Props = {
   profile: ProfileRow;
@@ -17,7 +18,7 @@ export default function SettingsProfileTab({
   onOpenBackdrop,
 }: Props) {
   const [formUsername, setFormUsername] = useState(profile.username ?? "");
-  const [formBio, setFormBio] = useState(profile.bio ?? "");
+  const [email, setEmail] = useState<string | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,8 +26,30 @@ export default function SettingsProfileTab({
   // if profile changes (refetch), sync
   useEffect(() => {
     setFormUsername(profile.username ?? "");
-    setFormBio(profile.bio ?? "");
-  }, [profile.id, profile.username, profile.bio]);
+  }, [profile.id, profile.username]);
+
+  // load signed-in user's email (from Supabase Auth)
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadEmail() {
+      const { data, error } = await supabase.auth.getUser();
+      if (!mounted) return;
+
+      if (error) {
+        setEmail(null);
+        return;
+      }
+
+      setEmail(data.user?.email ?? null);
+    }
+
+    loadEmail();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   async function onSave() {
     setError(null);
@@ -38,7 +61,6 @@ export default function SettingsProfileTab({
     }
 
     const newUsername = trimmed.toLowerCase();
-    const newBio = formBio.trim();
 
     setSaving(true);
     try {
@@ -58,7 +80,7 @@ export default function SettingsProfileTab({
       const updated = await updateProfile({
         profileId: profile.id,
         username: newUsername,
-        bio: newBio ? newBio : null,
+        bio: profile.bio ?? null, // ✅ keep existing bio value unchanged
       });
 
       onUpdated(updated);
@@ -71,9 +93,8 @@ export default function SettingsProfileTab({
   }
 
   return (
-    <div className="max-w-xl space-y-4 bg-white rounded-xl border border-slate-200 p-5">
+    <div className="max-w-xl space-y-4 bg-white rounded-xs border-2 border-black p-5">
       {error ? <p className="text-sm text-red-500">{error}</p> : null}
-
       <div className="space-y-1">
         <label
           htmlFor="username"
@@ -86,43 +107,24 @@ export default function SettingsProfileTab({
           type="text"
           value={formUsername}
           onChange={(e) => setFormUsername(e.target.value)}
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+          className="w-full rounded-md border border-black px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
         />
-        <p className="text-[11px] text-slate-500">
-          Your handle. Will be stored in lowercase.
-        </p>
       </div>
-
       <div className="space-y-1">
-        <label htmlFor="bio" className="block text-xs font-medium text-slate-700">
-          Bio
-        </label>
-        <textarea
-          id="bio"
-          rows={4}
-          value={formBio}
-          onChange={(e) => setFormBio(e.target.value)}
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
-        />
-        <p className="text-[11px] text-slate-500">
-          Tell people a little about yourself.
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-medium text-slate-700">Email</p>
+        </div>
+
+        <div className="w-full rounded-md border border-black-200 bg-slate-50 px-3 py-2 text-sm text-slate-900">
+          {email ?? "—"}
+        </div>
       </div>
-
       <div className="pt-3 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={onOpenBackdrop}
-          className="inline-flex items-center px-5 py-2 text-xs font-semibold rounded-full border border-slate-300 bg-white text-slate-900 hover:bg-slate-50"
-        >
-          Edit backdrop
-        </button>
-
         <button
           type="button"
           onClick={onSave}
           disabled={saving}
-          className="inline-flex items-center px-5 py-2 text-xs font-semibold rounded-full bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60 cursor-pointer"
+          className="inline-flex items-center px-5 py-2 text-xs font-semibold rounded-sm bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-60 cursor-pointer"
         >
           {saving ? "Saving…" : "Save profile"}
         </button>

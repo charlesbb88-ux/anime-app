@@ -53,7 +53,7 @@ const SettingsPage: NextPage = () => {
 
   const tabLiClass = (tab: TabKey) =>
     [
-      "pb-1 text-xs font-semibold tracking-wide uppercase border-b-2",
+      "pb-1 text-md font-semibold tracking-wide uppercase border-b-2",
       activeTab === tab
         ? "border-slate-900 text-slate-900"
         : "border-transparent text-slate-400 hover:text-slate-900",
@@ -66,9 +66,6 @@ const SettingsPage: NextPage = () => {
         <header className="mb-6 border-b border-slate-200 pb-3">
           <div className="flex items-center justify-between gap-4">
             <h1 className="text-2xl font-bold">Account Settings</h1>
-            <Link href={`/${profile.username}`} className="text-xs text-slate-500 hover:underline">
-              Back to profile
-            </Link>
           </div>
 
           <div className="mt-4 flex items-start justify-between gap-4">
@@ -99,12 +96,6 @@ const SettingsPage: NextPage = () => {
                 </li>
               </ul>
             </nav>
-
-            <section className="text-right">
-              <p className="text-[11px] text-slate-500">
-                Upgrade to <span className="font-semibold">Pro</span> for additional features
-              </p>
-            </section>
           </div>
         </header>
 
