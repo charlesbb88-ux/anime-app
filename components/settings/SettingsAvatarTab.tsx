@@ -45,9 +45,7 @@ export default function SettingsAvatarTab({ profile, onUpdated }: Props) {
     <div className="space-y-4">
       {error ? <p className="text-sm text-red-500">{error}</p> : null}
 
-      <h2 className="text-base font-semibold">Avatar</h2>
-
-      <div className="rounded-md overflow-hidden border border-slate-200 bg-white">
+      <div className="rounded-xs overflow-hidden border-2 border-black bg-white">
         {baseAvatarImage ? (
           <AvatarCropWorkspace
             checkerboardStyle={checkerboardStyle}
@@ -68,6 +66,7 @@ export default function SettingsAvatarTab({ profile, onUpdated }: Props) {
             checkerboardStyle={checkerboardStyle}
             inputId={inputId}
             avatarInitial={avatarInitial}
+            onFileSelected={onFileSelected}
           />
         )}
 
@@ -95,11 +94,6 @@ export default function SettingsAvatarTab({ profile, onUpdated }: Props) {
           />
         </div>
       </div>
-
-      <p className="mt-3 text-[11px] text-slate-500 text-center max-w-3xl">
-        Avatars should be JPEG or PNG. Larger images will be resized. The checkerboard
-        area shows the whole image; the circle shows what will be kept as your avatar.
-      </p>
     </div>
   );
 }

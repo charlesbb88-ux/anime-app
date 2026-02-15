@@ -8,9 +8,10 @@ import { useState } from "react";
 import SettingsProfileTab from "@/components/settings/SettingsProfileTab";
 import SettingsAvatarTab from "@/components/settings/SettingsAvatarTab";
 import SettingsBannerTab from "@/components/settings/SettingsBannerTab";
+import ProfileAboutEditor from "@/components/profile/ProfileAboutEditor";
 import { useMyProfile } from "@/lib/hooks/useMyProfile";
 
-type TabKey = "profile" | "avatar" | "banner";
+type TabKey = "profile" | "about" | "avatar" | "banner";
 
 const SettingsPage: NextPage = () => {
   const { authUser, profile, loading, error, setProfileOptimistic } = useMyProfile();
@@ -28,9 +29,7 @@ const SettingsPage: NextPage = () => {
     return (
       <main className="min-h-screen bg-slate-100 flex items-center justify-center">
         <div className="bg-white shadow-sm rounded-xl px-6 py-5 space-y-2">
-          <p className="text-sm text-red-500">
-            {error || "You must be logged in to view settings."}
-          </p>
+          <p className="text-sm text-red-500">{error || "You must be logged in to view settings."}</p>
           <Link href="/" className="text-xs text-blue-600 hover:underline">
             Go back home
           </Link>
@@ -43,9 +42,7 @@ const SettingsPage: NextPage = () => {
     return (
       <main className="min-h-screen bg-slate-100 flex items-center justify-center">
         <div className="bg-white shadow-sm rounded-xl px-6 py-5 space-y-2">
-          <p className="text-sm text-red-500">
-            {error || "Could not load your profile."}
-          </p>
+          <p className="text-sm text-red-500">{error || "Could not load your profile."}</p>
           <Link href="/" className="text-xs text-blue-600 hover:underline">
             Go back home
           </Link>
@@ -69,10 +66,7 @@ const SettingsPage: NextPage = () => {
         <header className="mb-6 border-b border-slate-200 pb-3">
           <div className="flex items-center justify-between gap-4">
             <h1 className="text-2xl font-bold">Account Settings</h1>
-            <Link
-              href={`/${profile.username}`}
-              className="text-xs text-slate-500 hover:underline"
-            >
+            <Link href={`/${profile.username}`} className="text-xs text-slate-500 hover:underline">
               Back to profile
             </Link>
           </div>
@@ -81,31 +75,25 @@ const SettingsPage: NextPage = () => {
             <nav aria-label="Account settings tabs" className="flex-1">
               <ul className="flex flex-wrap gap-6">
                 <li className={tabLiClass("profile")}>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("profile")}
-                    className="focus:outline-none"
-                  >
+                  <button type="button" onClick={() => setActiveTab("profile")} className="focus:outline-none">
                     Profile
                   </button>
                 </li>
 
+                <li className={tabLiClass("about")}>
+                  <button type="button" onClick={() => setActiveTab("about")} className="focus:outline-none">
+                    About
+                  </button>
+                </li>
+
                 <li className={tabLiClass("avatar")}>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("avatar")}
-                    className="focus:outline-none"
-                  >
+                  <button type="button" onClick={() => setActiveTab("avatar")} className="focus:outline-none">
                     Avatar
                   </button>
                 </li>
 
                 <li className={tabLiClass("banner")}>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("banner")}
-                    className="focus:outline-none"
-                  >
+                  <button type="button" onClick={() => setActiveTab("banner")} className="focus:outline-none">
                     Banner
                   </button>
                 </li>
@@ -114,8 +102,7 @@ const SettingsPage: NextPage = () => {
 
             <section className="text-right">
               <p className="text-[11px] text-slate-500">
-                Upgrade to <span className="font-semibold">Pro</span> for additional
-                features
+                Upgrade to <span className="font-semibold">Pro</span> for additional features
               </p>
             </section>
           </div>
@@ -130,11 +117,20 @@ const SettingsPage: NextPage = () => {
                 onUpdated={(next) => setProfileOptimistic(next)}
                 onOpenBackdrop={() => setActiveTab("banner")}
               />
-            ) : activeTab === "avatar" ? (
-              <SettingsAvatarTab
-                profile={profile}
-                onUpdated={(next) => setProfileOptimistic(next)}
+            ) : activeTab === "about" ? (
+              <ProfileAboutEditor
+                initialMarkdown={profile.about_markdown ?? ""}
+                onSaved={({ about_markdown, about_html }) => {
+                  setProfileOptimistic({
+                    ...profile,
+                    about_markdown,
+                    about_html,
+                    about_updated_at: new Date().toISOString(),
+                  });
+                }}
               />
+            ) : activeTab === "avatar" ? (
+              <SettingsAvatarTab profile={profile} onUpdated={(next) => setProfileOptimistic(next)} />
             ) : (
               <SettingsBannerTab
                 userId={profile.id}
