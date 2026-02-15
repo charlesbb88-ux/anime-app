@@ -2,68 +2,220 @@
 import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import remarkRehype from "remark-rehype";
-import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import rehypeRaw from "rehype-raw";
 import rehypeStringify from "rehype-stringify";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 
-// AniList-like: markdown only, no raw HTML allowed.
-// We sanitize the resulting HTML with a strict allowlist.
+function isHttpsUrl(u: string) {
+  try {
+    const url = new URL(u);
+    return url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function extractYouTubeId(input: string): string | null {
+  try {
+    const url = new URL(input);
+
+    // youtu.be/VIDEO_ID
+    if (url.hostname === "youtu.be") {
+      const id = url.pathname.replace("/", "").trim();
+      return id || null;
+    }
+
+    // youtube.com/watch?v=VIDEO_ID
+    if (url.hostname.endsWith("youtube.com")) {
+      const v = url.searchParams.get("v");
+      if (v) return v;
+
+      // youtube.com/embed/VIDEO_ID
+      const parts = url.pathname.split("/").filter(Boolean);
+      const embedIdx = parts.findIndex((p) => p === "embed");
+      if (embedIdx !== -1 && parts[embedIdx + 1]) return parts[embedIdx + 1];
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function escapeAttr(s: string) {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
+ * Convert AniList-ish tags into safe raw HTML blocks before markdown processing:
+ * - Spoiler: ~! spoiler !~ (also accepts ~~! spoiler !~~) -> <details class="about-spoiler"><summary>Spoiler</summary>...</details>
+ * - Center:  [center]...[/center] -> <div class="about-center">...</div>
+ * - YouTube: [youtube](url) -> <iframe ...>
+ * - WebM:    [webm](url)    -> <video ...><source ...></video>
+ */
+function preprocess(input: string): string {
+  let s = input ?? "";
+
+  // [center] ... [/center]
+  s = s.replace(/\[center\]([\s\S]*?)\[\/center\]/gi, (_m, inner) => {
+    return `\n<div class="about-center">\n${inner}\n</div>\n`;
+  });
+
+  // AniList spoiler supports ~! ... !~  (and we also accept ~~! ... !~~)
+  s = s.replace(/~{1,2}!\s*([\s\S]*?)\s*!~{1,2}/g, (_m, inner) => {
+    return `\n<details class="about-spoiler"><summary>Spoiler</summary>\n\n${inner}\n\n</details>\n`;
+  });
+
+  // [youtube](...)
+  s = s.replace(/\[youtube\]\((.*?)\)/gi, (_m, rawUrl) => {
+    let url = String(rawUrl || "").trim();
+    if (!url) return "";
+
+    // allow "youtube.com/..." or "www.youtube.com/..." by auto-adding https
+    if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+
+    // if http, upgrade to https
+    url = url.replace(/^http:\/\//i, "https://");
+
+    const id = extractYouTubeId(url);
+    if (!id) return `[youtube](${rawUrl})`;
+
+    const src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}`;
+
+    return `\n<div class="about-embed">\n<iframe class="about-youtube" src="${escapeAttr(
+      src
+    )}" title="YouTube video" frameBorder="0" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen></iframe>\n</div>\n`;
+  });
+
+  // [webm](...)
+  s = s.replace(/\[webm\]\((.*?)\)/gi, (_m, rawUrl) => {
+    let url = String(rawUrl || "").trim();
+    if (!url) return "";
+
+    // allow no protocol by adding https
+    if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+
+    // if http, upgrade to https
+    url = url.replace(/^http:\/\//i, "https://");
+
+    if (!isHttpsUrl(url)) return `[webm](${rawUrl})`;
+
+    try {
+      const u = new URL(url);
+
+      // accept .webm even if there are query params
+      if (!u.pathname.toLowerCase().endsWith(".webm")) return `[webm](${rawUrl})`;
+
+      return `\n<div class="about-embed">\n<video class="about-video" controls playsInline preload="metadata">\n<source src="${escapeAttr(
+        url
+      )}" type="video/webm" />\n</video>\n</div>\n`;
+    } catch {
+      return `[webm](${rawUrl})`;
+    }
+  });
+
+  return s;
+}
+
 export async function renderProfileAboutToHtml(markdown: string): Promise<string> {
-  const input = (markdown ?? "").toString();
+  const pre = preprocess(markdown);
 
-  // Keep schema tight but allow the stuff users expect:
-  // headings, lists, links, images, blockquotes, hr, code, tables (GFM).
-  const schema = {
+  // Extend sanitize schema to allow the specific tags/attrs we generate + lists.
+  const schema: any = {
     ...defaultSchema,
     tagNames: Array.from(
       new Set([
-        ...(defaultSchema.tagNames ?? []),
+        ...(defaultSchema.tagNames || []),
+        "details",
+        "summary",
+        "iframe",
+        "video",
+        "source",
+        "div",
+        "span",
+        "ol",
+        "ul",
+        "li",
+
+        // ✅ allow markdown headings
         "h1",
         "h2",
         "h3",
-        "hr",
-        "table",
-        "thead",
-        "tbody",
-        "tr",
-        "th",
-        "td",
-        "pre",
-        "code",
+        "h4",
+        "h5",
+        "h6",
       ])
     ),
     attributes: {
-      ...defaultSchema.attributes,
-      a: Array.from(new Set([...(defaultSchema.attributes?.a ?? []), "href", "title", "target", "rel"])),
-      img: Array.from(new Set([...(defaultSchema.attributes?.img ?? []), "src", "alt", "title"])),
-      th: Array.from(new Set([...(defaultSchema.attributes?.th ?? []), "align"])),
-      td: Array.from(new Set([...(defaultSchema.attributes?.td ?? []), "align"])),
-      code: Array.from(new Set([...(defaultSchema.attributes?.code ?? []), "className"])),
-      pre: Array.from(new Set([...(defaultSchema.attributes?.pre ?? []), "className"])),
+      ...(defaultSchema.attributes || {}),
+
+      a: Array.from(new Set([...(defaultSchema.attributes?.a || []), "rel", "target"])),
+
+      img: Array.from(new Set([...(defaultSchema.attributes?.img || []), "src", "alt", "title", "loading"])),
+
+      div: Array.from(new Set([...(defaultSchema.attributes?.div || []), "className"])),
+      span: Array.from(new Set([...(defaultSchema.attributes?.span || []), "className"])),
+
+      details: Array.from(new Set([...(defaultSchema.attributes?.details || []), "className", "open"])),
+      summary: Array.from(new Set([...(defaultSchema.attributes?.summary || []), "className"])),
+
+      h1: Array.from(new Set([...(defaultSchema.attributes?.h1 || []), "className"])),
+      h2: Array.from(new Set([...(defaultSchema.attributes?.h2 || []), "className"])),
+      h3: Array.from(new Set([...(defaultSchema.attributes?.h3 || []), "className"])),
+      h4: Array.from(new Set([...(defaultSchema.attributes?.h4 || []), "className"])),
+      h5: Array.from(new Set([...(defaultSchema.attributes?.h5 || []), "className"])),
+      h6: Array.from(new Set([...(defaultSchema.attributes?.h6 || []), "className"])),
+
+      iframe: Array.from(
+        new Set([
+          ...(defaultSchema.attributes?.iframe || []),
+          "src",
+          "title",
+          "loading",
+          "allow",
+          "allowFullScreen",
+          "frameBorder",
+          "className",
+        ])
+      ),
+
+      video: Array.from(new Set([...(defaultSchema.attributes?.video || []), "controls", "playsInline", "preload", "className"])),
+
+      source: Array.from(new Set([...(defaultSchema.attributes?.source || []), "src", "type"])),
+
+      // ✅ allow lists through sanitize
+      ol: Array.from(new Set([...(defaultSchema.attributes?.ol || []), "className"])),
+      ul: Array.from(new Set([...(defaultSchema.attributes?.ul || []), "className"])),
+      li: Array.from(new Set([...(defaultSchema.attributes?.li || []), "className"])),
     },
     protocols: {
-      ...defaultSchema.protocols,
-      href: ["http", "https", "mailto"],
-      src: ["http", "https"],
+      ...(defaultSchema.protocols || {}),
+      src: ["https"],
+      href: ["https", "http", "mailto"],
     },
   };
 
   const file = await unified()
     .use(remarkParse)
     .use(remarkGfm)
-    // IMPORTANT: disallow raw HTML in markdown
-    .use(remarkRehype, { allowDangerousHtml: false })
+    .use(remarkBreaks)
+    .use(remarkRehype, { allowDangerousHtml: true })
+    .use(rehypeRaw)
     .use(rehypeSanitize, schema)
     .use(rehypeStringify)
-    .process(input);
+    .process(pre);
 
-  // Post-process: force safe link behavior
-  // (Sanitize blocks javascript: already via protocols, this is about rel/target defaults)
-  const html = String(file)
-    .replace(/<a\s/gi, '<a target="_blank" rel="noopener noreferrer nofollow" ')
-    // avoid duplicated rel/target weirdness
-    .replace(/rel="noopener noreferrer nofollow"\s+rel="[^"]*"/gi, 'rel="noopener noreferrer nofollow"')
-    .replace(/target="_blank"\s+target="[^"]*"/gi, 'target="_blank"');
+  // Force safe link behavior
+  const html = String(file.value).replace(
+    /<a /g,
+    '<a target="_blank" rel="nofollow noopener noreferrer" '
+  );
 
   return html;
 }

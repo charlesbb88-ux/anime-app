@@ -10,9 +10,38 @@ export type ProfileRow = {
   avatar_url: string | null;
   bio: string | null;
   created_at: string;
+
+  backdrop_url: string | null;
+  backdrop_pos_x: number | null;
+  backdrop_pos_y: number | null;
+  backdrop_zoom: number | null;
+
+  about_markdown: string | null;
+  about_html: string | null;
+  about_updated_at: string | null;
 };
 
 type SupaUser = any;
+
+function isProfileRow(x: any): x is ProfileRow {
+  return (
+    x &&
+    typeof x === "object" &&
+    typeof x.id === "string" &&
+    typeof x.username === "string" &&
+    // these can be null, but must exist as keys in the object
+    "avatar_url" in x &&
+    "bio" in x &&
+    typeof x.created_at === "string" &&
+    "backdrop_url" in x &&
+    "backdrop_pos_x" in x &&
+    "backdrop_pos_y" in x &&
+    "backdrop_zoom" in x &&
+    "about_markdown" in x &&
+    "about_html" in x &&
+    "about_updated_at" in x
+  );
+}
 
 export function useMyProfile() {
   const [authUser, setAuthUser] = useState<SupaUser | null>(null);
@@ -31,8 +60,7 @@ export function useMyProfile() {
     setProfileLoading(false);
 
     try {
-      const res = await supabase.auth.getUser();
-      const { data, error: authErr } = res;
+      const { data, error: authErr } = await supabase.auth.getUser();
 
       if (authErr || !data.user) {
         setAuthUser(null);
@@ -48,13 +76,26 @@ export function useMyProfile() {
 
       setProfileLoading(true);
 
-      const { data: rows, error: profErr } = await supabase
+      const { data: row, error: profErr } = await supabase
         .from("profiles")
-        .select("id, username, avatar_url, bio, created_at")
+        .select(
+          [
+            "id",
+            "username",
+            "avatar_url",
+            "bio",
+            "created_at",
+            "backdrop_url",
+            "backdrop_pos_x",
+            "backdrop_pos_y",
+            "backdrop_zoom",
+            "about_markdown",
+            "about_html",
+            "about_updated_at",
+          ].join(", ")
+        )
         .eq("id", data.user.id)
-        .limit(1);
-
-      const row = rows?.[0] ?? null;
+        .single();
 
       if (profErr || !row) {
         setProfile(null);
@@ -64,7 +105,16 @@ export function useMyProfile() {
         return;
       }
 
-      setProfile(row as ProfileRow);
+      // ✅ runtime guard fixes TS + makes the code safer
+      if (!isProfileRow(row)) {
+        setProfile(null);
+        setError("Profile data returned in an unexpected format.");
+        setProfileLoading(false);
+        setLoading(false);
+        return;
+      }
+
+      setProfile(row);
       setProfileLoading(false);
       setLoading(false);
     } catch (e: any) {
@@ -85,7 +135,6 @@ export function useMyProfile() {
     await load();
   }, [load]);
 
-  // Useful when a tab saves something and you want immediate UI update
   const setProfileOptimistic = useCallback((next: ProfileRow) => {
     setProfile(next);
   }, []);

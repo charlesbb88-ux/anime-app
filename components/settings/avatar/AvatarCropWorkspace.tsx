@@ -92,7 +92,7 @@ export default function AvatarCropWorkspace({
       {/* RIGHT: live preview */}
       <div className="md:w-1/3 flex items-center justify-center px-6 py-6">
         <div className="text-center space-y-3">
-          <div className="w-16 h-16 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden mx-auto">
+          <div className="w-16 h-16 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden mx-auto ring-2 ring-black">
             {croppedPreview ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img

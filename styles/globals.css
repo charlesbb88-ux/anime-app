@@ -27,3 +27,44 @@ html, body, #__next {
 .scrollbar-hide::-webkit-scrollbar {
   display: none; /* Chrome/Safari */
 }
+
+/* About custom blocks */
+.about-center {
+  text-align: center;
+}
+
+.about-embed {
+  margin: 0.75rem 0;
+}
+
+/* YouTube responsive */
+.about-youtube {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+}
+
+/* WebM */
+.about-video {
+  width: 100%;
+  border-radius: 12px;
+}
+
+/* Spoiler (click-to-open) */
+.about-spoiler {
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 12px;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.about-spoiler > summary {
+  cursor: pointer;
+  font-weight: 600;
+  opacity: 0.9;
+  list-style: none;
+}
+
+.about-spoiler > summary::-webkit-details-marker {
+  display: none;
+}
