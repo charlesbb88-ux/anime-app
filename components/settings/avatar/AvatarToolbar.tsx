@@ -53,7 +53,7 @@ export default function AvatarToolbar({
             type="button"
             onClick={onSave}
             disabled={saving || !canEdit}
-            className="inline-flex items-center justify-center px-5 py-2 text-xs font-semibold rounded-full bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60"
+            className="inline-flex items-center justify-center px-5 py-2 text-xs font-semibold rounded-sm bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60"
           >
             {saving ? "Saving…" : "Save avatar"}
           </button>
@@ -61,7 +61,7 @@ export default function AvatarToolbar({
           {/* Change image — styled like a button */}
           <label
             htmlFor={inputId}
-            className="inline-flex items-center justify-center px-5 py-2 text-xs font-semibold rounded-full bg-blue-500 text-white hover:bg-blue-600 cursor-pointer"
+            className="inline-flex items-center justify-center px-5 py-2 text-xs font-semibold rounded-sm bg-blue-500 text-white hover:bg-blue-600 cursor-pointer"
           >
             Change image
           </label>
