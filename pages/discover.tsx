@@ -126,7 +126,7 @@ export default function DiscoverPage() {
         const { data, error } = await supabase
           .from("latest_reviews")
           .select(
-            "review_id, content, created_at, author_id, author_username, author_avatar_url, anime_id, anime_slug, anime_title, anime_image_url, manga_id, manga_slug, manga_title, manga_image_url"
+            "review_id, content, created_at, rating, author_id, author_username, author_avatar_url, anime_id, anime_slug, anime_title, anime_image_url, manga_id, manga_slug, manga_title, manga_image_url, anime_episode_id, manga_chapter_id, anime_episode_number, manga_chapter_number, post_id"
           )
           .order("created_at", { ascending: false })
           .limit(8);
@@ -220,9 +220,24 @@ export default function DiscoverPage() {
         title,
         posterUrl,
         username: r.author_username,
-        avatarUrl: r.author_avatar_url ?? null, // ✅
+        avatarUrl: r.author_avatar_url ?? null,
         createdAtLabel: "",
         snippet: clampText(r.content ?? "", 180),
+
+        animeEpisodeId: r.anime_episode_id ?? null,
+        mangaChapterId: r.manga_chapter_id ?? null,
+
+        // ✅ NEW
+        animeEpisodeNumber: r.anime_episode_number ?? null,
+        mangaChapterNumber:
+          r.manga_chapter_number == null
+            ? null
+            : typeof r.manga_chapter_number === "number"
+              ? r.manga_chapter_number
+              : Number(r.manga_chapter_number),
+
+        postId: r.post_id ?? null,
+        rating: r.rating ?? null,
       };
     });
   }, [latestRows]);

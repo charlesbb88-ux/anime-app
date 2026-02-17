@@ -20,6 +20,16 @@ export type DiscoverReviewItem = {
 
   createdAtLabel: string;
   snippet: string;
+
+  animeEpisodeId?: string | null;
+  mangaChapterId?: string | null;
+
+  animeEpisodeNumber?: number | null;
+  mangaChapterNumber?: number | null;
+
+  postId: string | null;
+
+  rating?: number | null;
 };
 
 /** Row coming from top_review_weekly */
@@ -86,4 +96,14 @@ export type LatestReviewRow = {
   manga_slug: string | null;
   manga_title: string | null;
   manga_image_url: string | null;
+
+  anime_episode_id: string | null;
+  manga_chapter_id: string | null;
+
+  anime_episode_number: number | null;
+  manga_chapter_number: number | string | null;
+
+  post_id: string | null;
+
+  rating: number | null;
 };
