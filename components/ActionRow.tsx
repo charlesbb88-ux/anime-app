@@ -80,7 +80,7 @@ export default function ActionRow({
     justifyContent: "space-between",
     alignItems: "center",
     maxWidth: "90%",
-    padding: isMain ? "0.5rem 0 0.9rem 3.4rem" : "0.4rem 0 0.8rem 3.4rem",
+    padding: isMain ? "0.1rem 0 0.4rem 2rem" : "0.05rem 0 0.35rem 2rem",
     marginLeft: ".3rem",
     marginRight: "auto",
   };
