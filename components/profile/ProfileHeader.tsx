@@ -6,6 +6,8 @@ import Link from "next/link";
 import ProfileMediaHeaderLayout from "@/components/layouts/ProfileMediaHeaderLayout";
 import FollowButton from "@/components/profile/FollowButton";
 
+import ProfileStatsBarConnected from "@/components/profile/ProfileStatsBarConnected";
+
 type MediaHeaderProps = React.ComponentProps<typeof ProfileMediaHeaderLayout>;
 
 type Props = {
@@ -22,6 +24,11 @@ type Props = {
     backdropPosY: number | null;
     backdropZoom: number | null;
 
+    followersCount: number;
+    followingCount: number;
+    onFollowersClick: () => void;
+    onFollowingClick: () => void;
+
     activeTab?: MediaHeaderProps["activeTab"];
 };
 
@@ -35,6 +42,12 @@ export default function ProfileHeader({
     backdropPosX,
     backdropPosY,
     backdropZoom,
+
+    followersCount,
+    followingCount,
+    onFollowersClick,
+    onFollowingClick,
+
     activeTab = "posts",
 }: Props) {
     return (
@@ -46,18 +59,47 @@ export default function ProfileHeader({
             username={username}
             avatarUrl={avatarUrl}
             rightPinned={
-                isOwner ? (
-                    <Link
-                        href="/settings"
-                        className="px-3 py-1.5 text-sm rounded-full border border-white/30 text-white hover:border-white/60 hover:bg-white/10 transition"
-                    >
-                        Edit profile
-                    </Link>
-                ) : (
-                    <FollowButton viewerUserId={viewerUserId} profileId={profileId} isOwner={isOwner} />
-                )
+                <div className="flex flex-col items-end gap-2">
+                    {isOwner ? (
+                        <Link
+                            href="/settings"
+                            className={[
+                                // match stats bar container vibe
+                                "inline-flex items-center justify-center",
+                                "h-[30px] px-2",
+                                "rounded-md",
+                                "bg-black/90 backdrop-blur-md",
+                                "ring-1 ring-white/10",
+                                "text-white text-sm font-semibold",
+                                "transition-colors",
+                                "hover:bg-black/80 active:bg-white/10",
+                                "focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-0",
+                            ].join(" ")}
+                        >
+                            Edit profile
+                        </Link>
+                    ) : (
+                        <div
+                            className={[
+                                // wrap FollowButton so it visually matches the pill style too
+                                "inline-flex items-center justify-center",
+                                "h-[44px]",
+                            ].join(" ")}
+                        >
+                            <FollowButton viewerUserId={viewerUserId} profileId={profileId} isOwner={isOwner} />
+                        </div>
+                    )}
+
+                    <ProfileStatsBarConnected
+                        profileId={profileId}
+                        followersCount={followersCount}
+                        followingCount={followingCount}
+                        onFollowersClick={onFollowersClick}
+                        onFollowingClick={onFollowingClick}
+                    />
+                </div>
             }
-            reserveRightClassName="pr-[180px]"
+            reserveRightClassName="pr-[320px]"
             activeTab={activeTab}
         />
     );

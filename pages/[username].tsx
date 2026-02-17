@@ -15,8 +15,6 @@ import ProfilePostsFeed from "@/components/profile/ProfilePostsFeed";
 
 import { useProfileByUsername } from "@/lib/hooks/useProfileByUsername";
 
-import ProfileStatsBarConnected from "@/components/profile/ProfileStatsBarConnected";
-
 import ProfileFollowsModal from "@/components/profile/ProfileFollowsModal";
 
 
@@ -166,6 +164,10 @@ export default function UserProfilePage() {
         backdropPosX={profile.backdrop_pos_x}
         backdropPosY={profile.backdrop_pos_y}
         backdropZoom={profile.backdrop_zoom}
+        followersCount={profile.followers_count ?? 0}
+        followingCount={profile.following_count ?? 0}
+        onFollowersClick={openFollowers}
+        onFollowingClick={openFollowing}
         activeTab="posts"
       />
       {/* ✅ Same 3-column layout as index */}
@@ -223,15 +225,6 @@ export default function UserProfilePage() {
             >
               {isPhone ? (
                 <>
-                  <div className="mb-3">
-                    <ProfileStatsBarConnected
-                      profileId={profile.id}
-                      followersCount={profile.followers_count}
-                      followingCount={profile.following_count}
-                      onFollowersClick={openFollowers}
-                      onFollowingClick={openFollowing}
-                    />
-                  </div>
 
                   <ProfileAboutSection html={profile.about_html ?? ""} />
                   <div className="mb-4"></div>
@@ -248,16 +241,6 @@ export default function UserProfilePage() {
                 </>
               ) : (
                 <>
-                  <div className="mb-3">
-                    <ProfileStatsBarConnected
-                      profileId={profile.id}
-                      followersCount={profile.followers_count}
-                      followingCount={profile.following_count}
-                      onFollowersClick={openFollowers}
-                      onFollowingClick={openFollowing}
-                    />
-                  </div>
-
                   {/* ❌ About is OUTSIDE FeedShell */}
                   <ProfileAboutSection html={profile.about_html ?? ""} />
 
