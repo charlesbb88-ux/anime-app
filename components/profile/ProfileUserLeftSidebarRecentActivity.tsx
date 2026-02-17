@@ -156,8 +156,8 @@ export default function ProfileUserLeftSidebarRecentActivity({
                       alignItems: "center",
                       gap: 10,
                       padding: "6px 6px",
-                      borderRadius: 10,
-                      border: "1px solid #eee",
+                      borderRadius: 3,
+                      border: "2px solid #000000",
                       background: "#fafafa",
                     }}
                   >
@@ -166,7 +166,7 @@ export default function ProfileUserLeftSidebarRecentActivity({
                       style={{
                         width: 38,
                         height: 54,
-                        borderRadius: 8,
+                        borderRadius: 3,
                         background: "#eaeaea",
                         border: "1px solid #ddd",
                         overflow: "hidden",

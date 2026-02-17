@@ -6,7 +6,7 @@ import { useRouter } from "next/router";
 import { supabase } from "@/lib/supabaseClient";
 
 import ProfileUserLeftSidebarRecentActivity from "@/components/profile/ProfileUserLeftSidebarRecentActivity";
-import RightSidebar from "../components/RightSidebar";
+import ProfileUserRightSidebarRecentReviews from "@/components/profile/ProfileUserRightSidebarRecentReviews";
 import FeedShell from "../components/FeedShell";
 
 import ProfileAboutSection from "@/components/profile/ProfileAboutSection";
@@ -306,7 +306,7 @@ export default function UserProfilePage() {
                   height: "fit-content",
                 }}
               >
-                <RightSidebar />
+                <ProfileUserRightSidebarRecentReviews profileId={profile.id} limit={4} />
               </aside>
             )}
           </div>
