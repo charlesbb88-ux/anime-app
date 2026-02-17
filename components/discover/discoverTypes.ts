@@ -56,6 +56,12 @@ export type TopReviewWeeklyRow = {
   replies_count: number;
   likes_count: number;
   score: number;
+
+  // ✅ NEW (added to view)
+  anime_episode_id: string | null;
+  manga_chapter_id: string | null;
+  post_id: string | null;
+  rating: number | null;
 };
 
 /** What /discover “Popular reviews this week” wants to render */
@@ -76,6 +82,12 @@ export type DiscoverPopularReview = {
   repliesCount: number;
   likesCount: number;
   score: number;
+
+  postId: string | null;
+  rating: number | null;
+
+  animeEpisodeId?: string | null;
+  mangaChapterId?: string | null;
 };
 
 export type LatestReviewRow = {
