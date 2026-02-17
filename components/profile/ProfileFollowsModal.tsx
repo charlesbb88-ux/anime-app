@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
 
 type Tab = "followers" | "following";
@@ -10,10 +11,7 @@ type Props = {
   open: boolean;
   onClose: () => void;
 
-  // The profile being viewed
   profileId: string;
-
-  // Which tab to show when opened
   initialTab: Tab;
 };
 
@@ -35,6 +33,7 @@ function Avatar({ url, username }: { url: string | null; username: string }) {
       />
     );
   }
+
   return (
     <div className="h-10 w-10 rounded-full bg-slate-900 text-white flex items-center justify-center text-sm font-semibold ring-1 ring-slate-200">
       {username?.charAt(0)?.toUpperCase?.() ?? "?"}
@@ -42,28 +41,52 @@ function Avatar({ url, username }: { url: string | null; username: string }) {
   );
 }
 
-export default function ProfileFollowsModal({ open, onClose, profileId, initialTab }: Props) {
+export default function ProfileFollowsModal({
+  open,
+  onClose,
+  profileId,
+  initialTab,
+}: Props) {
   const [tab, setTab] = useState<Tab>(initialTab);
 
-  // list state
   const [items, setItems] = useState<MiniProfile[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // cursor
   const lastCursorRef = useRef<{ created_at: string; id: string } | null>(null);
-
-  // sentinel for infinite scroll
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  // keep tab in sync when you open from different pill
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   useEffect(() => {
     if (open) setTab(initialTab);
   }, [open, initialTab]);
 
-  // reset + load first page whenever open/tab/profile changes
+  /* ---------------------------------------------
+     Close on outside click (ANYWHERE outside panel)
+  ---------------------------------------------- */
+  useEffect(() => {
+    if (!open) return;
+
+    function onPointerDown(e: PointerEvent) {
+      const panel = panelRef.current;
+      if (!panel) return;
+
+      if (!panel.contains(e.target as Node)) {
+        onClose();
+      }
+    }
+
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open, onClose]);
+
+  /* ---------- Initial load ---------- */
   useEffect(() => {
     if (!open) return;
 
@@ -92,13 +115,12 @@ export default function ProfileFollowsModal({ open, onClose, profileId, initialT
     }
 
     firstLoad();
-
     return () => {
       cancelled = true;
     };
   }, [open, tab, profileId]);
 
-  // infinite scroll observer
+  /* ---------- Infinite scroll ---------- */
   useEffect(() => {
     if (!open) return;
     if (!sentinelRef.current) return;
@@ -107,43 +129,35 @@ export default function ProfileFollowsModal({ open, onClose, profileId, initialT
 
     const obs = new IntersectionObserver(
       (entries) => {
-        const entry = entries[0];
-        if (!entry?.isIntersecting) return;
-        if (loading || loadingMore) return;
-        if (!hasMore) return;
-
+        if (!entries[0]?.isIntersecting) return;
+        if (loading || loadingMore || !hasMore) return;
         void loadMore();
       },
-      { root: null, rootMargin: "200px", threshold: 0.01 }
+      { rootMargin: "200px", threshold: 0.01 }
     );
 
     obs.observe(el);
-
-    return () => {
-      obs.disconnect();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, hasMore, loading, loadingMore, tab, profileId]);
+    return () => obs.disconnect();
+  }, [open, loading, loadingMore, hasMore]);
 
   async function loadMore() {
-    if (loadingMore) return;
-    if (!hasMore) return;
+    if (loadingMore || !hasMore) return;
 
     setErrorMsg(null);
     setLoadingMore(true);
 
-    const cursor = lastCursorRef.current;
-
-    const res = await fetchPage({ profileId, tab, cursor });
+    const res = await fetchPage({
+      profileId,
+      tab,
+      cursor: lastCursorRef.current,
+    });
 
     if (res.ok) {
-      // de-dupe by id (just in case)
       const existing = new Set(items.map((x) => x.id));
-      const merged = [...items];
-      for (const it of res.items) {
-        if (!existing.has(it.id)) merged.push(it);
-      }
-      setItems(merged);
+      setItems((prev) => [
+        ...prev,
+        ...res.items.filter((x) => !existing.has(x.id)),
+      ]);
 
       setHasMore(res.hasMore);
       lastCursorRef.current = res.nextCursor;
@@ -155,7 +169,7 @@ export default function ProfileFollowsModal({ open, onClose, profileId, initialT
     setLoadingMore(false);
   }
 
-  // close on Escape
+  /* ---------- Escape key ---------- */
   useEffect(() => {
     if (!open) return;
 
@@ -167,107 +181,111 @@ export default function ProfileFollowsModal({ open, onClose, profileId, initialT
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  const title = useMemo(() => (tab === "followers" ? "Followers" : "Following"), [tab]);
+  const title = useMemo(
+    () => (tab === "followers" ? "Followers" : "Following"),
+    [tab]
+  );
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
-    <div className="fixed inset-0 z-[100]">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-start justify-center p-3 sm:p-6">
       {/* backdrop */}
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/50" />
 
       {/* panel */}
-      <div className="absolute inset-0 flex items-start justify-center p-3 sm:p-6">
-        <div className="w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-black/5 overflow-hidden">
-          {/* header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-            <div className="text-base font-semibold text-slate-900">{title}</div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="h-9 w-9 rounded-lg hover:bg-slate-100 active:bg-slate-200 flex items-center justify-center"
-              aria-label="Close"
-            >
-              ✕
-            </button>
-          </div>
+      <div
+        ref={panelRef}
+        className="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-black/5 overflow-hidden"
+      >
+        {/* header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+          <div className="text-base font-semibold text-slate-900">{title}</div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-9 w-9 rounded-lg hover:bg-slate-100 active:bg-slate-200 flex items-center justify-center"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
 
-          {/* tabs */}
-          <div className="px-3 pt-3">
-            <div className="flex gap-2">
+        {/* tabs */}
+        <div className="px-3 pt-3">
+          <div className="flex gap-2">
+            {(["followers", "following"] as Tab[]).map((t) => (
               <button
-                type="button"
-                onClick={() => setTab("followers")}
+                key={t}
+                onClick={() => setTab(t)}
                 className={[
                   "h-9 px-3 rounded-xl text-sm font-semibold",
-                  tab === "followers" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-800 hover:bg-slate-200",
+                  tab === t
+                    ? "bg-slate-900 text-white"
+                    : "bg-slate-100 text-slate-800 hover:bg-slate-200",
                 ].join(" ")}
               >
-                Followers
+                {t === "followers" ? "Followers" : "Following"}
               </button>
-              <button
-                type="button"
-                onClick={() => setTab("following")}
-                className={[
-                  "h-9 px-3 rounded-xl text-sm font-semibold",
-                  tab === "following" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-800 hover:bg-slate-200",
-                ].join(" ")}
-              >
-                Following
-              </button>
-            </div>
+            ))}
           </div>
+        </div>
 
-          {/* content */}
-          <div className="px-3 pb-3">
-            <div className="mt-3 max-h-[70vh] overflow-auto rounded-xl border border-slate-200">
-              {loading ? (
-                <div className="p-4 text-sm text-slate-600">Loading…</div>
-              ) : errorMsg ? (
-                <div className="p-4 text-sm text-red-600">{errorMsg}</div>
-              ) : items.length === 0 ? (
-                <div className="p-4 text-sm text-slate-600">No users yet.</div>
-              ) : (
-                <ul className="divide-y divide-slate-200">
-                  {items.map((p) => (
-                    <li key={p.id} className="p-3">
-                      <Link href={`/${p.username}`} className="flex items-center gap-3 hover:opacity-90">
-                        <Avatar url={p.avatar_url} username={p.username} />
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold text-slate-900 truncate">@{p.username}</div>
-                        </div>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
+        {/* content */}
+        <div className="px-3 pb-3">
+          <div className="mt-3 max-h-[70vh] overflow-auto rounded-xl border border-slate-200">
+            {loading ? (
+              <div className="p-4 text-sm text-slate-600">Loading…</div>
+            ) : errorMsg ? (
+              <div className="p-4 text-sm text-red-600">{errorMsg}</div>
+            ) : items.length === 0 ? (
+              <div className="p-4 text-sm text-slate-600">None yet.</div>
+            ) : (
+              <ul className="divide-y divide-slate-200">
+                {items.map((p) => (
+                  <li key={p.id} className="p-3">
+                    <Link
+                      href={`/${p.username}`}
+                      className="flex items-center gap-3 hover:opacity-90"
+                    >
+                      <Avatar url={p.avatar_url} username={p.username} />
+                      <div className="text-sm font-semibold text-slate-900 truncate">
+                        @{p.username}
+                      </div>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
 
-              {/* sentinel */}
-              <div ref={sentinelRef} />
+            <div ref={sentinelRef} />
 
-              {loadingMore ? <div className="p-3 text-sm text-slate-600">Loading more…</div> : null}
-              {!loading && !errorMsg && items.length > 0 && !hasMore ? (
-                <div className="p-3 text-xs text-slate-500">That’s everyone.</div>
-              ) : null}
-            </div>
+            {loadingMore && (
+              <div className="p-3 text-sm text-slate-600">Loading more…</div>
+            )}
+
+            {!loading && !errorMsg && items.length > 0 && !hasMore && (
+              <div className="p-3 text-xs text-slate-500">That’s everyone.</div>
+            )}
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
+
+/* -----------------------------
+   Data loader
+------------------------------ */
 
 async function fetchPage(args: {
   profileId: string;
   tab: Tab;
   cursor: { created_at: string; id: string } | null;
-}): Promise<
-  | { ok: true; items: MiniProfile[]; hasMore: boolean; nextCursor: { created_at: string; id: string } | null }
-  | { ok: false; errorMsg: string }
-> {
+}) {
   const { profileId, tab, cursor } = args;
 
-  // Decide which direction + which id column is “the other user”
   const isFollowers = tab === "followers";
   const filterCol = isFollowers ? "following_id" : "follower_id";
   const otherIdCol = isFollowers ? "follower_id" : "following_id";
@@ -280,53 +298,36 @@ async function fetchPage(args: {
     .order(otherIdCol as any, { ascending: false })
     .limit(PAGE_SIZE);
 
-  // Cursor pagination: created_at desc, otherId desc
   if (cursor) {
-    const lastAt = cursor.created_at;
-    const lastId = cursor.id;
-
-    // created_at < lastAt OR (created_at = lastAt AND otherIdCol < lastId)
     q = q.or(
-      `created_at.lt.${lastAt},and(created_at.eq.${lastAt},${otherIdCol}.lt.${lastId})`
+      `created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},${otherIdCol}.lt.${cursor.id})`
     );
   }
 
   const { data, error } = await q;
+  if (error) return { ok: false as const, errorMsg: "Couldn’t load users." };
 
-  if (error) return { ok: false, errorMsg: "Couldn’t load users. Try again." };
+  const ids = (data ?? []).map((r: any) => r[otherIdCol]).filter(Boolean);
+  if (!ids.length) return { ok: true as const, items: [], hasMore: false, nextCursor: null };
 
-  const rows = data ?? [];
-  const ids = rows.map((r: any) => r[otherIdCol]).filter(Boolean) as string[];
-
-  if (ids.length === 0) {
-    return { ok: true, items: [], hasMore: false, nextCursor: null };
-  }
-
-  // fetch the profile mini-cards
   const { data: profs, error: pErr } = await supabase
     .from("profiles")
     .select("id, username, avatar_url")
     .in("id", ids);
 
-  if (pErr) return { ok: false, errorMsg: "Couldn’t load profile details. Try again." };
+  if (pErr) return { ok: false as const, errorMsg: "Couldn’t load profiles." };
 
-  const map = new Map<string, MiniProfile>();
-  for (const p of (profs ?? []) as any[]) {
-    map.set(p.id, p);
-  }
+  const map = new Map(profs.map((p: any) => [p.id, p]));
+  const ordered = ids.map((id: string) => map.get(id)).filter(Boolean);
 
-  const ordered: MiniProfile[] = ids.map((id) => map.get(id)).filter(Boolean) as MiniProfile[];
-
-  const lastRow = rows[rows.length - 1] as any;
-  const nextCursor =
-    lastRow && lastRow.created_at && lastRow[otherIdCol]
-      ? { created_at: lastRow.created_at as string, id: lastRow[otherIdCol] as string }
-      : null;
+  const last = data[data.length - 1] as any;
 
   return {
-    ok: true,
+    ok: true as const,
     items: ordered,
-    hasMore: rows.length === PAGE_SIZE,
-    nextCursor,
+    hasMore: data.length === PAGE_SIZE,
+    nextCursor: last
+      ? { created_at: last.created_at, id: last[otherIdCol] }
+      : null,
   };
 }

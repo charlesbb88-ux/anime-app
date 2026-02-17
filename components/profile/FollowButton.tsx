@@ -16,7 +16,10 @@ export default function FollowButton({ viewerUserId, profileId, isOwner }: Props
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const canShow = useMemo(() => !isOwner, [isOwner]);
-  const canUse = useMemo(() => !!viewerUserId && !!profileId && !isOwner, [viewerUserId, profileId, isOwner]);
+  const canUse = useMemo(
+    () => !!viewerUserId && !!profileId && !isOwner,
+    [viewerUserId, profileId, isOwner]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -24,13 +27,7 @@ export default function FollowButton({ viewerUserId, profileId, isOwner }: Props
     async function load() {
       setErrorMsg(null);
 
-      if (!canShow) {
-        setLoading(false);
-        setIsFollowing(false);
-        return;
-      }
-
-      if (!viewerUserId) {
+      if (!canShow || !viewerUserId) {
         setLoading(false);
         setIsFollowing(false);
         return;
@@ -58,7 +55,6 @@ export default function FollowButton({ viewerUserId, profileId, isOwner }: Props
     }
 
     load();
-
     return () => {
       cancelled = true;
     };
@@ -66,9 +62,7 @@ export default function FollowButton({ viewerUserId, profileId, isOwner }: Props
 
   async function onToggle() {
     setErrorMsg(null);
-
-    if (!canUse) return;
-    if (working) return;
+    if (!canUse || working) return;
 
     setWorking(true);
 
@@ -78,13 +72,8 @@ export default function FollowButton({ viewerUserId, profileId, isOwner }: Props
         following_id: profileId,
       });
 
-      if (error) {
-        // unique violation = already followed
-        if ((error as any)?.code === "23505") {
-          setIsFollowing(true);
-        } else {
-          setErrorMsg("Follow failed. Try again.");
-        }
+      if (error && (error as any)?.code !== "23505") {
+        setErrorMsg("Follow failed. Try again.");
       } else {
         setIsFollowing(true);
       }
@@ -109,10 +98,10 @@ export default function FollowButton({ viewerUserId, profileId, isOwner }: Props
   const label = !viewerUserId
     ? "Follow"
     : loading
-      ? "…"
-      : isFollowing
-        ? "Following"
-        : "Follow";
+    ? "…"
+    : isFollowing
+    ? "Following"
+    : "Follow";
 
   return (
     <div className="flex flex-col items-end gap-1">
@@ -121,17 +110,28 @@ export default function FollowButton({ viewerUserId, profileId, isOwner }: Props
         onClick={onToggle}
         disabled={disabled}
         className={[
-          "px-3 py-1.5 text-sm rounded-full transition",
-          disabled ? "opacity-60 cursor-not-allowed" : "hover:brightness-110 active:brightness-95",
-          isFollowing ? "border border-white/30 text-white hover:border-white/60 hover:bg-white/10" : "bg-white text-slate-900",
+          "px-3 py-1 text-sm rounded-md transition",
+          disabled
+            ? "opacity-60 cursor-not-allowed"
+            : "hover:brightness-110 active:brightness-95",
+
+          // 🔁 INVERTED COLORS
+          isFollowing
+            ? "border border-black/40 text-black bg-transparent hover:border-black/70 hover:bg-black/10"
+            : "bg-black text-white",
         ].join(" ")}
         aria-label={isFollowing ? "Unfollow user" : "Follow user"}
       >
         {label}
       </button>
 
-      {errorMsg ? <div className="text-[12px] text-red-200/90">{errorMsg}</div> : null}
-      {!viewerUserId ? <div className="text-[12px] text-white/70">Sign in to follow</div> : null}
+      {errorMsg ? (
+        <div className="text-[12px] text-red-500/90">{errorMsg}</div>
+      ) : null}
+
+      {!viewerUserId ? (
+        <div className="text-[12px] text-black/60">Sign in to follow</div>
+      ) : null}
     </div>
   );
 }

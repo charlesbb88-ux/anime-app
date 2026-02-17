@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "@/lib/supabaseClient";
 
-import LeftSidebar from "../components/LeftSidebar";
+import ProfileUserLeftSidebarRecentActivity from "@/components/profile/ProfileUserLeftSidebarRecentActivity";
 import RightSidebar from "../components/RightSidebar";
 import FeedShell from "../components/FeedShell";
 
@@ -16,8 +16,7 @@ import ProfilePostsFeed from "@/components/profile/ProfilePostsFeed";
 import { useProfileByUsername } from "@/lib/hooks/useProfileByUsername";
 
 import ProfileFollowsModal from "@/components/profile/ProfileFollowsModal";
-
-
+import ProfileTabsRow from "@/components/profile/ProfileTabsRow";
 
 const LAYOUT = {
   pageMaxWidth: "72rem",
@@ -170,12 +169,17 @@ export default function UserProfilePage() {
         onFollowingClick={openFollowing}
         activeTab="posts"
       />
+
       {/* ✅ Same 3-column layout as index */}
       <div
         style={{
           minHeight: "100vh",
           fontFamily: "system-ui, sans-serif",
           overflowX: isPhone ? "hidden" : undefined,
+
+          // ✅ Create a stacking context for the page body below the header
+          position: "relative",
+          zIndex: 0,
         }}
       >
         <div
@@ -204,7 +208,7 @@ export default function UserProfilePage() {
                   height: "fit-content",
                 }}
               >
-                <LeftSidebar />
+                <ProfileUserLeftSidebarRecentActivity profileId={profile.id} />
               </aside>
             )}
 
@@ -216,18 +220,34 @@ export default function UserProfilePage() {
                     width: "100%",
                     maxWidth: "100%",
                     minWidth: 0,
+
+                    // ✅ Keep center column above any header overlay/gradient
+                    position: "relative",
+                    zIndex: 10,
                   }
                   : {
                     flex: `0 0 ${LAYOUT.mainWidth}`,
                     maxWidth: LAYOUT.mainWidth,
+
+                    // ✅ Keep center column above any header overlay/gradient
+                    position: "relative",
+                    zIndex: 10,
                   }
               }
             >
               {isPhone ? (
                 <>
+                  <ProfileTabsRow
+                    username={profile.username}
+                    activeTab="posts"
+                    className="mb-4"
+                    variant="card"
+                    center
+                  />
 
                   <ProfileAboutSection html={profile.about_html ?? ""} />
                   <div className="mb-4"></div>
+
                   <section>
                     <ProfilePostsFeed
                       profileId={profile.id}
@@ -241,11 +261,17 @@ export default function UserProfilePage() {
                 </>
               ) : (
                 <>
-                  {/* ❌ About is OUTSIDE FeedShell */}
-                  <ProfileAboutSection html={profile.about_html ?? ""} />
+                  <ProfileTabsRow
+                    username={profile.username}
+                    activeTab="posts"
+                    className="mb-4"
+                    variant="card"
+                    center
+                  />
 
-                  {/* ✅ Only posts get the FeedShell */}
+                  <ProfileAboutSection html={profile.about_html ?? ""} />
                   <div className="mb-4"></div>
+
                   <FeedShell>
                     <section>
                       <ProfilePostsFeed
@@ -260,6 +286,7 @@ export default function UserProfilePage() {
                   </FeedShell>
                 </>
               )}
+
               <ProfileFollowsModal
                 open={followsOpen}
                 onClose={() => setFollowsOpen(false)}
@@ -288,4 +315,5 @@ export default function UserProfilePage() {
     </main>
   );
 }
+
 (UserProfilePage as any).headerTransparent = true;
