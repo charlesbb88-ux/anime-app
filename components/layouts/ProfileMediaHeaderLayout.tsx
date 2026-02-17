@@ -21,7 +21,6 @@ type Props = {
 
   username: string;
   avatarUrl: string | null;
-  bio?: string | null;
 
   /** optional; if not provided, we infer from router.asPath */
   activeTab?: Tab;
@@ -49,7 +48,6 @@ export default function ProfileMediaHeaderLayout({
 
   username,
   avatarUrl,
-  bio,
   activeTab,
 
   overlaySrc = "/overlays/my-overlay4.png",
@@ -248,13 +246,6 @@ export default function ProfileMediaHeaderLayout({
 
               <div className="text-3xl font-bold text-slate-900">@{username}</div>
             </div>
-
-            {/* Bio */}
-            {bio ? (
-              <div className="mt-2">
-                <p className="text-sm text-slate-800 whitespace-pre-line max-w-2xl">{bio}</p>
-              </div>
-            ) : null}
           </div>
 
           {/* Tabs row */}
