@@ -24,13 +24,15 @@ export default function ProfileStatsBarConnected({
   const { counts } = useUserConsumptionCounts(profileId);
 
   return (
-    <ProfileStatsBar
-      followersCount={followersCount}
-      followingCount={followingCount}
-      onFollowersClick={onFollowersClick}
-      onFollowingClick={onFollowingClick}
-      animeWatchedCount={counts?.animeEpisodesWatchedCount ?? null}
-      mangaReadCount={counts?.mangaChaptersReadCount ?? null}
-    />
+    <div className="mt-1">
+      <ProfileStatsBar
+        followersCount={followersCount}
+        followingCount={followingCount}
+        onFollowersClick={onFollowersClick}
+        onFollowingClick={onFollowingClick}
+        animeWatchedCount={counts?.animeEpisodesWatchedCount ?? null}
+        mangaReadCount={counts?.mangaChaptersReadCount ?? null}
+      />
+    </div>
   );
 }

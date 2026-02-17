@@ -244,7 +244,7 @@ export default function ProfileMediaHeaderLayout({
                 )}
               </div>
 
-              <div className="text-3xl font-bold text-slate-900">@{username}</div>
+              <div className="-mt-5 text-4xl font-bold text-slate-900">{username}</div>
             </div>
           </div>
 
