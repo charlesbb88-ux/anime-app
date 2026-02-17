@@ -31,8 +31,14 @@ type Props = {
   rightPinned?: React.ReactNode;
   reserveRightClassName?: string;
 
+  /** ✅ NEW: content rendered directly under the username (e.g. Follow button) */
+  belowUsername?: React.ReactNode;
+
   /** how many pixels at the bottom are “visually hidden” by your overlay fade */
   overlayHiddenBottomPx?: number;
+
+  /** ✅ allow tabs to be hidden so the page can render them in the center column */
+  hideTabs?: boolean;
 };
 
 function clamp(n: number, min: number, max: number) {
@@ -55,7 +61,11 @@ export default function ProfileMediaHeaderLayout({
   rightPinned,
   reserveRightClassName = "pr-[260px]",
 
+  belowUsername,
+
   overlayHiddenBottomPx = 150,
+
+  hideTabs = false,
 }: Props) {
   const router = useRouter();
 
@@ -101,8 +111,7 @@ export default function ProfileMediaHeaderLayout({
   const hideBottom = Math.max(0, Math.round(overlayHiddenBottomPx ?? 0));
 
   // ------------------------------------------------------------
-  // ✅ Measure the ACTUAL full backdrop window (not the cropped “visible” inner)
-  // and use pct<->pan math that includes hidden-bottom extra range.
+  // Measure the ACTUAL full backdrop window
   // ------------------------------------------------------------
   const backdropBoxRef = useRef<HTMLDivElement | null>(null);
   const [backdropBox, setBackdropBox] = useState<{ w: number; h: number }>({ w: 1, h: 1 });
@@ -163,7 +172,7 @@ export default function ProfileMediaHeaderLayout({
     return { baseW, baseH };
   }, [imgSize, backdropBox.w, backdropBox.h]);
 
-  // ✅ percent -> pan px (includes hidden-bottom range to prevent "stuck" region)
+  // percent -> pan px
   const panPx = useMemo(() => {
     if (!imgSize) return { x: 0, y: 0 };
 
@@ -205,8 +214,6 @@ export default function ProfileMediaHeaderLayout({
           <div className="absolute inset-0 bg-black" />
         )}
 
-        {/* Optional: you can keep this black strip if you want the faded area to never show empty.
-            It's not part of the "math" anymore; it's purely visual. */}
         {hideBottom > 0 ? (
           <div className="absolute inset-x-0 bottom-0 bg-black" style={{ height: hideBottom }} />
         ) : null}
@@ -232,8 +239,8 @@ export default function ProfileMediaHeaderLayout({
 
           <div className={`min-w-0 ${rightPinned ? reserveRightClassName : ""}`}>
             {/* Avatar + username */}
-            <div className="-mt-50 flex items-center gap-3 pl-2">
-              <div className="w-38 h-38 rounded-full bg-slate-200 overflow-hidden shrink-0 ring-3 ring-black">
+            <div className="-mt-50 flex items-center gap-5 pl-2">
+              <div className="w-34 h-34 rounded-full bg-slate-200 overflow-hidden shrink-0 ring-3 ring-black">
                 {avatarUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={avatarUrl} alt={username} className="w-full h-full object-cover" />
@@ -244,68 +251,74 @@ export default function ProfileMediaHeaderLayout({
                 )}
               </div>
 
-              <div className="-mt-5 text-4xl font-bold text-slate-900">{username}</div>
+              {/* ✅ Username + under-username slot */}
+              <div className="min-w-0">
+                <div className="-mt-3 text-4xl font-bold text-slate-900">{username}</div>
+                {belowUsername ? <div className="mt-2">{belowUsername}</div> : null}
+              </div>
             </div>
           </div>
 
-          {/* Tabs row */}
-          <div className="mt-4">
-            <div className="grid grid-cols-[1fr_auto_1fr] items-end">
-              <div />
+          {/* Tabs row (optional now) */}
+          {!hideTabs ? (
+            <div className="mt-4">
+              <div className="grid grid-cols-[1fr_auto_1fr] items-end">
+                <div />
 
-              <nav
-                className="
-                  border-b border-slate-200
-                  min-w-0
-                  overflow-x-auto whitespace-nowrap [-webkit-overflow-scrolling:touch]
-                  md:overflow-visible
-                "
-              >
-                <div className="flex gap-8 text-sm font-medium w-max md:w-auto">
-                  <Link href={baseProfilePath} className={tabClass(computedActive === "posts")}>
-                    Posts
-                  </Link>
+                <nav
+                  className="
+                    border-b border-slate-200
+                    min-w-0
+                    overflow-x-auto whitespace-nowrap [-webkit-overflow-scrolling:touch]
+                    md:overflow-visible
+                  "
+                >
+                  <div className="flex gap-8 text-sm font-medium w-max md:w-auto">
+                    <Link href={baseProfilePath} className={tabClass(computedActive === "posts")}>
+                      Posts
+                    </Link>
 
-                  <Link
-                    href={`${baseProfilePath}/completions`}
-                    className={tabClass(computedActive === "completions")}
-                  >
-                    Completions
-                  </Link>
+                    <Link
+                      href={`${baseProfilePath}/completions`}
+                      className={tabClass(computedActive === "completions")}
+                    >
+                      Completions
+                    </Link>
 
-                  <Link
-                    href={`${baseProfilePath}/watchlist`}
-                    className={tabClass(computedActive === "watchlist")}
-                  >
-                    Watchlist
-                  </Link>
+                    <Link
+                      href={`${baseProfilePath}/watchlist`}
+                      className={tabClass(computedActive === "watchlist")}
+                    >
+                      Watchlist
+                    </Link>
 
-                  <Link
-                    href={`${baseProfilePath}/activity`}
-                    className={tabClass(computedActive === "activity")}
-                  >
-                    Activity
-                  </Link>
+                    <Link
+                      href={`${baseProfilePath}/activity`}
+                      className={tabClass(computedActive === "activity")}
+                    >
+                      Activity
+                    </Link>
 
-                  <Link
-                    href={`${baseProfilePath}/journal`}
-                    className={tabClass(computedActive === "journal")}
-                  >
-                    Journal
-                  </Link>
+                    <Link
+                      href={`${baseProfilePath}/journal`}
+                      className={tabClass(computedActive === "journal")}
+                    >
+                      Journal
+                    </Link>
 
-                  <Link
-                    href={`${baseProfilePath}/library`}
-                    className={tabClass(computedActive === "library")}
-                  >
-                    My Library
-                  </Link>
-                </div>
-              </nav>
+                    <Link
+                      href={`${baseProfilePath}/library`}
+                      className={tabClass(computedActive === "library")}
+                    >
+                      My Library
+                    </Link>
+                  </div>
+                </nav>
 
-              <div />
+                <div />
+              </div>
             </div>
-          </div>
+          ) : null}
         </div>
       </div>
     </div>
