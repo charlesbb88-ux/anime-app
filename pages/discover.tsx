@@ -99,7 +99,7 @@ export default function DiscoverPage() {
         const { data, error } = await supabase
           .from("top_review_weekly")
           .select(
-            "review_id, author_id, author_username, author_avatar_url, anime_id, anime_slug, anime_title, anime_image_url, manga_id, manga_slug, manga_title, manga_image_url, content, created_at, replies_count, likes_count, score"
+            "review_id, author_id, author_username, author_avatar_url, anime_id, anime_slug, anime_title, anime_image_url, manga_id, manga_slug, manga_title, manga_image_url, content, created_at, replies_count, likes_count, score, anime_episode_id, manga_chapter_id, post_id, rating"
           )
           .order("score", { ascending: false })
           .limit(12);
@@ -202,6 +202,11 @@ export default function DiscoverPage() {
         repliesCount: r.replies_count ?? 0,
         likesCount: r.likes_count ?? 0,
         score: r.score ?? 0,
+
+        postId: r.post_id ?? null,
+        rating: r.rating ?? null,
+        animeEpisodeId: r.anime_episode_id ?? null,
+        mangaChapterId: r.manga_chapter_id ?? null,
       };
     });
   }, [popularRows]);

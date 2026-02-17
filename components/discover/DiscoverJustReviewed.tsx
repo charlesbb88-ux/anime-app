@@ -169,7 +169,15 @@ export default function DiscoverJustReviewed({ items }: Props) {
                 {it.title}
               </div>
 
-              <div className="mt-1 text-xs text-slate-600 line-clamp-2">
+              <div
+                className="mt-1 text-xs text-slate-600 whitespace-normal break-words"
+                style={{
+                  display: "-webkit-box",
+                  WebkitBoxOrient: "vertical",
+                  WebkitLineClamp: 2,
+                  overflow: "hidden",
+                }}
+              >
                 {it.snippet}
               </div>
             </div>
