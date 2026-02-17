@@ -15,7 +15,11 @@ import ProfilePostsFeed from "@/components/profile/ProfilePostsFeed";
 
 import { useProfileByUsername } from "@/lib/hooks/useProfileByUsername";
 
-import ProfileStatsBar from "@/components/profile/ProfileStatsBar";
+import ProfileStatsBarConnected from "@/components/profile/ProfileStatsBarConnected";
+
+import ProfileFollowsModal from "@/components/profile/ProfileFollowsModal";
+
+
 
 const LAYOUT = {
   pageMaxWidth: "72rem",
@@ -63,6 +67,9 @@ export default function UserProfilePage() {
 
   const [currentUser, setCurrentUser] = useState<any | null>(null);
 
+  const [followsOpen, setFollowsOpen] = useState(false);
+  const [followsTab, setFollowsTab] = useState<"followers" | "following">("followers");
+
   const normalizedUsername = useMemo(() => {
     return (rawUsername?.trim?.() ?? "").trim();
   }, [rawUsername]);
@@ -92,6 +99,16 @@ export default function UserProfilePage() {
     if (!profile?.id) return false;
     return currentUser.id === profile.id;
   }, [currentUser?.id, profile?.id]);
+
+  const openFollowers = () => {
+    setFollowsTab("followers");
+    setFollowsOpen(true);
+  };
+
+  const openFollowing = () => {
+    setFollowsTab("following");
+    setFollowsOpen(true);
+  };
 
   // -------------------------------
   // Auth
@@ -207,9 +224,12 @@ export default function UserProfilePage() {
               {isPhone ? (
                 <>
                   <div className="mb-3">
-                    <ProfileStatsBar
+                    <ProfileStatsBarConnected
+                      profileId={profile.id}
                       followersCount={profile.followers_count}
                       followingCount={profile.following_count}
+                      onFollowersClick={openFollowers}
+                      onFollowingClick={openFollowing}
                     />
                   </div>
 
@@ -229,9 +249,12 @@ export default function UserProfilePage() {
               ) : (
                 <>
                   <div className="mb-3">
-                    <ProfileStatsBar
-                      followersCount={(profile as any).followers_count ?? 0}
-                      followingCount={(profile as any).following_count ?? 0}
+                    <ProfileStatsBarConnected
+                      profileId={profile.id}
+                      followersCount={profile.followers_count}
+                      followingCount={profile.following_count}
+                      onFollowersClick={openFollowers}
+                      onFollowingClick={openFollowing}
                     />
                   </div>
 
@@ -254,6 +277,12 @@ export default function UserProfilePage() {
                   </FeedShell>
                 </>
               )}
+              <ProfileFollowsModal
+                open={followsOpen}
+                onClose={() => setFollowsOpen(false)}
+                profileId={profile.id}
+                initialTab={followsTab}
+              />
             </main>
 
             {!isPhone && (

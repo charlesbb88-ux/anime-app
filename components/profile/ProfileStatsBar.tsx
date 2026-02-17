@@ -6,7 +6,7 @@ type Props = {
   followersCount: number;
   followingCount: number;
 
-  // optional future stats
+  // optional stats
   animeWatchedCount?: number | null;
   mangaReadCount?: number | null;
 
@@ -62,13 +62,12 @@ export default function ProfileStatsBar({
         <StatPill label="Followers" value={followersCount} onClick={onFollowersClick} />
         <StatPill label="Following" value={followingCount} onClick={onFollowingClick} />
 
-        {/* Future stats (only render if provided) */}
         {typeof animeWatchedCount === "number" ? (
-          <StatPill label="Anime watched" value={animeWatchedCount} />
+          <StatPill label="Episodes" value={animeWatchedCount} />
         ) : null}
 
         {typeof mangaReadCount === "number" ? (
-          <StatPill label="Manga read" value={mangaReadCount} />
+          <StatPill label="Chapters" value={mangaReadCount} />
         ) : null}
       </div>
     </div>
