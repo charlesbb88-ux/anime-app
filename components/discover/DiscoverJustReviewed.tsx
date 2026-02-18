@@ -224,7 +224,7 @@ export default function DiscoverJustReviewed({ items }: Props) {
           it.rating != null ? rating100ToHalfStars(it.rating) : null;
 
         const cardClassName = [
-          "relative flex gap-3 rounded-xs bg-white pt-2 px-2 pb-2 border-2 border-black",
+          "relative flex gap-1.5 sm:gap-3 rounded-xs bg-white pt-2 px-2 pb-2 border-2 border-black",
           "ring-1 ring-black/5",
         ].join(" ");
 
@@ -273,26 +273,54 @@ export default function DiscoverJustReviewed({ items }: Props) {
             <div className="min-w-0 flex-1">
               {/* ✅ Action row overlay (doesn't take layout space) */}
               {it.postId ? (
-                <div className="absolute right-1 top-1 z-10">
-                  <ActionRowSpread
-                    layout="compact"
-                    iconSize={16}
-                    replyCount={actionMeta.replies}
-                    likeCount={actionMeta.likes}
-                    likedByMe={actionMeta.liked}
-                    hideShare
-                    onReply={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      router.push(`/posts/${it.postId}`);
-                    }}
-                    onLike={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      toggleLike(it.postId!);
-                    }}
-                  />
-                </div>
+                <>
+                  {/* ✅ Mobile action row (smaller + tighter) */}
+                  <div className="absolute right-1 top-1 z-10 sm:hidden">
+                    <ActionRowSpread
+                      layout="compact"
+                      iconSize={10}          // ✅ smaller on mobile
+                      compactGapPx={0}       // ✅ tighter between buttons (optional)
+                      compactXPadPx={2}
+                      compactCountFontPx={11}
+                      replyCount={actionMeta.replies}
+                      likeCount={actionMeta.likes}
+                      likedByMe={actionMeta.liked}
+                      hideShare
+                      onReply={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        router.push(`/posts/${it.postId}`);
+                      }}
+                      onLike={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleLike(it.postId!);
+                      }}
+                    />
+                  </div>
+
+                  {/* ✅ Desktop action row (unchanged) */}
+                  <div className="absolute right-1 top-1 z-10 hidden sm:block">
+                    <ActionRowSpread
+                      layout="compact"
+                      iconSize={16}          // ✅ your current desktop size
+                      replyCount={actionMeta.replies}
+                      likeCount={actionMeta.likes}
+                      likedByMe={actionMeta.liked}
+                      hideShare
+                      onReply={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        router.push(`/posts/${it.postId}`);
+                      }}
+                      onLike={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleLike(it.postId!);
+                      }}
+                    />
+                  </div>
+                </>
               ) : null}
 
               <div className="flex items-center gap-1 text-xs text-slate-500">

@@ -37,11 +37,18 @@ type Props = {
   onLike?: (e: any) => void;
   onShare?: (e: any) => void;
 
-  // ✅ add this to hide Share only where you want
   hideShare?: boolean;
 
-  // ✅ add this
   layout?: "spread" | "compact";
+
+  // spacing between buttons (compact only)
+  compactGapPx?: number;
+
+  // shrink horizontal padding (compact only)
+  compactXPadPx?: number;
+
+  // ✅ NEW: shrink number size ONLY when you want (mobile)
+  compactCountFontPx?: number;
 };
 
 export default function ActionRow({
@@ -54,6 +61,9 @@ export default function ActionRow({
   onShare,
   hideShare = false,
   layout = "spread",
+  compactGapPx,
+  compactXPadPx,
+  compactCountFontPx,
 }: Props) {
   const iconButtonBase: React.CSSProperties = {
     border: "none",
@@ -68,8 +78,12 @@ export default function ActionRow({
     color: "#555",
   };
 
+  // ✅ PC stays exactly 0.9rem unless you explicitly override it
   const countStyle: React.CSSProperties = {
-    fontSize: "0.9rem",
+    fontSize:
+      layout === "compact" && typeof compactCountFontPx === "number"
+        ? `${compactCountFontPx}px`
+        : "0.9rem",
     color: "inherit",
   };
 
@@ -80,6 +94,13 @@ export default function ActionRow({
     minWidth: 0,
   };
 
+  const replyLikeXPad =
+    layout === "compact" && typeof compactXPadPx === "number"
+      ? compactXPadPx
+      : 10;
+
+  const replyLikePadding = `6px ${replyLikeXPad}px`;
+
   const barStyle: React.CSSProperties =
     layout === "compact"
       ? {
@@ -89,7 +110,7 @@ export default function ActionRow({
           alignItems: "center",
           padding: 0,
           margin: 0,
-          gap: 4, // only affects spacing between buttons, not their size
+          gap: compactGapPx ?? 4,
         }
       : {
           display: "flex",
@@ -108,7 +129,7 @@ export default function ActionRow({
         style={{
           ...iconButtonBase,
           ...actionSlotStyle,
-          padding: "6px 10px",
+          padding: replyLikePadding,
         }}
         onMouseEnter={(e) => {
           e.currentTarget.style.transform = "translateY(-1px)";
@@ -131,8 +152,8 @@ export default function ActionRow({
         style={{
           ...iconButtonBase,
           ...actionSlotStyle,
-          padding: "6px 10px",
-          color: likedByMe ? "#f91880" : "#555", // ✅ persistent color
+          padding: replyLikePadding,
+          color: likedByMe ? "#f91880" : "#555",
         }}
         onMouseEnter={(e) => {
           e.currentTarget.style.transform = "translateY(-1px)";
@@ -141,7 +162,7 @@ export default function ActionRow({
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.transform = "translateY(0)";
-          e.currentTarget.style.color = likedByMe ? "#f91880" : "#555"; // ✅ key line
+          e.currentTarget.style.color = likedByMe ? "#f91880" : "#555";
           e.currentTarget.style.background = "transparent";
         }}
       >
