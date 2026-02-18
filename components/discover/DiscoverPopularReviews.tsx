@@ -7,6 +7,7 @@ import { useRouter } from "next/router";
 import { supabase } from "@/lib/supabaseClient";
 import ActionRowSpread from "@/components/ActionRowSpread";
 import type { DiscoverPopularReview } from "./discoverTypes";
+import { MessageCircle, Heart } from "lucide-react";
 
 type Props = {
   items: DiscoverPopularReview[];
@@ -254,39 +255,143 @@ export default function DiscoverPopularReviews({ items }: Props) {
 
         // Nodes for meta row: kind -> episode/chapter -> rating
         const kindNode = it.kind ? (
-          <span key="kind" className="uppercase tracking-wider">
-            {it.kind}
-          </span>
+          <span className="uppercase tracking-wider">{it.kind}</span>
         ) : null;
 
         const episodeOrChapterNode = episodeOrChapterLabel ? (
-          <span key="epch" className="text-xs text-slate-500">
-            {episodeOrChapterLabel}
-          </span>
+          <span className="text-xs text-slate-500">{episodeOrChapterLabel}</span>
         ) : null;
 
         const starsNode =
           halfStars != null ? (
-            <span key="stars" className="inline-flex items-center">
+            <span className="inline-flex items-center">
               <ReviewStarsRow halfStars={halfStars} size={14} />
             </span>
           ) : null;
 
-        // ✅ Only show dots between existing pieces
-        const metaParts = [kindNode, episodeOrChapterNode, starsNode].filter(
-          Boolean
-        ) as React.ReactNode[];
+        // ✅ each piece carries its own bullet (no floating dots)
+        // ✅ kind wrapper hidden on phones, so its bullet hides too
+        const metaEntries: Array<{
+          key: string;
+          wrapperClass: string;
+          node: React.ReactNode | null;
+        }> = [
+          { key: "kind", wrapperClass: "hidden sm:inline-flex", node: kindNode },
+          { key: "epch", wrapperClass: "inline-flex", node: episodeOrChapterNode },
+          { key: "stars", wrapperClass: "inline-flex", node: starsNode },
+        ];
 
         const actionMeta =
           it.postId && metaByPostId[it.postId]
             ? metaByPostId[it.postId]
             : { likes: 0, replies: 0, liked: false };
 
+        const href = postHref ?? `/review/${it.reviewId}`;
+
+        // match ActionRowSpread colors/sizing
+        const mobileGray = "#555";
+        const replyBlue = "#1d9bf0"; // (no hover on mobile, but keeping same palette)
+        const likePink = "#f91880";
+        const mobileIconSize = 16; // tweak this
+        const mobileCountFontPx = 14; // ActionRowSpread default is 0.9rem (~14.4px)
+
         const CardInner = (
           <div className="flex items-start gap-1">
-            {/* rank */}
-            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-black">
-              {idx + 1}
+            {/* left column: rank + mobile stacked actions */}
+            <div className="flex shrink-0 flex-col items-center">
+              {/* rank */}
+              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-black">
+                {idx + 1}
+              </div>
+
+              {/* ✅ MOBILE ONLY: stacked actions styled like ActionRowSpread */}
+              {it.postId ? (
+                <div className="mt-1 flex flex-col items-center gap-1 sm:hidden">
+                  {/* reply */}
+                  <button
+                    type="button"
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      cursor: "pointer",
+                      padding: "6px",
+                      borderRadius: 999,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: mobileGray,
+                      lineHeight: 1,
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      router.push(`/posts/${it.postId}`);
+                    }}
+                    aria-label="Reply"
+                  >
+                    <MessageCircle
+                      width={mobileIconSize}
+                      height={mobileIconSize}
+                      strokeWidth={1.7}
+                      color={mobileGray}
+                    />
+                    <span
+                      style={{
+                        marginTop: 2,
+                        fontSize: `${mobileCountFontPx}px`,
+                        color: mobileGray,
+                        fontWeight: 600,
+                        lineHeight: 1,
+                      }}
+                    >
+                      {actionMeta.replies}
+                    </span>
+                  </button>
+
+                  {/* like */}
+                  <button
+                    type="button"
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      cursor: "pointer",
+                      padding: "6px",
+                      borderRadius: 999,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: actionMeta.liked ? likePink : mobileGray,
+                      lineHeight: 1,
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toggleLike(it.postId!);
+                    }}
+                    aria-label="Like"
+                  >
+                    <Heart
+                      width={mobileIconSize}
+                      height={mobileIconSize}
+                      strokeWidth={1.7}
+                      fill={actionMeta.liked ? "currentColor" : "none"}
+                    />
+                    <span
+                      style={{
+                        marginTop: 2,
+                        fontSize: `${mobileCountFontPx}px`,
+                        color: mobileGray, // counts in ActionRowSpread inherit; keep neutral like the UI
+                        fontWeight: 600,
+                        lineHeight: 1,
+                      }}
+                    >
+                      {actionMeta.likes}
+                    </span>
+                  </button>
+                </div>
+              ) : null}
             </div>
 
             {/* media cover */}
@@ -297,11 +402,11 @@ export default function DiscoverPopularReviews({ items }: Props) {
               ) : null}
             </div>
 
-            {/* ✅ make this relative so the action row can pin to its top-right */}
+            {/* right content */}
             <div className="relative min-w-0 flex-1">
-              {/* ✅ overlay action row (takes ZERO layout space) */}
+              {/* ✅ PC ONLY: overlay action row stays as-is */}
               {it.postId ? (
-                <div className="absolute right-[-4px] top-[-6px] z-10 pointer-events-auto leading-none">
+                <div className="absolute right-[-4px] top-[-6px] z-10 hidden sm:block pointer-events-auto leading-none">
                   <ActionRowSpread
                     layout="compact"
                     iconSize={16}
@@ -323,7 +428,7 @@ export default function DiscoverPopularReviews({ items }: Props) {
                 </div>
               ) : null}
 
-              {/* ✅ title (minimal height again) */}
+              {/* title */}
               <div
                 className="truncate text-base leading-none font-semibold text-slate-900"
                 title={it.mediaTitle}
@@ -343,13 +448,17 @@ export default function DiscoverPopularReviews({ items }: Props) {
                 {/* username */}
                 <span className="font-semibold text-sm text-slate-700">{it.authorUsername}</span>
 
-                {/* ✅ kind • episode/chapter • rating (only between existing) */}
-                {metaParts.map((node, i) => (
-                  <React.Fragment key={i}>
-                    <span>•</span>
-                    {node}
-                  </React.Fragment>
-                ))}
+                {/* meta: (no floating dots) */}
+                {metaEntries.map((m) =>
+                  m.node ? (
+                    <span
+                      key={m.key}
+                      className={`${m.wrapperClass} items-center gap-[2px] before:content-['•'] before:mx-1`}
+                    >
+                      {m.node}
+                    </span>
+                  ) : null
+                )}
               </div>
 
               {/* snippet */}
@@ -367,8 +476,6 @@ export default function DiscoverPopularReviews({ items }: Props) {
             </div>
           </div>
         );
-
-        const href = postHref ?? `/review/${it.reviewId}`;
 
         return (
           <Link
