@@ -276,10 +276,10 @@ export default function DiscoverPopularReviews({ items }: Props) {
           wrapperClass: string;
           node: React.ReactNode | null;
         }> = [
-          { key: "kind", wrapperClass: "hidden sm:inline-flex", node: kindNode },
-          { key: "epch", wrapperClass: "inline-flex", node: episodeOrChapterNode },
-          { key: "stars", wrapperClass: "inline-flex", node: starsNode },
-        ];
+            { key: "kind", wrapperClass: "hidden sm:inline-flex", node: kindNode },
+            { key: "epch", wrapperClass: "inline-flex", node: episodeOrChapterNode },
+            { key: "stars", wrapperClass: "inline-flex", node: starsNode },
+          ];
 
         const actionMeta =
           it.postId && metaByPostId[it.postId]
@@ -292,8 +292,8 @@ export default function DiscoverPopularReviews({ items }: Props) {
         const mobileGray = "#555";
         const replyBlue = "#1d9bf0"; // (no hover on mobile, but keeping same palette)
         const likePink = "#f91880";
-        const mobileIconSize = 16; // tweak this
-        const mobileCountFontPx = 14; // ActionRowSpread default is 0.9rem (~14.4px)
+        const mobileIconSize = 12; // tweak this
+        const mobileCountFontPx = 8; // ActionRowSpread default is 0.9rem (~14.4px)
 
         const CardInner = (
           <div className="flex items-start gap-1">
@@ -306,7 +306,7 @@ export default function DiscoverPopularReviews({ items }: Props) {
 
               {/* ✅ MOBILE ONLY: stacked actions styled like ActionRowSpread */}
               {it.postId ? (
-                <div className="mt-1 flex flex-col items-center gap-1 sm:hidden">
+                <div className="mt-1 flex flex-col items-center gap-0 sm:hidden">
                   {/* reply */}
                   <button
                     type="button"
@@ -314,7 +314,7 @@ export default function DiscoverPopularReviews({ items }: Props) {
                       border: "none",
                       background: "transparent",
                       cursor: "pointer",
-                      padding: "6px",
+                      padding: "2px",
                       borderRadius: 999,
                       display: "flex",
                       flexDirection: "column",
@@ -338,7 +338,7 @@ export default function DiscoverPopularReviews({ items }: Props) {
                     />
                     <span
                       style={{
-                        marginTop: 2,
+                        marginTop: 1,
                         fontSize: `${mobileCountFontPx}px`,
                         color: mobileGray,
                         fontWeight: 600,
@@ -356,7 +356,7 @@ export default function DiscoverPopularReviews({ items }: Props) {
                       border: "none",
                       background: "transparent",
                       cursor: "pointer",
-                      padding: "6px",
+                      padding: "2px",
                       borderRadius: 999,
                       display: "flex",
                       flexDirection: "column",
@@ -380,9 +380,9 @@ export default function DiscoverPopularReviews({ items }: Props) {
                     />
                     <span
                       style={{
-                        marginTop: 2,
+                        marginTop: 1,
                         fontSize: `${mobileCountFontPx}px`,
-                        color: mobileGray, // counts in ActionRowSpread inherit; keep neutral like the UI
+                        color: mobileGray,
                         fontWeight: 600,
                         lineHeight: 1,
                       }}
