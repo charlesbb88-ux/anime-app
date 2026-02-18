@@ -47,11 +47,7 @@ function clampText(s: string, max: number) {
   return t.slice(0, max - 1) + "…";
 }
 
-function TopUserCard(props: {
-  topUser: TopUserRow | null;
-  loading: boolean;
-  error: string | null;
-}) {
+function TopUserCard(props: { topUser: TopUserRow | null; loading: boolean; error: string | null }) {
   const { topUser, loading, error } = props;
 
   return (
@@ -77,10 +73,9 @@ function TopUserCard(props: {
               flexDirection: "column",
               alignItems: "center",
               textAlign: "center",
-              gap: 5, // now this will actually matter
+              gap: 5,
             }}
           >
-
             {/* big avatar */}
             <div
               style={{
@@ -130,11 +125,7 @@ function TopUserCard(props: {
   );
 }
 
-function TopReviewCard(props: {
-  topReview: TopReviewRow | null;
-  loading: boolean;
-  error: string | null;
-}) {
+function TopReviewCard(props: { topReview: TopReviewRow | null; loading: boolean; error: string | null }) {
   const { topReview, loading, error } = props;
 
   return (
@@ -152,120 +143,144 @@ function TopReviewCard(props: {
         <div style={{ fontSize: "0.9rem", color: "#777" }}>No reviews yet this week.</div>
       )}
 
-      {!loading && !error && topReview && (() => {
-        const isAnime = !!topReview.anime_id;
+      {!loading && !error && topReview &&
+        (() => {
+          const isAnime = !!topReview.anime_id;
 
-        const mediaTitle = isAnime ? topReview.anime_title : topReview.manga_title;
-        const mediaSlug = isAnime ? topReview.anime_slug : topReview.manga_slug;
-        const mediaImg = isAnime ? topReview.anime_image_url : topReview.manga_image_url;
+          const mediaTitle = isAnime ? topReview.anime_title : topReview.manga_title;
+          const mediaSlug = isAnime ? topReview.anime_slug : topReview.manga_slug;
+          const mediaImg = isAnime ? topReview.anime_image_url : topReview.manga_image_url;
 
-        const mediaHref = isAnime ? `/anime/${mediaSlug}` : `/manga/${mediaSlug}`;
+          const mediaHref = isAnime ? `/anime/${mediaSlug}` : `/manga/${mediaSlug}`;
 
-        return (
-          <Link
-            href={`/review/${topReview.review_id}`} // change if your review route differs
-            style={{ textDecoration: "none", color: "inherit" }}
-          >
-            <div
-              style={{
-                display: "flex",
-                gap: "0.75rem",
-                cursor: "pointer",
-              }}
+          return (
+            <Link
+              href={`/review/${topReview.review_id}`} // change if your review route differs
+              style={{ textDecoration: "none", color: "inherit" }}
             >
-              {/* media cover */}
               <div
                 style={{
-                  width: 42,
-                  height: 58,
-                  borderRadius: 8,
-                  background: "#eaeaea",
-                  border: "1px solid #ddd",
-                  overflow: "hidden",
-                  flexShrink: 0,
+                  display: "flex",
+                  gap: "0.75rem",
+                  cursor: "pointer",
                 }}
               >
-                {mediaImg ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={mediaImg}
-                    alt=""
-                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                  />
-                ) : null}
-              </div>
-
-              <div style={{ minWidth: 0, flex: 1 }}>
-                {/* media title */}
+                {/* media cover */}
                 <div
                   style={{
-                    fontSize: "0.92rem",
-                    fontWeight: 800,
-                    whiteSpace: "nowrap",
+                    width: 42,
+                    height: 58,
+                    borderRadius: 8,
+                    background: "#eaeaea",
+                    border: "1px solid #ddd",
                     overflow: "hidden",
-                    textOverflow: "ellipsis",
+                    flexShrink: 0,
                   }}
-                  title={mediaTitle ?? ""}
                 >
-                  {mediaTitle ?? (isAnime ? "Anime" : "Manga")}
+                  {mediaImg ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={mediaImg}
+                      alt=""
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
+                  ) : null}
                 </div>
 
-                {/* author */}
-                <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", marginTop: 4 }}>
+                {/* IMPORTANT: minWidth:0 lets flex children shrink; the text wrapping below prevents long words from overflowing */}
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  {/* media title */}
                   <div
                     style={{
-                      width: 18,
-                      height: 18,
-                      borderRadius: 999,
-                      background: "#eaeaea",
-                      border: "1px solid #ddd",
+                      fontSize: "0.92rem",
+                      fontWeight: 800,
+                      whiteSpace: "nowrap",
                       overflow: "hidden",
-                      flexShrink: 0,
+                      textOverflow: "ellipsis",
+                      maxWidth: "100%",
+                    }}
+                    title={mediaTitle ?? ""}
+                  >
+                    {mediaTitle ?? (isAnime ? "Anime" : "Manga")}
+                  </div>
+
+                  {/* author */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", marginTop: 4 }}>
+                    <div
+                      style={{
+                        width: 18,
+                        height: 18,
+                        borderRadius: 999,
+                        background: "#eaeaea",
+                        border: "1px solid #ddd",
+                        overflow: "hidden",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {topReview.author_avatar_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={topReview.author_avatar_url}
+                          alt=""
+                          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                        />
+                      ) : null}
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: "0.82rem",
+                        color: "#666",
+                        minWidth: 0,
+                        maxWidth: "100%",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                      title={topReview.author_username}
+                    >
+                      {topReview.author_username}
+                      {mediaSlug ? (
+                        <>
+                          {" • "}
+                          <span
+                            onClick={(e) => {
+                              e.preventDefault();
+                              window.location.href = mediaHref;
+                            }}
+                            style={{ color: "#111", textDecoration: "underline", cursor: "pointer" }}
+                          >
+                            view
+                          </span>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {/* snippet */}
+                  <div
+                    style={{
+                      fontSize: "0.85rem",
+                      color: "#333",
+                      marginTop: 8,
+                      lineHeight: 1.25,
+                      maxWidth: "100%",
+                      overflowWrap: "anywhere", // ✅ breaks superlong words so they don't fly out of the card
+                      wordBreak: "break-word",  // ✅ fallback for older behavior
                     }}
                   >
-                    {topReview.author_avatar_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={topReview.author_avatar_url}
-                        alt=""
-                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                      />
-                    ) : null}
+                    {clampText(topReview.content, 120)}
                   </div>
 
-                  <div style={{ fontSize: "0.82rem", color: "#666" }}>
-                    {topReview.author_username}
-                    {mediaSlug ? (
-                      <>
-                        {" • "}
-                        <span
-                          onClick={(e) => {
-                            e.preventDefault();
-                            window.location.href = mediaHref;
-                          }}
-                          style={{ color: "#111", textDecoration: "underline", cursor: "pointer" }}
-                        >
-                          view
-                        </span>
-                      </>
-                    ) : null}
+                  {/* metrics */}
+                  <div style={{ fontSize: "0.8rem", color: "#666", marginTop: 10 }}>
+                    {topReview.replies_count} replies • {topReview.likes_count} likes
                   </div>
-                </div>
-
-                {/* snippet */}
-                <div style={{ fontSize: "0.85rem", color: "#333", marginTop: 8, lineHeight: 1.25 }}>
-                  {clampText(topReview.content, 120)}
-                </div>
-
-                {/* metrics */}
-                <div style={{ fontSize: "0.8rem", color: "#666", marginTop: 10 }}>
-                  {topReview.replies_count} replies • {topReview.likes_count} likes
                 </div>
               </div>
-            </div>
-          </Link>
-        );
-      })()}
+            </Link>
+          );
+        })()}
     </div>
   );
 }

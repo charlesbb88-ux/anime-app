@@ -35,6 +35,136 @@ function clampText(s: string, max: number) {
   return t.slice(0, max - 1) + "…";
 }
 
+/* -------------------- Skeletons -------------------- */
+
+function SkeletonBlock({ className }: { className: string }) {
+  return <div className={`animate-pulse rounded-sm bg-slate-200 ${className}`} />;
+}
+
+function HeroGridSkeleton() {
+  // Match DiscoverHeroGrid behavior:
+  // - Mobile: 6 tiles (2 rows of 3)
+  // - Desktop (md+): only 4 visible (1 row of 4)
+  return (
+    <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div
+          key={i}
+          className={[
+            "relative overflow-hidden rounded-sm border-2 border-black",
+            "aspect-[2/3]",
+            "bg-slate-200",
+            "ring-1 ring-black/5",
+            // Hide tiles 5-6 on desktop so it stays one row of 4
+            i >= 4 ? "md:hidden" : "",
+          ].join(" ")}
+        >
+          <div className="absolute left-1 top-1">
+            <div className="animate-pulse rounded-sm bg-slate-100 h-4 w-12" />
+          </div>
+          <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/10 to-transparent" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function JustReviewedSkeleton() {
+  // matches: grid grid-cols-1 gap-3 sm:grid-cols-2
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div
+          key={i}
+          className="relative flex gap-1.5 sm:gap-3 rounded-xs bg-white pt-2 px-2 pb-2 border-2 border-black ring-1 ring-black/5"
+        >
+          {/* poster */}
+          <SkeletonBlock className="h-20 w-15 shrink-0" />
+
+          <div className="min-w-0 flex-1">
+            {/* action row placeholder (top right) */}
+            <div className="absolute right-1 top-1">
+              <SkeletonBlock className="h-6 w-16 rounded-full" />
+            </div>
+
+            {/* avatar + username + meta */}
+            <div className="flex items-center gap-2">
+              <SkeletonBlock className="h-7 w-7 rounded-full" />
+              <SkeletonBlock className="h-4 w-24" />
+              <SkeletonBlock className="h-3 w-28" />
+            </div>
+
+            {/* title */}
+            <div className="mt-2">
+              <SkeletonBlock className="h-4 w-5/6" />
+            </div>
+
+            {/* snippet (2 lines) */}
+            <div className="mt-2 space-y-2">
+              <SkeletonBlock className="h-3 w-full" />
+              <SkeletonBlock className="h-3 w-4/5" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PopularReviewsSkeleton() {
+  // matches: grid grid-cols-1 gap-4, each card has rank + poster + right content
+  return (
+    <div className="grid grid-cols-1 gap-4">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div
+          key={i}
+          className="block rounded-xs bg-white pt-2 pb-2 pl-1 pr-1 border-2 border-black"
+        >
+          <div className="flex items-start gap-1">
+            {/* left column */}
+            <div className="flex shrink-0 flex-col items-center">
+              <SkeletonBlock className="h-5 w-5 rounded-full bg-slate-100" />
+              <div className="mt-1 flex flex-col items-center gap-2 sm:hidden">
+                <SkeletonBlock className="h-12 w-10 rounded-full" />
+                <SkeletonBlock className="h-12 w-10 rounded-full" />
+              </div>
+            </div>
+
+            {/* poster */}
+            <SkeletonBlock className="h-20 w-14 mr-1 shrink-0 self-start rounded-xs" />
+
+            {/* right content */}
+            <div className="relative min-w-0 flex-1">
+              {/* pc overlay actions placeholder */}
+              <div className="absolute right-[-4px] top-[-6px] hidden sm:block">
+                <SkeletonBlock className="h-6 w-20 rounded-full" />
+              </div>
+
+              {/* title */}
+              <SkeletonBlock className="h-4 w-3/4" />
+
+              {/* author row */}
+              <div className="mt-2 flex items-center gap-2">
+                <SkeletonBlock className="h-6 w-6 rounded-full" />
+                <SkeletonBlock className="h-4 w-24" />
+                <SkeletonBlock className="h-3 w-28" />
+              </div>
+
+              {/* snippet */}
+              <div className="mt-2 space-y-2">
+                <SkeletonBlock className="h-3 w-full" />
+                <SkeletonBlock className="h-3 w-5/6" />
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* -------------------- Page -------------------- */
+
 export default function DiscoverPage() {
   // hero
   const [animeRows, setAnimeRows] = useState<TrendingRow[]>([]);
@@ -208,7 +338,6 @@ export default function DiscoverPage() {
         animeEpisodeId: r.anime_episode_id ?? null,
         mangaChapterId: r.manga_chapter_id ?? null,
 
-        // ✅ NEW (pass-through from view)
         animeEpisodeNumber: r.anime_episode_number ?? null,
         mangaChapterNumber:
           r.manga_chapter_number == null
@@ -242,7 +371,6 @@ export default function DiscoverPage() {
         animeEpisodeId: r.anime_episode_id ?? null,
         mangaChapterId: r.manga_chapter_id ?? null,
 
-        // ✅ NEW
         animeEpisodeNumber: r.anime_episode_number ?? null,
         mangaChapterNumber:
           r.manga_chapter_number == null
@@ -262,7 +390,7 @@ export default function DiscoverPage() {
       {/* Hero */}
       <DiscoverSection title="Most popular this week">
         {heroLoading ? (
-          <div className="text-sm text-slate-500">Loading…</div>
+          <HeroGridSkeleton />
         ) : heroError ? (
           <div className="text-sm text-red-600">{heroError}</div>
         ) : heroItems.length === 0 ? (
@@ -275,7 +403,7 @@ export default function DiscoverPage() {
       {/* Just reviewed */}
       <DiscoverSection title="Just reviewed">
         {latestLoading ? (
-          <div className="text-sm text-slate-500">Loading…</div>
+          <JustReviewedSkeleton />
         ) : latestError ? (
           <div className="text-sm text-red-600">{latestError}</div>
         ) : (
@@ -286,7 +414,7 @@ export default function DiscoverPage() {
       {/* Popular reviews */}
       <DiscoverSection title="Popular reviews this week">
         {popularLoading ? (
-          <div className="text-sm text-slate-500">Loading…</div>
+          <PopularReviewsSkeleton />
         ) : popularError ? (
           <div className="text-sm text-red-600">{popularError}</div>
         ) : (

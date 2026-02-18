@@ -5,6 +5,7 @@ import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../lib/supabaseClient";
 import AuthModal from "./AuthModal";
+import { Search } from "lucide-react";
 
 type UserType = any;
 
@@ -24,7 +25,13 @@ export default function Header({ transparent = false }: { transparent?: boolean 
   // ✅ AniList-style show/hide
   const [isHidden, setIsHidden] = useState(false);
 
+  const HEADER_BTN_H = 32;
+
   const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // ✅ layout reservation constants (prevents header jump while auth/avatar loads)
+  const AVATAR_PX = 48; // 3rem
+  const HEADER_MIN_PX = 56; // stable header height (includes padding)
 
   // Watch auth state + load profile (username + avatar_url)
   useEffect(() => {
@@ -200,29 +207,31 @@ export default function Header({ transparent = false }: { transparent?: boolean 
     window.location.href = "/";
   };
 
-  const menuLinks =
-    baseProfilePath
-      ? [
-        { label: "Posts", href: baseProfilePath },
-        { label: "Completions", href: `${baseProfilePath}/completions` },
-        { label: "Watchlist", href: `${baseProfilePath}/watchlist` },
-        { label: "Activity", href: `${baseProfilePath}/activity` },
-        { label: "Journal", href: `${baseProfilePath}/journal` },
-        { label: "My Library", href: `${baseProfilePath}/library` },
-      ]
-      : [];
+  const menuLinks = baseProfilePath
+    ? [
+      { label: "Posts", href: baseProfilePath },
+      { label: "Completions", href: `${baseProfilePath}/completions` },
+      { label: "Watchlist", href: `${baseProfilePath}/watchlist` },
+      { label: "Activity", href: `${baseProfilePath}/activity` },
+      { label: "Journal", href: `${baseProfilePath}/journal` },
+      { label: "My Library", href: `${baseProfilePath}/library` },
+    ]
+    : [];
 
   return (
     <>
       <header
         style={{
           width: "100%",
-          padding: "0.7rem .7rem",
+          padding: "0.3rem .3rem",
           borderBottom: transparent ? "none" : "1px solid #000000",
           background: transparent ? "transparent" : "#ffffff",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+
+          // ✅ keeps header height stable while auth/avatar loads
+          minHeight: `${HEADER_MIN_PX}px`,
 
           // ✅ key change:
           // transparent pages should OVERLAY the content, not push it down
@@ -284,29 +293,19 @@ export default function Header({ transparent = false }: { transparent?: boolean 
                 fontSize: "0.95rem",
               }}
             >
-              <Link
-                href="/anime"
-                style={{
-                  textDecoration: "none",
-                  color: "#333",
-                  padding: "0.2rem 0.45rem",
-                  borderRadius: 6,
-                }}
-              >
-                Anime
-              </Link>
-              <Link
-                href="/manga"
-                style={{
-                  textDecoration: "none",
-                  color: "#333",
-                  padding: "0.2rem 0.45rem",
-                  borderRadius: 6,
-                }}
-              >
-                Manga
-              </Link>
             </nav>
+          </div>
+
+          {/* Right: discover + auth / user menu */}
+          <div
+            ref={menuRef}
+            style={{
+              position: "relative",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.6rem",
+            }}
+          >
             <Link
               href="/discover"
               style={{
@@ -315,25 +314,50 @@ export default function Header({ transparent = false }: { transparent?: boolean 
             >
               <span
                 style={{
-                  display: "inline-block",
-                  padding: "0.18rem 0.45rem",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  height: HEADER_BTN_H,
+                  padding: "0 0.55rem", // horizontal only
                   fontWeight: 700,
-                  fontSize: "0.95rem",
+                  fontSize: "1.05rem",
                   color: "#ffffff",
                   background: "#000000",
                   border: "1px solid #ffffff",
-                  borderRadius: 0, // sharp corners like INKBASED
-                  lineHeight: 1,
+                  borderRadius: 0,
+                  lineHeight: "1",
+                  whiteSpace: "nowrap",
                 }}
               >
                 DISCOVER
               </span>
             </Link>
-          </div>
 
-          {/* Right: auth / user menu */}
-          <div style={{ position: "relative", minWidth: "2.5rem" }} ref={menuRef}>
-            {authChecking ? null : user ? (
+            <Link
+              href="/search"
+              style={{
+                textDecoration: "none",
+              }}
+            >
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  height: HEADER_BTN_H,
+                  width: HEADER_BTN_H, // makes it perfectly square
+                  background: "#000000",
+                  border: "1px solid #ffffff",
+                  borderRadius: 0,
+                  lineHeight: "1",
+                }}
+              >
+                <Search size={18} strokeWidth={3} color="#ffffff" />
+              </span>
+            </Link>
+
+            {/* ✅ ALWAYS render something here to reserve layout (no jank) */}
+            {user ? (
               <button
                 type="button"
                 onClick={() => setIsUserMenuOpen((prev) => !prev)}
@@ -349,11 +373,11 @@ export default function Header({ transparent = false }: { transparent?: boolean 
               >
                 <div
                   style={{
-                    width: "2.5rem",
-                    height: "2.5rem",
+                    width: AVATAR_PX,
+                    height: AVATAR_PX,
                     borderRadius: "50%",
                     background: "#e5e5e5",
-                    border: "1px solid #000000",
+                    border: "2px solid #000000",
                     flexShrink: 0,
                     display: "flex",
                     alignItems: "center",
@@ -368,6 +392,8 @@ export default function Header({ transparent = false }: { transparent?: boolean 
                     <img
                       src={profile.avatar_url}
                       alt={displayName || "Your avatar"}
+                      loading="eager"
+                      decoding="async"
                       style={{
                         width: "100%",
                         height: "100%",
@@ -380,12 +406,26 @@ export default function Header({ transparent = false }: { transparent?: boolean 
                   )}
                 </div>
               </button>
+            ) : authChecking ? (
+              // ✅ skeleton placeholder (same size as avatar)
+              <div
+                aria-hidden="true"
+                style={{
+                  width: AVATAR_PX,
+                  height: AVATAR_PX,
+                  borderRadius: "50%",
+                  background: "#f0f0f0",
+                  border: "2px solid #000000",
+                  flexShrink: 0,
+                }}
+              />
             ) : (
               <button
                 type="button"
                 onClick={() => setIsAuthOpen(true)}
                 style={{
-                  padding: "0.4rem 1rem",
+                  height: AVATAR_PX,
+                  padding: "0 1rem",
                   borderRadius: 999,
                   border: "1px solid #000",
                   background: "#000",
@@ -393,6 +433,8 @@ export default function Header({ transparent = false }: { transparent?: boolean 
                   cursor: "pointer",
                   fontSize: "0.9rem",
                   fontWeight: 500,
+                  display: "inline-flex",
+                  alignItems: "center",
                 }}
               >
                 Log in
@@ -433,7 +475,6 @@ export default function Header({ transparent = false }: { transparent?: boolean 
                   );
                 })}
 
-                {/* If you want a divider ABOVE logout too, set borderTop here */}
                 <button
                   type="button"
                   onClick={handleLogout}
