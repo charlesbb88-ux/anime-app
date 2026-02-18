@@ -24,8 +24,9 @@ export type DiscoverReviewItem = {
   animeEpisodeId?: string | null;
   mangaChapterId?: string | null;
 
+  // ✅ NEW (view-added)
   animeEpisodeNumber?: number | null;
-  mangaChapterNumber?: number | null;
+  mangaChapterNumber?: number | string | null;
 
   postId: string | null;
 
@@ -60,6 +61,11 @@ export type TopReviewWeeklyRow = {
   // ✅ NEW (added to view)
   anime_episode_id: string | null;
   manga_chapter_id: string | null;
+
+  // ✅ NEW (added to view)
+  anime_episode_number?: number | null;
+  manga_chapter_number?: number | string | null;
+
   post_id: string | null;
   rating: number | null;
 };
@@ -88,6 +94,10 @@ export type DiscoverPopularReview = {
 
   animeEpisodeId?: string | null;
   mangaChapterId?: string | null;
+
+  // ✅ add these
+  animeEpisodeNumber?: number | null;
+  mangaChapterNumber?: number | string | null;
 };
 
 export type LatestReviewRow = {

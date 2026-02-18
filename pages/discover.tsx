@@ -97,9 +97,9 @@ export default function DiscoverPage() {
 
       try {
         const { data, error } = await supabase
-          .from("top_review_weekly")
+          .from("top_review_weekly_with_numbers")
           .select(
-            "review_id, author_id, author_username, author_avatar_url, anime_id, anime_slug, anime_title, anime_image_url, manga_id, manga_slug, manga_title, manga_image_url, content, created_at, replies_count, likes_count, score, anime_episode_id, manga_chapter_id, post_id, rating"
+            "review_id, author_id, author_username, author_avatar_url, anime_id, anime_slug, anime_title, anime_image_url, manga_id, manga_slug, manga_title, manga_image_url, content, created_at, replies_count, likes_count, score, anime_episode_id, manga_chapter_id, anime_episode_number, manga_chapter_number, post_id, rating"
           )
           .order("score", { ascending: false })
           .limit(12);
@@ -207,6 +207,15 @@ export default function DiscoverPage() {
         rating: r.rating ?? null,
         animeEpisodeId: r.anime_episode_id ?? null,
         mangaChapterId: r.manga_chapter_id ?? null,
+
+        // ✅ NEW (pass-through from view)
+        animeEpisodeNumber: r.anime_episode_number ?? null,
+        mangaChapterNumber:
+          r.manga_chapter_number == null
+            ? null
+            : typeof r.manga_chapter_number === "number"
+              ? r.manga_chapter_number
+              : Number(r.manga_chapter_number),
       };
     });
   }, [popularRows]);
@@ -216,7 +225,8 @@ export default function DiscoverPage() {
       const isAnime = !!r.anime_id;
 
       const kind: "anime" | "manga" = isAnime ? "anime" : "manga";
-      const title = (isAnime ? r.anime_title : r.manga_title) ?? (isAnime ? "Anime" : "Manga");
+      const title =
+        (isAnime ? r.anime_title : r.manga_title) ?? (isAnime ? "Anime" : "Manga");
       const posterUrl = (isAnime ? r.anime_image_url : r.manga_image_url) ?? null;
 
       return {
