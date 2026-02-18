@@ -203,13 +203,13 @@ export default function Header({ transparent = false }: { transparent?: boolean 
   const menuLinks =
     baseProfilePath
       ? [
-          { label: "Posts", href: baseProfilePath },
-          { label: "Completions", href: `${baseProfilePath}/completions` },
-          { label: "Watchlist", href: `${baseProfilePath}/watchlist` },
-          { label: "Activity", href: `${baseProfilePath}/activity` },
-          { label: "Journal", href: `${baseProfilePath}/journal` },
-          { label: "My Library", href: `${baseProfilePath}/library` },
-        ]
+        { label: "Posts", href: baseProfilePath },
+        { label: "Completions", href: `${baseProfilePath}/completions` },
+        { label: "Watchlist", href: `${baseProfilePath}/watchlist` },
+        { label: "Activity", href: `${baseProfilePath}/activity` },
+        { label: "Journal", href: `${baseProfilePath}/journal` },
+        { label: "My Library", href: `${baseProfilePath}/library` },
+      ]
       : [];
 
   return (
@@ -307,6 +307,28 @@ export default function Header({ transparent = false }: { transparent?: boolean 
                 Manga
               </Link>
             </nav>
+            <Link
+              href="/discover"
+              style={{
+                textDecoration: "none",
+              }}
+            >
+              <span
+                style={{
+                  display: "inline-block",
+                  padding: "0.18rem 0.45rem",
+                  fontWeight: 700,
+                  fontSize: "0.95rem",
+                  color: "#ffffff",
+                  background: "#000000",
+                  border: "1px solid #ffffff",
+                  borderRadius: 0, // sharp corners like INKBASED
+                  lineHeight: 1,
+                }}
+              >
+                DISCOVER
+              </span>
+            </Link>
           </div>
 
           {/* Right: auth / user menu */}
