@@ -173,7 +173,7 @@ export default function DiscoverPage() {
       score: toScore(r.score),
     }));
 
-    return [...a, ...m].sort((x, y) => y.score - x.score).slice(0, 4);
+    return [...a, ...m].sort((x, y) => y.score - x.score).slice(0, 8);
   }, [animeRows, mangaRows]);
 
   const popularReviews: DiscoverPopularReview[] = useMemo(() => {
