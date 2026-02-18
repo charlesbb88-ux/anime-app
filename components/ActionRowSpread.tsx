@@ -36,10 +36,15 @@ type Props = {
   onReply?: (e: any) => void;
   onLike?: (e: any) => void;
   onShare?: (e: any) => void;
+
+  // ✅ add this to hide Share only where you want
+  hideShare?: boolean;
+
+  // ✅ add this
+  layout?: "spread" | "compact";
 };
 
 export default function ActionRow({
-  variant = "feed",
   iconSize,
   replyCount = 0,
   likeCount = 0,
@@ -47,9 +52,9 @@ export default function ActionRow({
   onReply,
   onLike,
   onShare,
+  hideShare = false,
+  layout = "spread",
 }: Props) {
-  const isMain = variant === "main";
-
   const iconButtonBase: React.CSSProperties = {
     border: "none",
     background: "transparent",
@@ -69,21 +74,31 @@ export default function ActionRow({
   };
 
   const actionSlotStyle: React.CSSProperties = {
-    display: "flex",
+    display: "inline-flex",
     alignItems: "center",
     gap: "0.35rem",
     minWidth: 0,
   };
 
-  const barStyle: React.CSSProperties = {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    maxWidth: "90%",
-    padding: isMain ? "0.1rem 0 0.4rem 2rem" : "0.05rem 0 0.35rem 2rem",
-    marginLeft: ".3rem",
-    marginRight: "auto",
-  };
+  const barStyle: React.CSSProperties =
+    layout === "compact"
+      ? {
+          display: "inline-flex",
+          width: "auto",
+          justifyContent: "flex-end",
+          alignItems: "center",
+          padding: 0,
+          margin: 0,
+          gap: 4, // only affects spacing between buttons, not their size
+        }
+      : {
+          display: "flex",
+          width: "100%",
+          justifyContent: "space-evenly",
+          alignItems: "center",
+          padding: 0,
+          margin: 0,
+        };
 
   return (
     <div style={barStyle}>
@@ -126,7 +141,7 @@ export default function ActionRow({
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.transform = "translateY(0)";
-          e.currentTarget.style.color = likedByMe ? "#f91880" : "#555"; // ✅ keep pink if liked
+          e.currentTarget.style.color = likedByMe ? "#f91880" : "#555"; // ✅ key line
           e.currentTarget.style.background = "transparent";
         }}
       >
@@ -140,22 +155,24 @@ export default function ActionRow({
       </button>
 
       {/* Share */}
-      <button
-        onClick={onShare}
-        style={iconButtonBase}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.transform = "translateY(-1px)";
-          e.currentTarget.style.color = "#1d9bf0";
-          e.currentTarget.style.background = "#1d9bf01a";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = "translateY(0)";
-          e.currentTarget.style.color = "#555";
-          e.currentTarget.style.background = "transparent";
-        }}
-      >
-        <ShareArrowIcon size={iconSize} />
-      </button>
+      {!hideShare ? (
+        <button
+          onClick={onShare}
+          style={iconButtonBase}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = "translateY(-1px)";
+            e.currentTarget.style.color = "#1d9bf0";
+            e.currentTarget.style.background = "#1d9bf01a";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = "translateY(0)";
+            e.currentTarget.style.color = "#555";
+            e.currentTarget.style.background = "transparent";
+          }}
+        >
+          <ShareArrowIcon size={iconSize} />
+        </button>
+      ) : null}
     </div>
   );
 }
