@@ -1,8 +1,11 @@
 // components/discover/DiscoverPopularReviews.tsx
 "use client";
 
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/router";
+import { supabase } from "@/lib/supabaseClient";
+import ActionRowSpread from "@/components/ActionRowSpread";
 import type { DiscoverPopularReview } from "./discoverTypes";
 
 type Props = {
@@ -85,7 +88,10 @@ function ReviewStarsRow({
   if (nodes.length === 0) return null;
 
   return (
-    <span className="inline-flex items-center gap-[2px]" aria-label={`${hs / 2} stars`}>
+    <span
+      className="inline-flex items-center gap-[2px]"
+      aria-label={`${hs / 2} stars`}
+    >
       {nodes}
     </span>
   );
@@ -98,14 +104,135 @@ function formatEpisodeLabel(n: number | null | undefined) {
   return `EPISODE ${n}`;
 }
 
-function formatChapterLabel(n: number | null | undefined) {
+function formatChapterLabel(n: number | string | null | undefined) {
   if (n == null) return null;
-  // chapter_number can be numeric/decimal in DB; support integers + decimals
-  const asString = Number.isFinite(Number(n)) ? String(n) : String(n);
-  return `CHAPTER ${asString}`;
+  return `CHAPTER ${String(n)}`;
 }
 
+/* -------------------- Action Meta (RPC) -------------------- */
+
+type ActionMetaRow = {
+  post_id: string;
+  likes_count: number;
+  replies_count: number;
+  liked_by_me: boolean;
+};
+
 export default function DiscoverPopularReviews({ items }: Props) {
+  const router = useRouter();
+
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      setUserId(session?.user?.id ?? null);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  const postIds = useMemo(() => {
+    const ids = items.map((x) => x.postId).filter(Boolean) as string[];
+    return Array.from(new Set(ids));
+  }, [items]);
+
+  const [metaByPostId, setMetaByPostId] = useState<
+    Record<string, { likes: number; replies: number; liked: boolean }>
+  >({});
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadActionMeta() {
+      if (postIds.length === 0) {
+        setMetaByPostId({});
+        return;
+      }
+
+      const { data, error } = await supabase.rpc("get_post_action_meta", {
+        post_ids: postIds,
+      });
+
+      if (cancelled) return;
+
+      if (error) {
+        console.error("get_post_action_meta error:", error);
+        setMetaByPostId({});
+        return;
+      }
+
+      const next: Record<string, { likes: number; replies: number; liked: boolean }> =
+        {};
+
+      (data as ActionMetaRow[] | null | undefined)?.forEach((row) => {
+        if (!row?.post_id) return;
+        next[row.post_id] = {
+          likes: row.likes_count ?? 0,
+          replies: row.replies_count ?? 0,
+          liked: !!row.liked_by_me,
+        };
+      });
+
+      setMetaByPostId(next);
+    }
+
+    loadActionMeta();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [postIds]);
+
+  async function toggleLike(postId: string) {
+    if (!userId) {
+      router.push("/login");
+      return;
+    }
+
+    const current = metaByPostId[postId] ?? { likes: 0, replies: 0, liked: false };
+    const nextLiked = !current.liked;
+
+    // optimistic UI
+    setMetaByPostId((prev) => ({
+      ...prev,
+      [postId]: {
+        ...current,
+        liked: nextLiked,
+        likes: Math.max(0, current.likes + (nextLiked ? 1 : -1)),
+      },
+    }));
+
+    // write to DB
+    if (nextLiked) {
+      const { error } = await supabase.from("likes").insert({
+        post_id: postId,
+        user_id: userId,
+      });
+
+      if (error) {
+        console.error("like insert error:", error);
+        setMetaByPostId((prev) => ({
+          ...prev,
+          [postId]: current,
+        }));
+      }
+    } else {
+      const { error } = await supabase
+        .from("likes")
+        .delete()
+        .eq("post_id", postId)
+        .eq("user_id", userId);
+
+      if (error) {
+        console.error("like delete error:", error);
+        setMetaByPostId((prev) => ({
+          ...prev,
+          [postId]: current,
+        }));
+      }
+    }
+  }
+
   if (!items || items.length === 0) {
     return <div className="text-sm text-slate-500">No reviews yet this week.</div>;
   }
@@ -113,47 +240,92 @@ export default function DiscoverPopularReviews({ items }: Props) {
   return (
     <div className="grid grid-cols-1 gap-4">
       {items.map((it, idx) => {
-        const mediaHref =
-          it.mediaSlug && it.kind ? `/${it.kind}/${it.mediaSlug}` : null;
-
         const postHref = it.postId ? `/posts/${it.postId}` : null;
 
-        // @ts-expect-error: support older builds where these might not exist yet
         const animeEpNum: number | null | undefined = it.animeEpisodeNumber ?? null;
-        // @ts-expect-error: support older builds where these might not exist yet
-        const mangaChNum: number | null | undefined = it.mangaChapterNumber ?? null;
+        const mangaChNum: number | string | null | undefined = it.mangaChapterNumber ?? null;
 
         const episodeOrChapterLabel =
           it.kind === "anime"
             ? formatEpisodeLabel(animeEpNum)
             : formatChapterLabel(mangaChNum);
 
-        const halfStars =
-          it.rating != null ? rating100ToHalfStars(it.rating) : null;
+        const halfStars = it.rating != null ? rating100ToHalfStars(it.rating) : null;
+
+        // Nodes for meta row: kind -> episode/chapter -> rating
+        const kindNode = it.kind ? (
+          <span key="kind" className="uppercase tracking-wider">
+            {it.kind}
+          </span>
+        ) : null;
+
+        const episodeOrChapterNode = episodeOrChapterLabel ? (
+          <span key="epch" className="text-xs text-slate-500">
+            {episodeOrChapterLabel}
+          </span>
+        ) : null;
+
+        const starsNode =
+          halfStars != null ? (
+            <span key="stars" className="inline-flex items-center">
+              <ReviewStarsRow halfStars={halfStars} size={14} />
+            </span>
+          ) : null;
+
+        // ✅ Only show dots between existing pieces
+        const metaParts = [kindNode, episodeOrChapterNode, starsNode].filter(
+          Boolean
+        ) as React.ReactNode[];
+
+        const actionMeta =
+          it.postId && metaByPostId[it.postId]
+            ? metaByPostId[it.postId]
+            : { likes: 0, replies: 0, liked: false };
 
         const CardInner = (
-          <div className="flex items-start gap-4">
+          <div className="flex items-start gap-1">
             {/* rank */}
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-700">
+            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-black">
               {idx + 1}
             </div>
 
             {/* media cover */}
-            <div className="h-20 w-14 shrink-0 overflow-hidden rounded-lg bg-slate-200 ring-1 ring-black/5">
+            <div className="h-20 w-14 mr-1 shrink-0 self-start overflow-hidden rounded-xs bg-slate-200 ring-1 ring-black/5">
               {it.mediaPosterUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={it.mediaPosterUrl}
-                  alt=""
-                  className="h-full w-full object-cover"
-                />
+                <img src={it.mediaPosterUrl} alt="" className="h-full w-full object-cover" />
               ) : null}
             </div>
 
-            <div className="min-w-0 flex-1">
-              {/* media title */}
+            {/* ✅ make this relative so the action row can pin to its top-right */}
+            <div className="relative min-w-0 flex-1">
+              {/* ✅ overlay action row (takes ZERO layout space) */}
+              {it.postId ? (
+                <div className="absolute right-[-4px] top-[-6px] z-10 pointer-events-auto leading-none">
+                  <ActionRowSpread
+                    layout="compact"
+                    iconSize={16}
+                    replyCount={actionMeta.replies}
+                    likeCount={actionMeta.likes}
+                    likedByMe={actionMeta.liked}
+                    hideShare
+                    onReply={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      router.push(`/posts/${it.postId}`);
+                    }}
+                    onLike={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toggleLike(it.postId!);
+                    }}
+                  />
+                </div>
+              ) : null}
+
+              {/* ✅ title (minimal height again) */}
               <div
-                className="truncate text-base font-semibold text-slate-900"
+                className="truncate text-base leading-none font-semibold text-slate-900"
                 title={it.mediaTitle}
               >
                 {it.mediaTitle}
@@ -161,83 +333,48 @@ export default function DiscoverPopularReviews({ items }: Props) {
 
               {/* author row */}
               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
-                <div className="h-5 w-5 overflow-hidden rounded-full bg-slate-200 ring-1 ring-black/5">
+                <div className="h-6 w-6 overflow-hidden rounded-full bg-slate-200 ring-1 ring-black/5">
                   {it.authorAvatarUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={it.authorAvatarUrl}
-                      alt=""
-                      className="h-full w-full object-cover"
-                    />
+                    <img src={it.authorAvatarUrl} alt="" className="h-full w-full object-cover" />
                   ) : null}
                 </div>
 
-                <span className="font-semibold text-slate-700">
-                  {it.authorUsername}
-                </span>
-                <span>•</span>
-                <span className="uppercase tracking-wider">{it.kind}</span>
+                {/* username */}
+                <span className="font-semibold text-sm text-slate-700">{it.authorUsername}</span>
 
-                {episodeOrChapterLabel ? (
-                  <>
+                {/* ✅ kind • episode/chapter • rating (only between existing) */}
+                {metaParts.map((node, i) => (
+                  <React.Fragment key={i}>
                     <span>•</span>
-                    <span className="text-xs text-slate-500">
-                      {episodeOrChapterLabel}
-                    </span>
-                  </>
-                ) : null}
-
-                {/* stars to the right of episode/chapter */}
-                {halfStars != null ? (
-                  <span className="ml-1 inline-flex items-center">
-                    <ReviewStarsRow halfStars={halfStars} size={14} />
-                  </span>
-                ) : null}
-
-                {mediaHref ? (
-                  <>
-                    <span>•</span>
-                    <Link
-                      href={mediaHref}
-                      className="underline text-slate-700"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      view
-                    </Link>
-                  </>
-                ) : null}
+                    {node}
+                  </React.Fragment>
+                ))}
               </div>
 
               {/* snippet */}
-              <div className="mt-2 text-sm text-slate-700 line-clamp-3">
-                {clampText(it.snippet, 220)}
-              </div>
-
-              {/* metrics */}
-              <div className="mt-3 flex items-center gap-3 text-xs text-slate-500">
-                <span className="rounded-full bg-slate-100 px-2 py-1">
-                  👍 {it.likesCount}
-                </span>
-                <span className="rounded-full bg-slate-100 px-2 py-1">
-                  💬 {it.repliesCount}
-                </span>
-                <span className="rounded-full bg-slate-100 px-2 py-1">
-                  🔥 {Math.round(it.score)}
-                </span>
+              <div
+                className="text-sm text-slate-700 whitespace-normal break-words"
+                style={{
+                  display: "-webkit-box",
+                  WebkitBoxOrient: "vertical",
+                  WebkitLineClamp: 2,
+                  overflow: "hidden",
+                }}
+              >
+                {it.snippet}
               </div>
             </div>
           </div>
         );
 
-        // If we have a postId, the whole card should go to /posts/:id
-        // If not, we fall back to /review/:reviewId (keeps behavior working even if data is missing)
         const href = postHref ?? `/review/${it.reviewId}`;
 
         return (
           <Link
             key={it.reviewId}
             href={href}
-            className="block rounded-2xl bg-white p-4 ring-1 ring-black/5 hover:bg-slate-50"
+            className="block rounded-xs bg-white pt-2 pb-2 pl-1 pr-1 border-2 border-black hover:bg-slate-50"
           >
             {CardInner}
           </Link>
