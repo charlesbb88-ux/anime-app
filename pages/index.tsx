@@ -4,7 +4,6 @@ import React, { useEffect, useState } from "react";
 import LeftSidebar from "../components/LeftSidebar";
 import RightSidebar from "../components/RightSidebar";
 import PostFeed from "../components/PostFeed";
-import UsernameGate from "../components/UsernameGate";
 import FeedShell from "../components/FeedShell";
 
 const LAYOUT = {
@@ -43,7 +42,6 @@ export default function Home() {
   const isPhone = useIsPhone();
 
   return (
-    <UsernameGate>
       <div
         style={{
           minHeight: "100vh",
@@ -128,6 +126,5 @@ export default function Home() {
           </div>
         </div>
       </div>
-    </UsernameGate>
   );
 }

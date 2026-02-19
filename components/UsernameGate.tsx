@@ -1,3 +1,4 @@
+// components/UsernameGate.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -10,9 +11,17 @@ type UsernameGateProps = {
 
 type Profile = {
   id: string;
-  username: string;
-  created_at: string;
+  username: string | null;
 };
+
+function normalizeUsername(raw: string) {
+  return raw.trim().toLowerCase();
+}
+
+function isValidUsername(u: string) {
+  // 3–20 chars, lowercase letters/numbers/underscore
+  return /^[a-z0-9_]{3,20}$/.test(u);
+}
 
 export default function UsernameGate({ children }: UsernameGateProps) {
   const [user, setUser] = useState<User | null>(null);
@@ -46,11 +55,7 @@ export default function UsernameGate({ children }: UsernameGateProps) {
 
       setUser(user);
 
-      // ---- fetch profile WITHOUT generics on from() ----
-      const {
-        data: profileData,
-        error: profileError,
-      } = await supabase
+      const { data: profileData, error: profileError } = await supabase
         .from("profiles")
         .select("id, username")
         .eq("id", user.id)
@@ -59,7 +64,6 @@ export default function UsernameGate({ children }: UsernameGateProps) {
       if (!isMounted) return;
 
       if (profileError && profileError.code !== "PGRST116") {
-        // real error (not "no rows")
         console.error("Error checking profile:", profileError);
         setChecking(false);
         return;
@@ -67,12 +71,12 @@ export default function UsernameGate({ children }: UsernameGateProps) {
 
       const profile = profileData as Profile | null;
 
-      if (!profile) {
+      // ✅ If profile missing OR username missing => gate
+      if (!profile || !profile.username || !profile.username.trim()) {
         setNeedsUsername(true);
       } else {
         setNeedsUsername(false);
-        // keep local input in sync with stored username (which is lowercase)
-        setUsername(profile.username);
+        setUsername(profile.username.trim());
       }
 
       setChecking(false);
@@ -84,6 +88,7 @@ export default function UsernameGate({ children }: UsernameGateProps) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!isMounted) return;
+
       if (session?.user) {
         setUser(session.user);
         checkProfile();
@@ -103,57 +108,42 @@ export default function UsernameGate({ children }: UsernameGateProps) {
     e.preventDefault();
     if (!user) return;
 
-    const trimmed = username.trim();
-    if (!trimmed) {
+    const handle = normalizeUsername(username);
+
+    if (!handle) {
       setError("Please choose a username.");
       return;
     }
-
-    // ✅ Canonical handle: always lowercase
-    const handle = trimmed.toLowerCase();
+    if (!isValidUsername(handle)) {
+      setError("Username must be 3–20 characters: lowercase letters, numbers, underscore.");
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
 
-    // 1) Check if username already taken (using lowercase handle)
-    const {
-      data: existingData,
-      error: existingError,
-    } = await supabase
+    // ✅ No "check then update" query (races at scale).
+    // DB unique index is the truth. We just try to set it and catch unique errors.
+    const { error: updateError } = await supabase
       .from("profiles")
-      .select("id")
-      .eq("username", handle)
-      .maybeSingle();
+      .update({ username: handle })
+      .eq("id", user.id);
 
-    if (existingError && existingError.code !== "PGRST116") {
-      console.error("Error checking username:", existingError);
-      setError("Something went wrong. Please try again.");
+    if (updateError) {
+      console.error("Error updating profile:", updateError);
+
+      const msg = (updateError as any)?.message?.toLowerCase?.() || "";
+      // Supabase/Postgres unique violations usually include "duplicate" / "unique"
+      if (msg.includes("duplicate") || msg.includes("unique")) {
+        setError("That username is already taken.");
+      } else {
+        setError("Could not save username. Please try again.");
+      }
+
       setSubmitting(false);
       return;
     }
 
-    const existing = existingData as Profile | null;
-
-    if (existing) {
-      setError("That username is already taken.");
-      setSubmitting(false);
-      return;
-    }
-
-    // 2) Insert profile with lowercase handle
-    const { error: insertError } = await supabase.from("profiles").insert({
-      id: user.id,
-      username: handle, // 👈 stored as lowercase only
-    });
-
-    if (insertError) {
-      console.error("Error inserting profile:", insertError);
-      setError("Could not save username. Please try again.");
-      setSubmitting(false);
-      return;
-    }
-
-    // keep local input in sync with stored value
     setUsername(handle);
     setNeedsUsername(false);
     setSubmitting(false);
@@ -258,8 +248,7 @@ export default function UsernameGate({ children }: UsernameGateProps) {
                   fontWeight: 600,
                   cursor: submitting ? "default" : "pointer",
                   opacity: submitting ? 0.7 : 1,
-                  background:
-                    "linear-gradient(135deg, #111827, #111827, #1f2937)",
+                  background: "linear-gradient(135deg, #111827, #111827, #1f2937)",
                   color: "#fff",
                 }}
               >
