@@ -3,6 +3,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Eye, Heart, BookmarkPlus } from "lucide-react";
+import AuthGate from "@/components/AuthGate";
 
 import {
   getMyMangaWatchedMark,
@@ -164,127 +165,129 @@ export default function MangaActionBox({
   }
 
   return (
-    <div className="w-full max-w-[240px] overflow-hidden rounded-md border border-gray-800 bg-black text-gray-200 shadow-sm">
-      {/* TOP ACTIONS */}
-      <div className="grid grid-cols-3">
-        <TopAction
-          icon={
-            <Eye
-              className={[
-                "h-5 w-5",
-                isWatched ? "text-emerald-400" : "text-gray-300",
-                watchBusy ? "opacity-60" : "",
-              ].join(" ")}
-            />
-          }
-          label={isWatched ? "Watched" : "Read"}
-          pressed={isWatched}
-          onClick={toggleWatched}
-          disabled={watchBusy}
-        />
+    <AuthGate>
+      <div className="w-full max-w-[240px] overflow-hidden rounded-md border border-gray-800 bg-black text-gray-200 shadow-sm">
+        {/* TOP ACTIONS */}
+        <div className="grid grid-cols-3">
+          <TopAction
+            icon={
+              <Eye
+                className={[
+                  "h-5 w-5",
+                  isWatched ? "text-emerald-400" : "text-gray-300",
+                  watchBusy ? "opacity-60" : "",
+                ].join(" ")}
+              />
+            }
+            label={isWatched ? "Watched" : "Read"}
+            pressed={isWatched}
+            onClick={toggleWatched}
+            disabled={watchBusy}
+          />
 
-        <TopAction
-          icon={
-            <Heart
-              className={[
-                "h-5 w-5",
-                isLiked ? "text-red-400" : "text-gray-300",
-                likeBusy ? "opacity-60" : "",
-              ].join(" ")}
-            />
-          }
-          label="Like"
-          pressed={isLiked}
-          onClick={toggleLiked}
-          disabled={likeBusy}
-        />
+          <TopAction
+            icon={
+              <Heart
+                className={[
+                  "h-5 w-5",
+                  isLiked ? "text-red-400" : "text-gray-300",
+                  likeBusy ? "opacity-60" : "",
+                ].join(" ")}
+              />
+            }
+            label="Like"
+            pressed={isLiked}
+            onClick={toggleLiked}
+            disabled={likeBusy}
+          />
 
-        <TopAction
-          icon={
-            <BookmarkPlus
-              className={[
-                "h-5 w-5",
-                inWatchlist ? "text-sky-400" : "text-gray-300",
-                watchlistBusy ? "opacity-60" : "",
-              ].join(" ")}
-            />
-          }
-          label="Watchlist"
-          pressed={inWatchlist}
-          onClick={toggleWatchlist}
-          disabled={watchlistBusy}
-          hideRightDivider
-        />
-      </div>
-
-      <Divider />
-
-      {/* RATING (half-star) */}
-      <div className="px-4 py-1.5">
-        <div className="mb-0.5 text-center text-xs font-semibold text-gray-300">
-          {halfStars == null ? "Rate" : "Rated"}
+          <TopAction
+            icon={
+              <BookmarkPlus
+                className={[
+                  "h-5 w-5",
+                  inWatchlist ? "text-sky-400" : "text-gray-300",
+                  watchlistBusy ? "opacity-60" : "",
+                ].join(" ")}
+              />
+            }
+            label="Watchlist"
+            pressed={inWatchlist}
+            onClick={toggleWatchlist}
+            disabled={watchlistBusy}
+            hideRightDivider
+          />
         </div>
 
-        <div className="flex justify-center gap-[6px]">
-          {Array.from({ length: 5 }).map((_, i) => {
-            const starIndex = i + 1;
-            const filled = computeStarFillPercent(shownHalfStars, starIndex);
+        <Divider />
 
-            return (
-              <div
-                key={starIndex}
-                className="relative"
-                onMouseLeave={() => setHoverHalfStars(null)}
-              >
-                <StarVisual filledPercent={filled} dim={ratingBusy} />
+        {/* RATING (half-star) */}
+        <div className="px-4 py-1.5">
+          <div className="mb-0.5 text-center text-xs font-semibold text-gray-300">
+            {halfStars == null ? "Rate" : "Rated"}
+          </div>
 
-                <button
-                  type="button"
-                  disabled={ratingBusy}
-                  className="absolute inset-y-0 left-0 w-1/2"
-                  onMouseEnter={() => setHoverHalfStars(starIndex * 2 - 1)}
-                  onFocus={() => setHoverHalfStars(starIndex * 2 - 1)}
-                  onClick={() => setRatingHalfStars(starIndex * 2 - 1)}
-                  aria-label={`Rate ${starIndex - 0.5} stars`}
-                  title={`Rate ${starIndex - 0.5} stars`}
-                />
+          <div className="flex justify-center gap-[6px]">
+            {Array.from({ length: 5 }).map((_, i) => {
+              const starIndex = i + 1;
+              const filled = computeStarFillPercent(shownHalfStars, starIndex);
 
-                <button
-                  type="button"
-                  disabled={ratingBusy}
-                  className="absolute inset-y-0 right-0 w-1/2"
-                  onMouseEnter={() => setHoverHalfStars(starIndex * 2)}
-                  onFocus={() => setHoverHalfStars(starIndex * 2)}
-                  onClick={() => setRatingHalfStars(starIndex * 2)}
-                  aria-label={`Rate ${starIndex} stars`}
-                  title={`Rate ${starIndex} stars`}
-                />
-              </div>
-            );
-          })}
+              return (
+                <div
+                  key={starIndex}
+                  className="relative"
+                  onMouseLeave={() => setHoverHalfStars(null)}
+                >
+                  <StarVisual filledPercent={filled} dim={ratingBusy} />
+
+                  <button
+                    type="button"
+                    disabled={ratingBusy}
+                    className="absolute inset-y-0 left-0 w-1/2"
+                    onMouseEnter={() => setHoverHalfStars(starIndex * 2 - 1)}
+                    onFocus={() => setHoverHalfStars(starIndex * 2 - 1)}
+                    onClick={() => setRatingHalfStars(starIndex * 2 - 1)}
+                    aria-label={`Rate ${starIndex - 0.5} stars`}
+                    title={`Rate ${starIndex - 0.5} stars`}
+                  />
+
+                  <button
+                    type="button"
+                    disabled={ratingBusy}
+                    className="absolute inset-y-0 right-0 w-1/2"
+                    onMouseEnter={() => setHoverHalfStars(starIndex * 2)}
+                    onFocus={() => setHoverHalfStars(starIndex * 2)}
+                    onClick={() => setRatingHalfStars(starIndex * 2)}
+                    aria-label={`Rate ${starIndex} stars`}
+                    title={`Rate ${starIndex} stars`}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <Divider />
+
+        {/* ROW 3 */}
+        <div className="grid grid-cols-2">
+          <HalfRowButton disabled={!onShowActivity} onClick={onShowActivity} left>
+            Your Activity
+          </HalfRowButton>
+
+          <HalfRowButton onClick={onOpenLog} right emphasis>
+            Log / Review
+          </HalfRowButton>
+        </div>
+
+        <Divider />
+
+        {/* ROW 4 */}
+        <div className="flex flex-col">
+          <MenuRow center>Share</MenuRow>
         </div>
       </div>
-
-      <Divider />
-
-      {/* ROW 3 */}
-      <div className="grid grid-cols-2">
-        <HalfRowButton disabled={!onShowActivity} onClick={onShowActivity} left>
-          Your Activity
-        </HalfRowButton>
-
-        <HalfRowButton onClick={onOpenLog} right emphasis>
-          Log / Review
-        </HalfRowButton>
-      </div>
-
-      <Divider />
-
-      {/* ROW 4 */}
-      <div className="flex flex-col">
-        <MenuRow center>Share</MenuRow>
-      </div>
-    </div>
+    </AuthGate>
   );
 }
 

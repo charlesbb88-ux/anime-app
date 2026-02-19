@@ -2,26 +2,7 @@
 
 import React from "react";
 import { MessageCircle, Heart } from "lucide-react";
-
-function ShareArrowIcon({ size = 20 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 2v13" />
-      <path d="m16 6-4-4-4 4" />
-      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-    </svg>
-  );
-}
+import ShareButton from "@/components/buttons/ShareButton";
 
 export type ActionRowVariant = "feed" | "main";
 
@@ -35,7 +16,9 @@ type Props = {
 
   onReply?: (e: any) => void;
   onLike?: (e: any) => void;
-  onShare?: (e: any) => void;
+
+  // ✅ NEW: if provided, show the Share button
+  sharePath?: string;
 };
 
 export default function ActionRow({
@@ -46,7 +29,7 @@ export default function ActionRow({
   likedByMe = false,
   onReply,
   onLike,
-  onShare,
+  sharePath,
 }: Props) {
   const isMain = variant === "main";
 
@@ -117,7 +100,7 @@ export default function ActionRow({
           ...iconButtonBase,
           ...actionSlotStyle,
           padding: "6px 10px",
-          color: likedByMe ? "#f91880" : "#555", // ✅ persistent color
+          color: likedByMe ? "#f91880" : "#555",
         }}
         onMouseEnter={(e) => {
           e.currentTarget.style.transform = "translateY(-1px)";
@@ -126,7 +109,7 @@ export default function ActionRow({
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.transform = "translateY(0)";
-          e.currentTarget.style.color = likedByMe ? "#f91880" : "#555"; // ✅ keep pink if liked
+          e.currentTarget.style.color = likedByMe ? "#f91880" : "#555";
           e.currentTarget.style.background = "transparent";
         }}
       >
@@ -139,23 +122,12 @@ export default function ActionRow({
         <span style={countStyle}>{likeCount}</span>
       </button>
 
-      {/* Share */}
-      <button
-        onClick={onShare}
-        style={iconButtonBase}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.transform = "translateY(-1px)";
-          e.currentTarget.style.color = "#1d9bf0";
-          e.currentTarget.style.background = "#1d9bf01a";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = "translateY(0)";
-          e.currentTarget.style.color = "#555";
-          e.currentTarget.style.background = "transparent";
-        }}
-      >
-        <ShareArrowIcon size={iconSize} />
-      </button>
+      {/* ✅ Share */}
+      {sharePath ? (
+        <ShareButton iconSize={iconSize} path={sharePath} />
+      ) : (
+        <div />
+      )}
     </div>
   );
 }

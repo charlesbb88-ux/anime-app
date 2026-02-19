@@ -6,6 +6,7 @@ import { useRouter } from "next/router";
 import { Check } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { createAnimeEpisodeLog } from "@/lib/logs";
+import AuthGate from "@/components/AuthGate";
 
 type EpisodeRow = {
   id: string;
@@ -405,7 +406,7 @@ export default function AnimeQuickLogRow({
 
     try {
       (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
-    } catch {}
+    } catch { }
 
     if (!nextEpisode) {
       setSwipeX(0);
@@ -452,87 +453,89 @@ export default function AnimeQuickLogRow({
       ) : !nextEpisode ? (
         <div className="px-3 py-2 text-xs text-gray-400">You’re caught up ✅</div>
       ) : (
-        <div className="relative overflow-hidden">
-          {/* green action revealed by swipe */}
-          <div className="absolute inset-0 flex items-center justify-center bg-green-500">
-            <div className="text-[14px] font-semibold text-white">Episode Logged</div>
-          </div>
+        <AuthGate>
+          <div className="relative overflow-hidden">
+            {/* green action revealed by swipe */}
+            <div className="absolute inset-0 flex items-center justify-center bg-green-500">
+              <div className="text-[14px] font-semibold text-white">Episode Logged</div>
+            </div>
 
-          {/* sliding foreground */}
-          <div
-            className={[
-              "relative border-x border-gray-800 bg-black",
-              isDisabled ? "opacity-80" : "",
-              "touch-pan-y select-none cursor-pointer",
-            ].join(" ")}
-            style={{
-              transform: `translateX(${swipeX}px)`,
-              transition,
-              willChange: "transform",
-              touchAction: "pan-y",
-            }}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUpOrCancel}
-            onPointerCancel={onPointerUpOrCancel}
-          >
-            <div className="flex items-center justify-between gap-2 px-3 py-2">
-              <div className="min-w-0">
-                <div className="text-[12px] font-semibold text-gray-100">
-                  Ep {nextEpisode.episode_number}
+            {/* sliding foreground */}
+            <div
+              className={[
+                "relative border-x border-gray-800 bg-black",
+                isDisabled ? "opacity-80" : "",
+                "touch-pan-y select-none cursor-pointer",
+              ].join(" ")}
+              style={{
+                transform: `translateX(${swipeX}px)`,
+                transition,
+                willChange: "transform",
+                touchAction: "pan-y",
+              }}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUpOrCancel}
+              onPointerCancel={onPointerUpOrCancel}
+            >
+              <div className="flex items-center justify-between gap-2 px-3 py-2">
+                <div className="min-w-0">
+                  <div className="text-[12px] font-semibold text-gray-100">
+                    Ep {nextEpisode.episode_number}
+                  </div>
+                  {title ? (
+                    <div className="mt-0.5 truncate text-[11px] text-gray-500">{title}</div>
+                  ) : null}
                 </div>
-                {title ? (
-                  <div className="mt-0.5 truncate text-[11px] text-gray-500">{title}</div>
-                ) : null}
-              </div>
 
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  data-no-swipe="true"
-                  type="button"
-                  disabled={isDisabled}
-                  onClick={() => {
-                    startReviewPoll(nextEpisode);
-                    onOpenLog(nextEpisode.id);
-                  }}
-                  className={[
-                    "relative rounded-md border px-3 py-1.5 text-[11px] font-semibold",
-                    "transition-all duration-150 cursor-pointer",
-                    "border-gray-700 text-gray-200",
-                    "hover:border-sky-500/70 hover:bg-sky-500/10",
-                    "active:bg-sky-500/20 active:scale-[0.98]",
-                    "focus:outline-none focus:ring-2 focus:ring-sky-500/30",
-                    isDisabled ? "opacity-60 cursor-not-allowed" : "",
-                  ].join(" ")}
-                >
-                  Review
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    data-no-swipe="true"
+                    type="button"
+                    disabled={isDisabled}
+                    onClick={() => {
+                      startReviewPoll(nextEpisode);
+                      onOpenLog(nextEpisode.id);
+                    }}
+                    className={[
+                      "relative rounded-md border px-3 py-1.5 text-[11px] font-semibold",
+                      "transition-all duration-150 cursor-pointer",
+                      "border-gray-700 text-gray-200",
+                      "hover:border-sky-500/70 hover:bg-sky-500/10",
+                      "active:bg-sky-500/20 active:scale-[0.98]",
+                      "focus:outline-none focus:ring-2 focus:ring-sky-500/30",
+                      isDisabled ? "opacity-60 cursor-not-allowed" : "",
+                    ].join(" ")}
+                  >
+                    Review
+                  </button>
 
-                <button
-                  data-no-swipe="true"
-                  type="button"
-                  disabled={isDisabled}
-                  onClick={() => {
-                    if (!nextEpisode) return;
-                    animateSwipeAndLog(nextEpisode);
-                  }}
-                  className={[
-                    "relative inline-flex h-8 w-8 items-center justify-center rounded-full border",
-                    "transition-all duration-150 cursor-pointer",
-                    "border-gray-700 text-gray-200",
-                    "hover:border-sky-400 hover:bg-sky-500/20",
-                    "active:scale-95",
-                    "focus:outline-none focus:ring-2 focus:ring-sky-500/40",
-                    isDisabled ? "opacity-60 cursor-not-allowed" : "",
-                  ].join(" ")}
-                  aria-label={`Quick log episode ${nextEpisode.episode_number}`}
-                >
-                  <Check className="h-4 w-4" />
-                </button>
+                  <button
+                    data-no-swipe="true"
+                    type="button"
+                    disabled={isDisabled}
+                    onClick={() => {
+                      if (!nextEpisode) return;
+                      animateSwipeAndLog(nextEpisode);
+                    }}
+                    className={[
+                      "relative inline-flex h-8 w-8 items-center justify-center rounded-full border",
+                      "transition-all duration-150 cursor-pointer",
+                      "border-gray-700 text-gray-200",
+                      "hover:border-sky-400 hover:bg-sky-500/20",
+                      "active:scale-95",
+                      "focus:outline-none focus:ring-2 focus:ring-sky-500/40",
+                      isDisabled ? "opacity-60 cursor-not-allowed" : "",
+                    ].join(" ")}
+                    aria-label={`Quick log episode ${nextEpisode.episode_number}`}
+                  >
+                    <Check className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </AuthGate>
       )}
     </div>
   );

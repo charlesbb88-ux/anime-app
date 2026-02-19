@@ -736,10 +736,7 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
           e.stopPropagation();
           onToggleLike?.(postId, e);
         }}
-        onShare={(e: React.MouseEvent<HTMLButtonElement>) => {
-          e.stopPropagation();
-          onShareClick?.(postId, e);
-        }}
+        sharePath={`/posts/${postId}`}
       />
     </div>
   );
