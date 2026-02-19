@@ -552,10 +552,7 @@ export default function CommentRow(props: CommentRowProps) {
           e.stopPropagation();
           onToggleLike?.(id, e);
         }}
-        onShare={(e: React.MouseEvent<HTMLButtonElement>) => {
-          e.stopPropagation();
-          onShareClick?.(id, e);
-        }}
+        sharePath={`/posts/${id}`}
       />
     </div>
   );

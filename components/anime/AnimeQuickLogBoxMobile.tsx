@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { buildChapterNavGroups } from "@/lib/chapterNavigation";
 import type { NavGroup } from "@/lib/chapterNavigation";
 import { createAnimeEpisodeLog } from "@/lib/logs";
+import AuthGate from "@/components/AuthGate";
 
 import AnimeQuickLogRowMobile from "@/components/anime/AnimeQuickLogRowMobile";
 
@@ -862,76 +863,77 @@ export default function AnimeQuickLogBoxMobile({
                                                                                             </div>
                                                                                         ) : null}
                                                                                     </div>
+                                                                                    <AuthGate>
+                                                                                        <div className="flex items-center gap-2 shrink-0">
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                disabled={!canInteract || rowBusy}
+                                                                                                onClick={() => {
+                                                                                                    if (innerDrag.drag.current.moved) return;
+                                                                                                    onOpenLog(ep.id);
+                                                                                                    setReviewBump((n) => n + 1);
+                                                                                                }}
+                                                                                                className={[
+                                                                                                    // mobile: slightly larger button
+                                                                                                    "relative rounded-md border px-3.5 py-2 text-[11px] font-semibold",
+                                                                                                    "transition-all duration-150",
+                                                                                                    hasReview
+                                                                                                        ? "border-sky-500/70 text-sky-300 bg-sky-500/10"
+                                                                                                        : "border-gray-700 text-gray-200",
+                                                                                                    "hover:border-sky-500/70 hover:bg-sky-500/10",
+                                                                                                    "active:bg-sky-500/20 active:scale-[0.98]",
+                                                                                                    "focus:outline-none focus:ring-2 focus:ring-sky-500/30",
+                                                                                                    !canInteract || rowBusy
+                                                                                                        ? "opacity-60 cursor-not-allowed"
+                                                                                                        : "",
+                                                                                                ].join(" ")}
+                                                                                            >
+                                                                                                Review
+                                                                                                {showReviewBadge ? (
+                                                                                                    <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-bold leading-none text-black">
+                                                                                                        {reviewCount}
+                                                                                                    </span>
+                                                                                                ) : null}
+                                                                                            </button>
 
-                                                                                    <div className="flex items-center gap-2 shrink-0">
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            disabled={!canInteract || rowBusy}
-                                                                                            onClick={() => {
-                                                                                                if (innerDrag.drag.current.moved) return;
-                                                                                                onOpenLog(ep.id);
-                                                                                                setReviewBump((n) => n + 1);
-                                                                                            }}
-                                                                                            className={[
-                                                                                                // mobile: slightly larger button
-                                                                                                "relative rounded-md border px-3.5 py-2 text-[11px] font-semibold",
-                                                                                                "transition-all duration-150",
-                                                                                                hasReview
-                                                                                                    ? "border-sky-500/70 text-sky-300 bg-sky-500/10"
-                                                                                                    : "border-gray-700 text-gray-200",
-                                                                                                "hover:border-sky-500/70 hover:bg-sky-500/10",
-                                                                                                "active:bg-sky-500/20 active:scale-[0.98]",
-                                                                                                "focus:outline-none focus:ring-2 focus:ring-sky-500/30",
-                                                                                                !canInteract || rowBusy
-                                                                                                    ? "opacity-60 cursor-not-allowed"
-                                                                                                    : "",
-                                                                                            ].join(" ")}
-                                                                                        >
-                                                                                            Review
-                                                                                            {showReviewBadge ? (
-                                                                                                <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-bold leading-none text-black">
-                                                                                                    {reviewCount}
-                                                                                                </span>
-                                                                                            ) : null}
-                                                                                        </button>
-
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            disabled={!canInteract || rowBusy}
-                                                                                            onClick={() => {
-                                                                                                if (innerDrag.drag.current.moved) return;
-                                                                                                quickLogEpisode(ep);
-                                                                                            }}
-                                                                                            className={[
-                                                                                                "relative inline-flex h-9 w-9 items-center justify-center rounded-full border",
-                                                                                                "transition-all duration-150",
-                                                                                                isLogged
-                                                                                                    ? "border-sky-500 text-sky-400 bg-sky-500/10"
-                                                                                                    : "border-gray-700 text-gray-200",
-                                                                                                "hover:border-sky-400 hover:bg-sky-500/20",
-                                                                                                "active:scale-95",
-                                                                                                "focus:outline-none focus:ring-2 focus:ring-sky-500/40",
-                                                                                                !canInteract || rowBusy
-                                                                                                    ? "opacity-60 cursor-not-allowed"
-                                                                                                    : "",
-                                                                                            ].join(" ")}
-                                                                                            aria-label={`Quick log episode ${ep.episode_number}`}
-                                                                                            title={
-                                                                                                isLogged
-                                                                                                    ? logCount > 1
-                                                                                                        ? `Logged ${logCount} times`
-                                                                                                        : "Logged"
-                                                                                                    : "Quick log"
-                                                                                            }
-                                                                                        >
-                                                                                            <Check className="h-4 w-4" />
-                                                                                            {showLogBadge ? (
-                                                                                                <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-bold leading-none text-black">
-                                                                                                    {logCount}
-                                                                                                </span>
-                                                                                            ) : null}
-                                                                                        </button>
-                                                                                    </div>
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                disabled={!canInteract || rowBusy}
+                                                                                                onClick={() => {
+                                                                                                    if (innerDrag.drag.current.moved) return;
+                                                                                                    quickLogEpisode(ep);
+                                                                                                }}
+                                                                                                className={[
+                                                                                                    "relative inline-flex h-9 w-9 items-center justify-center rounded-full border",
+                                                                                                    "transition-all duration-150",
+                                                                                                    isLogged
+                                                                                                        ? "border-sky-500 text-sky-400 bg-sky-500/10"
+                                                                                                        : "border-gray-700 text-gray-200",
+                                                                                                    "hover:border-sky-400 hover:bg-sky-500/20",
+                                                                                                    "active:scale-95",
+                                                                                                    "focus:outline-none focus:ring-2 focus:ring-sky-500/40",
+                                                                                                    !canInteract || rowBusy
+                                                                                                        ? "opacity-60 cursor-not-allowed"
+                                                                                                        : "",
+                                                                                                ].join(" ")}
+                                                                                                aria-label={`Quick log episode ${ep.episode_number}`}
+                                                                                                title={
+                                                                                                    isLogged
+                                                                                                        ? logCount > 1
+                                                                                                            ? `Logged ${logCount} times`
+                                                                                                            : "Logged"
+                                                                                                        : "Quick log"
+                                                                                                }
+                                                                                            >
+                                                                                                <Check className="h-4 w-4" />
+                                                                                                {showLogBadge ? (
+                                                                                                    <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-bold leading-none text-black">
+                                                                                                        {logCount}
+                                                                                                    </span>
+                                                                                                ) : null}
+                                                                                            </button>
+                                                                                        </div>
+                                                                                    </AuthGate>
                                                                                 </div>
                                                                             );
                                                                         })}

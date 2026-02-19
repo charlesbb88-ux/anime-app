@@ -12,6 +12,7 @@ import {
   getMyAnimeRatingMark,
   setMyAnimeRatingMark,
 } from "@/lib/marks";
+import AuthGate from "@/components/AuthGate";
 
 type Props = {
   onOpenLog: () => void;
@@ -186,141 +187,143 @@ export default function ActionBoxMobile({
   const disableMarksUi = !marksEnabled;
 
   return (
-    <div
-      className={[
-        // ✅ full width on mobile
-        "w-full max-w-none",
-        "overflow-hidden rounded-lg border border-gray-800 bg-[#000000] text-gray-200 shadow-sm",
-      ].join(" ")}
-    >
-      {/* TOP ACTIONS */}
-      <div className="grid grid-cols-3">
-        <TopActionMobile
-          icon={
-            <Eye
-              className={[
-                "h-6 w-6",
-                isWatched ? "text-emerald-400" : "text-gray-300",
-                watchBusy ? "opacity-60" : "",
-              ].join(" ")}
-            />
-          }
-          label={isWatched ? "Watched" : "Watch"}
-          pressed={isWatched}
-          onClick={toggleWatched}
-          disabled={disableMarksUi || watchBusy}
-        />
+    <AuthGate>
+      <div
+        className={[
+          // ✅ full width on mobile
+          "w-full max-w-none",
+          "overflow-hidden rounded-lg border border-gray-800 bg-[#000000] text-gray-200 shadow-sm",
+        ].join(" ")}
+      >
+        {/* TOP ACTIONS */}
+        <div className="grid grid-cols-3">
+          <TopActionMobile
+            icon={
+              <Eye
+                className={[
+                  "h-6 w-6",
+                  isWatched ? "text-emerald-400" : "text-gray-300",
+                  watchBusy ? "opacity-60" : "",
+                ].join(" ")}
+              />
+            }
+            label={isWatched ? "Watched" : "Watch"}
+            pressed={isWatched}
+            onClick={toggleWatched}
+            disabled={disableMarksUi || watchBusy}
+          />
 
-        <TopActionMobile
-          icon={
-            <Heart
-              className={[
-                "h-6 w-6",
-                isLiked ? "text-red-400" : "text-gray-300",
-                likeBusy ? "opacity-60" : "",
-              ].join(" ")}
-            />
-          }
-          label="Like"
-          pressed={isLiked}
-          onClick={toggleLiked}
-          disabled={disableMarksUi || likeBusy}
-        />
+          <TopActionMobile
+            icon={
+              <Heart
+                className={[
+                  "h-6 w-6",
+                  isLiked ? "text-red-400" : "text-gray-300",
+                  likeBusy ? "opacity-60" : "",
+                ].join(" ")}
+              />
+            }
+            label="Like"
+            pressed={isLiked}
+            onClick={toggleLiked}
+            disabled={disableMarksUi || likeBusy}
+          />
 
-        <TopActionMobile
-          icon={
-            <BookmarkPlus
-              className={[
-                "h-6 w-6",
-                inWatchlist ? "text-sky-400" : "text-gray-300",
-                watchlistBusy ? "opacity-60" : "",
-              ].join(" ")}
-            />
-          }
-          label="Watchlist"
-          pressed={inWatchlist}
-          onClick={toggleWatchlist}
-          disabled={disableMarksUi || watchlistBusy}
-          hideRightDivider
-        />
-      </div>
-
-      <Divider />
-
-      {/* RATING (half-star) */}
-      <div className="px-5 py-2">
-        <div className="mb-1 text-center text-sm font-semibold text-gray-300">
-          {halfStars == null ? "Rate" : "Rated"}
-          {isManga ? (
-            <span className="ml-2 text-xs font-normal text-gray-400">
-              (marks not wired yet)
-            </span>
-          ) : null}
+          <TopActionMobile
+            icon={
+              <BookmarkPlus
+                className={[
+                  "h-6 w-6",
+                  inWatchlist ? "text-sky-400" : "text-gray-300",
+                  watchlistBusy ? "opacity-60" : "",
+                ].join(" ")}
+              />
+            }
+            label="Watchlist"
+            pressed={inWatchlist}
+            onClick={toggleWatchlist}
+            disabled={disableMarksUi || watchlistBusy}
+            hideRightDivider
+          />
         </div>
 
-        <div className="flex justify-center gap-2">
-          {Array.from({ length: 5 }).map((_, i) => {
-            const starIndex = i + 1;
-            const filled = computeStarFillPercent(shownHalfStars, starIndex);
+        <Divider />
 
-            return (
-              <div
-                key={starIndex}
-                className="relative"
-                onMouseLeave={() => setHoverHalfStars(null)}
-              >
-                <StarVisualMobile
-                  filledPercent={filled}
-                  dim={ratingBusy || disableMarksUi}
-                />
+        {/* RATING (half-star) */}
+        <div className="px-5 py-2">
+          <div className="mb-1 text-center text-sm font-semibold text-gray-300">
+            {halfStars == null ? "Rate" : "Rated"}
+            {isManga ? (
+              <span className="ml-2 text-xs font-normal text-gray-400">
+                (marks not wired yet)
+              </span>
+            ) : null}
+          </div>
 
-                <button
-                  type="button"
-                  disabled={disableMarksUi || ratingBusy}
-                  className="absolute inset-y-0 left-0 w-1/2"
-                  onMouseEnter={() => setHoverHalfStars(starIndex * 2 - 1)}
-                  onFocus={() => setHoverHalfStars(starIndex * 2 - 1)}
-                  onClick={() => setRatingHalfStars(starIndex * 2 - 1)}
-                  aria-label={`Rate ${starIndex - 0.5} stars`}
-                  title={`Rate ${starIndex - 0.5} stars`}
-                />
+          <div className="flex justify-center gap-2">
+            {Array.from({ length: 5 }).map((_, i) => {
+              const starIndex = i + 1;
+              const filled = computeStarFillPercent(shownHalfStars, starIndex);
 
-                <button
-                  type="button"
-                  disabled={disableMarksUi || ratingBusy}
-                  className="absolute inset-y-0 right-0 w-1/2"
-                  onMouseEnter={() => setHoverHalfStars(starIndex * 2)}
-                  onFocus={() => setHoverHalfStars(starIndex * 2)}
-                  onClick={() => setRatingHalfStars(starIndex * 2)}
-                  aria-label={`Rate ${starIndex} stars`}
-                  title={`Rate ${starIndex} stars`}
-                />
-              </div>
-            );
-          })}
+              return (
+                <div
+                  key={starIndex}
+                  className="relative"
+                  onMouseLeave={() => setHoverHalfStars(null)}
+                >
+                  <StarVisualMobile
+                    filledPercent={filled}
+                    dim={ratingBusy || disableMarksUi}
+                  />
+
+                  <button
+                    type="button"
+                    disabled={disableMarksUi || ratingBusy}
+                    className="absolute inset-y-0 left-0 w-1/2"
+                    onMouseEnter={() => setHoverHalfStars(starIndex * 2 - 1)}
+                    onFocus={() => setHoverHalfStars(starIndex * 2 - 1)}
+                    onClick={() => setRatingHalfStars(starIndex * 2 - 1)}
+                    aria-label={`Rate ${starIndex - 0.5} stars`}
+                    title={`Rate ${starIndex - 0.5} stars`}
+                  />
+
+                  <button
+                    type="button"
+                    disabled={disableMarksUi || ratingBusy}
+                    className="absolute inset-y-0 right-0 w-1/2"
+                    onMouseEnter={() => setHoverHalfStars(starIndex * 2)}
+                    onFocus={() => setHoverHalfStars(starIndex * 2)}
+                    onClick={() => setRatingHalfStars(starIndex * 2)}
+                    aria-label={`Rate ${starIndex} stars`}
+                    title={`Rate ${starIndex} stars`}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <Divider />
+
+        {/* ROW 3 */}
+        <div className="grid grid-cols-2">
+          <HalfRowActionMobile disabled={!onShowActivity} onClick={onShowActivity} left>
+            Your Activity
+          </HalfRowActionMobile>
+
+          <HalfRowActionMobile onClick={onOpenLog} right emphasis>
+            Log / Review
+          </HalfRowActionMobile>
+        </div>
+
+        <Divider />
+
+        {/* ROW 4 */}
+        <div className="flex flex-col">
+          <MenuRowMobile center>Share</MenuRowMobile>
         </div>
       </div>
-
-      <Divider />
-
-      {/* ROW 3 */}
-      <div className="grid grid-cols-2">
-        <HalfRowActionMobile disabled={!onShowActivity} onClick={onShowActivity} left>
-          Your Activity
-        </HalfRowActionMobile>
-
-        <HalfRowActionMobile onClick={onOpenLog} right emphasis>
-          Log / Review
-        </HalfRowActionMobile>
-      </div>
-
-      <Divider />
-
-      {/* ROW 4 */}
-      <div className="flex flex-col">
-        <MenuRowMobile center>Share</MenuRowMobile>
-      </div>
-    </div>
+    </AuthGate>
   );
 }
 

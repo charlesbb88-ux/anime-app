@@ -489,10 +489,7 @@ function ThreadRow(props: ThreadRowProps) {
           e.stopPropagation();
           onToggleLike?.(id, e);
         }}
-        onShare={(e: React.MouseEvent<HTMLButtonElement>) => {
-          e.stopPropagation();
-          onShareClick?.(id, e);
-        }}
+        sharePath={`/posts/${id}`}
       />
     </div>
   );
