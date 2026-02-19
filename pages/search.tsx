@@ -148,7 +148,7 @@ export default function SearchPage() {
   const showEmpty = !qtrim && !loading;
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-4 pb-10 pt-6">
+    <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-6">
       <div className="mb-5">
         <div className="text-xl font-semibold text-slate-900">Search</div>
         <div className="mt-1 text-sm text-slate-500">
