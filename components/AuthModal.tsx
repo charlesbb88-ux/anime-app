@@ -4,7 +4,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useRouter } from "next/router";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, ChevronLeft, X } from "lucide-react";
 
 type AuthModalProps = {
   isOpen: boolean;
@@ -109,7 +109,6 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
 
     setBusy(true);
 
-    // If they typed a username, convert it -> email by looking up profiles.
     let emailToUse: string | null = null;
 
     if (isLikelyEmail(id)) {
@@ -142,44 +141,53 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
     if (!password || password.length < 8) return setMsg("Password must be at least 8 characters.");
     if (!u2) return setMsg("Choose a username.");
     if (!isValidUsername(u2)) {
-      return setMsg("Username must be 3–20 characters: lowercase letters, numbers, underscore.");
+      return setMsg("Username must be 3–20 chars: lowercase letters, numbers, underscore.");
     }
 
     setBusy(true);
 
+    // ✅ 1) Reserve username first (atomic)
+    {
+      const { error } = await supabase.rpc("claim_username", { p_username: u2 });
+      if (error) {
+        setBusy(false);
+        // our function throws 'username_taken'
+        const m = (error.message || "").toLowerCase();
+        if (m.includes("username_taken")) return setMsg("That username is already taken.");
+        if (m.includes("invalid_username")) {
+          return setMsg("Username must be 3–20 chars: lowercase letters, numbers, underscore.");
+        }
+        return setMsg("Could not check username. Please try again.");
+      }
+    }
+
+    // ✅ 2) Create auth user (store username in user metadata)
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+
     const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
       email: e2,
       password,
+      options: {
+        emailRedirectTo: `${origin}${nextUrl}`,
+        data: {
+          username: u2, // ✅ store here so the DB trigger can copy it into profiles
+        },
+      },
     });
 
     if (signUpErr) {
+      await supabase.rpc("release_username", { p_username: u2 });
       setBusy(false);
       return setMsg(signUpErr.message || "Could not sign up.");
     }
 
-    const userId = signUpData.user?.id;
-
-    if (userId) {
-      const { error: updErr } = await supabase
-        .from("profiles")
-        .update({ username: u2 })
-        .eq("id", userId);
-
-      if (updErr) {
-        const m = (updErr as any)?.message?.toLowerCase?.() || "";
-        setBusy(false);
-        if (m.includes("duplicate") || m.includes("unique")) {
-          return setMsg("That username is already taken.");
-        }
-        return setMsg("Account created, but username could not be saved. Try again after logging in.");
-      }
-    }
-
+    // ✅ If email confirmation is ON, session will be null.
+    // That’s expected. Username will be applied by the trigger.
     setBusy(false);
 
-    const { data: now } = await supabase.auth.getUser();
-    if (!now.user) {
-      return setMsg("Check your email to confirm your account, then log in.");
+    if (!signUpData.session) {
+      return setMsg(`We sent a confirmation email to ${e2}. Please confirm to finish signing up.`);
     }
 
     onClose();
@@ -213,9 +221,6 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
   function goBack() {
     setMsg(null);
 
-    // TikTok-like back behavior:
-    // - from reset -> back to email login
-    // - from email -> back to chooser
     if (step === "reset") {
       setStep("email");
       return;
@@ -236,12 +241,23 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
     setResetEmail("");
   }
 
-  // Button row style like TikTok list
+  // ✅ Constrain the “content column” so buttons/inputs don’t stretch to modal edges
+  const contentCol = "mx-auto w-full max-w-[380px]";
+
+  // ✅ TikTok-style row button (icon left, text centered)
+  // NOTE: Tailwind doesn't have text-md — use text-base
   const rowBtn =
     "w-full h-12 rounded-xl border border-black/10 bg-white hover:bg-black/[0.03] " +
-    "flex items-center justify-center gap-2 text-sm font-semibold";
+    "grid grid-cols-[52px_1fr_52px] items-center text-base font-semibold";
 
-  const iconBox = "w-9 h-9 rounded-lg bg-black/[0.04] flex items-center justify-center";
+  const rowIcon = "flex items-center justify-center text-black";
+  const rowLabel = "text-center";
+  const rowSpacer = "block";
+
+  // ✅ Top icon buttons: bigger, perfectly centered, consistent hover circle
+  const topIconBtn =
+    "absolute grid place-items-center w-12 h-12 rounded-full hover:bg-black/5 active:bg-black/10";
+  const topIcon = "text-black/80";
 
   return (
     <div
@@ -254,26 +270,28 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
       >
         {/* Top bar */}
         <div className="relative px-6 pt-6">
-          {/* Back arrow (only when not chooser) */}
           {step !== "chooser" && (
             <button
               type="button"
               onClick={goBack}
-              className="absolute left-4 top-5 w-10 h-10 rounded-full hover:bg-black/5 flex items-center justify-center"
               aria-label="Back"
+              className={`${topIconBtn} left-3 top-3`}
             >
-              <span style={{ fontSize: 22, lineHeight: 1 }}>‹</span>
+              <ChevronLeft
+                size={30}
+                strokeWidth={2.75}
+                className={`${topIcon} translate-x-[-1px]`}
+              />
             </button>
           )}
 
-          {/* Close X */}
           <button
             type="button"
             onClick={closeAndReset}
-            className="absolute right-4 top-5 w-10 h-10 rounded-full hover:bg-black/5 flex items-center justify-center"
             aria-label="Close"
+            className={`${topIconBtn} right-3 top-3`}
           >
-            <span style={{ fontSize: 18, lineHeight: 1 }}>✕</span>
+            <X size={28} strokeWidth={2.75} className={topIcon} />
           </button>
 
           <h2 className="text-center text-3xl font-extrabold tracking-tight">{title}</h2>
@@ -287,263 +305,265 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
 
         {/* Content */}
         <div className="px-6 pb-2 pt-6">
-          {/* STEP 1: chooser */}
-          {step === "chooser" && (
-            <div className="space-y-3">
-              {localMode === "login" ? (
-                <>
-                  <button
-                    className={rowBtn}
-                    onClick={() => setStep("email")}
-                    disabled={busy}
-                    type="button"
-                  >
-                    <span className={iconBox}>👤</span>
-                    Use email / username
-                  </button>
-
-                  <button
-                    className={rowBtn}
-                    onClick={() => signInWithOAuth("google")}
-                    disabled={busy}
-                    type="button"
-                  >
-                    <span className={iconBox}>G</span>
-                    Continue with Google
-                  </button>
-
-                  <button
-                    className={rowBtn}
-                    onClick={() => signInWithOAuth("apple")}
-                    disabled={busy}
-                    type="button"
-                  >
-                    <span className={iconBox}></span>
-                    Continue with Apple
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    className={rowBtn}
-                    onClick={() => setStep("email")}
-                    disabled={busy}
-                    type="button"
-                  >
-                    <span className={iconBox}>✉️</span>
-                    Use email
-                  </button>
-
-                  <button
-                    className={rowBtn}
-                    onClick={() => signInWithOAuth("apple")}
-                    disabled={busy}
-                    type="button"
-                  >
-                    <span className={iconBox}></span>
-                    Continue with Apple
-                  </button>
-
-                  <button
-                    className={rowBtn}
-                    onClick={() => signInWithOAuth("google")}
-                    disabled={busy}
-                    type="button"
-                  >
-                    <span className={iconBox}>G</span>
-                    Continue with Google
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* STEP 2: email */}
-          {step === "email" && (
-            <div className="mt-2">
-              {localMode === "login" ? (
-                <form onSubmit={handleLogin} className="space-y-3">
-                  <div>
-                    <label className="block text-sm font-semibold mb-1">Email or username</label>
-                    <input
-                      value={identifier}
-                      onChange={(e) => setIdentifier(e.target.value)}
-                      className="w-full h-12 rounded-xl border border-black/15 px-4 text-sm outline-none focus:border-black"
-                      placeholder="Email or username"
-                      autoComplete="username"
-                      disabled={busy}
-                    />
-                    <p className="text-xs text-black/45 mt-1">
-                      (Username login can be enabled with a tiny RPC; right now email login is supported.)
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold mb-1">Password</label>
-
-                    <div className="relative">
-                      <input
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        type={showPassword ? "text" : "password"}
-                        className="w-full h-12 rounded-xl border border-black/15 pl-4 pr-12 text-sm outline-none focus:border-black"
-                        placeholder="Password"
-                        autoComplete="current-password"
-                        disabled={busy}
-                      />
-
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword((v) => !v)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full hover:bg-black/5 flex items-center justify-center text-black/60 hover:text-black"
-                        aria-label={showPassword ? "Hide password" : "Show password"}
-                        disabled={busy}
-                      >
-                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between">
+          <div className={contentCol}>
+            {/* STEP 1: chooser */}
+            {step === "chooser" && (
+              <div className="space-y-3">
+                {localMode === "login" ? (
+                  <>
                     <button
-                      type="button"
-                      onClick={() => {
-                        setMsg(null);
-                        // prefill reset email if they typed an email in identifier
-                        const maybe = identifier.trim();
-                        setResetEmail(isLikelyEmail(maybe) ? maybe : "");
-                        setStep("reset");
-                      }}
-                      className="text-sm text-black/60 hover:text-black"
+                      className={rowBtn}
+                      onClick={() => setStep("email")}
                       disabled={busy}
+                      type="button"
                     >
-                      Forgot password?
+                      <span className={rowIcon}>👤</span>
+                      <span className={rowLabel}>Use email</span>
+                      <span className={rowSpacer} />
                     </button>
 
-                    {/* optional spacer / keep right side empty like TikTok */}
-                    <span />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={busy}
-                    className="w-full h-12 rounded-xl bg-black text-white text-sm font-semibold disabled:opacity-60"
-                  >
-                    {busy ? "Logging in…" : "Log in"}
-                  </button>
-                </form>
-              ) : (
-                <form onSubmit={handleSignup} className="space-y-3">
-                  <div>
-                    <label className="block text-sm font-semibold mb-1">Email</label>
-                    <input
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      type="email"
-                      className="w-full h-12 rounded-xl border border-black/15 px-4 text-sm outline-none focus:border-black"
-                      placeholder="Email"
-                      autoComplete="email"
+                    <button
+                      className={rowBtn}
+                      onClick={() => signInWithOAuth("google")}
                       disabled={busy}
-                    />
-                  </div>
+                      type="button"
+                    >
+                      <span className={rowIcon}>G</span>
+                      <span className={rowLabel}>Continue with Google</span>
+                      <span className={rowSpacer} />
+                    </button>
 
-                  <div>
-                    <label className="block text-sm font-semibold mb-1">Username</label>
-                    <input
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      className="w-full h-12 rounded-xl border border-black/15 px-4 text-sm outline-none focus:border-black"
-                      placeholder="Username (lowercase)"
-                      autoComplete="username"
+                    <button
+                      className={rowBtn}
+                      onClick={() => signInWithOAuth("apple")}
                       disabled={busy}
-                    />
-                    <p className="text-xs text-black/45 mt-1">
-                      3–20 chars: lowercase letters, numbers, underscore.
-                    </p>
-                  </div>
+                      type="button"
+                    >
+                      <span className={rowIcon}></span>
+                      <span className={rowLabel}>Continue with Apple</span>
+                      <span className={rowSpacer} />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      className={rowBtn}
+                      onClick={() => setStep("email")}
+                      disabled={busy}
+                      type="button"
+                    >
+                      <span className={rowIcon}>✉️</span>
+                      <span className={rowLabel}>Use email</span>
+                      <span className={rowSpacer} />
+                    </button>
 
-                  <div>
-                    <label className="block text-sm font-semibold mb-1">Password</label>
+                    <button
+                      className={rowBtn}
+                      onClick={() => signInWithOAuth("apple")}
+                      disabled={busy}
+                      type="button"
+                    >
+                      <span className={rowIcon}></span>
+                      <span className={rowLabel}>Continue with Apple</span>
+                      <span className={rowSpacer} />
+                    </button>
 
-                    <div className="relative">
+                    <button
+                      className={rowBtn}
+                      onClick={() => signInWithOAuth("google")}
+                      disabled={busy}
+                      type="button"
+                    >
+                      <span className={rowIcon}>G</span>
+                      <span className={rowLabel}>Continue with Google</span>
+                      <span className={rowSpacer} />
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* STEP 2: email */}
+            {step === "email" && (
+              <div className="mt-2">
+                {localMode === "login" ? (
+                  <form onSubmit={handleLogin} className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-semibold mb-1">Email or username</label>
                       <input
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        type={showPassword ? "text" : "password"}
-                        className="w-full h-12 rounded-xl border border-black/15 pl-4 pr-12 text-sm outline-none focus:border-black"
-                        placeholder="Password (8+ characters)"
-                        autoComplete="new-password"
+                        value={identifier}
+                        onChange={(e) => setIdentifier(e.target.value)}
+                        className="w-full h-12 rounded-xl border border-black/15 px-4 text-sm outline-none focus:border-black"
+                        placeholder="Email or username"
+                        autoComplete="username"
                         disabled={busy}
                       />
+                    </div>
 
+                    <div>
+                      <label className="block text-sm font-semibold mb-1">Password</label>
+
+                      <div className="relative">
+                        <input
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          type={showPassword ? "text" : "password"}
+                          className="w-full h-12 rounded-xl border border-black/15 pl-4 pr-12 text-sm outline-none focus:border-black"
+                          placeholder="Password"
+                          autoComplete="current-password"
+                          disabled={busy}
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword((v) => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full hover:bg-black/5 flex items-center justify-center text-black/60 hover:text-black"
+                          aria-label={showPassword ? "Hide password" : "Show password"}
+                          disabled={busy}
+                        >
+                          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
                       <button
                         type="button"
-                        onClick={() => setShowPassword((v) => !v)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full hover:bg-black/5 flex items-center justify-center text-black/60 hover:text-black"
-                        aria-label={showPassword ? "Hide password" : "Show password"}
+                        onClick={() => {
+                          setMsg(null);
+                          const maybe = identifier.trim();
+                          setResetEmail(isLikelyEmail(maybe) ? maybe : "");
+                          setStep("reset");
+                        }}
+                        className="text-sm text-black/60 hover:text-black"
                         disabled={busy}
                       >
-                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                        Forgot password?
                       </button>
+                      <span />
                     </div>
+
+                    <button
+                      type="submit"
+                      disabled={busy}
+                      className="w-full h-12 rounded-xl bg-black text-white text-sm font-semibold disabled:opacity-60"
+                    >
+                      {busy ? "Logging in…" : "Log in"}
+                    </button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleSignup} className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-semibold mb-1">Email</label>
+                      <input
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        type="email"
+                        className="w-full h-12 rounded-xl border border-black/15 px-4 text-sm outline-none focus:border-black"
+                        placeholder="Email"
+                        autoComplete="email"
+                        disabled={busy}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold mb-1">Username</label>
+                      <input
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        className="w-full h-12 rounded-xl border border-black/15 px-4 text-sm outline-none focus:border-black"
+                        placeholder="Username (lowercase)"
+                        autoComplete="username"
+                        disabled={busy}
+                      />
+                      <p className="text-xs text-black/45 mt-1">
+                        3–20 chars: lowercase letters, numbers, underscore.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold mb-1">Password</label>
+
+                      <div className="relative">
+                        <input
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          type={showPassword ? "text" : "password"}
+                          className="w-full h-12 rounded-xl border border-black/15 pl-4 pr-12 text-sm outline-none focus:border-black"
+                          placeholder="Password (8+ characters)"
+                          autoComplete="new-password"
+                          disabled={busy}
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword((v) => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full hover:bg-black/5 flex items-center justify-center text-black/60 hover:text-black"
+                          aria-label={showPassword ? "Hide password" : "Show password"}
+                          disabled={busy}
+                        >
+                          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={busy}
+                      className="w-full h-12 rounded-xl bg-black text-white text-sm font-semibold disabled:opacity-60"
+                    >
+                      {busy ? "Creating…" : "Sign up"}
+                    </button>
+                  </form>
+                )}
+              </div>
+            )}
+
+            {/* STEP 3: reset password */}
+            {step === "reset" && (
+              <div className="mt-2 space-y-3">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm font-semibold">Enter email address</label>
+                    <button
+                      type="button"
+                      className="text-sm text-black/60 hover:text-black"
+                      onClick={() => {
+                        setMsg(null);
+                        setStep("email");
+                      }}
+                      disabled={busy}
+                    >
+                      Log in with phone
+                    </button>
                   </div>
 
-                  <button
-                    type="submit"
+                  <input
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    type="email"
+                    className="w-full h-12 rounded-xl border border-black/15 px-4 text-sm outline-none focus:border-black"
+                    placeholder="Email address"
+                    autoComplete="email"
                     disabled={busy}
-                    className="w-full h-12 rounded-xl bg-black text-white text-sm font-semibold disabled:opacity-60"
-                  >
-                    {busy ? "Creating…" : "Sign up"}
-                  </button>
-                </form>
-              )}
-            </div>
-          )}
-
-          {/* STEP 3: reset password (TikTok-style inside modal) */}
-          {step === "reset" && (
-            <div className="mt-2 space-y-3">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-sm font-semibold">Enter email address</label>
-                  <button
-                    type="button"
-                    className="text-sm text-black/60 hover:text-black"
-                    onClick={() => {
-                      setMsg(null);
-                      setStep("email");
-                    }}
-                    disabled={busy}
-                  >
-                    Log in with phone
-                  </button>
+                  />
                 </div>
 
-                <input
-                  value={resetEmail}
-                  onChange={(e) => setResetEmail(e.target.value)}
-                  type="email"
-                  className="w-full h-12 rounded-xl border border-black/15 px-4 text-sm outline-none focus:border-black"
-                  placeholder="Email address"
-                  autoComplete="email"
+                <button
+                  type="button"
+                  onClick={handleSendReset}
                   disabled={busy}
-                />
+                  className="w-full h-12 rounded-xl bg-black text-white text-sm font-semibold disabled:opacity-60"
+                >
+                  {busy ? "Sending…" : "Send reset link"}
+                </button>
+
+                <p className="text-xs text-black/45 leading-relaxed">
+                  We’ll email you a reset link. Open it to set a new password.
+                </p>
               </div>
-
-              <button
-                type="button"
-                onClick={handleSendReset}
-                disabled={busy}
-                className="w-full h-12 rounded-xl bg-black text-white text-sm font-semibold disabled:opacity-60"
-              >
-                {busy ? "Sending…" : "Send reset link"}
-              </button>
-
-              <p className="text-xs text-black/45 leading-relaxed">
-                We’ll email you a reset link. Open it to set a new password.
-              </p>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Footer switch like TikTok */}

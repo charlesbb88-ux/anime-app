@@ -128,10 +128,6 @@ export default function FollowButton({ viewerUserId, profileId, isOwner }: Props
       {errorMsg ? (
         <div className="text-[12px] text-red-500/90">{errorMsg}</div>
       ) : null}
-
-      {!viewerUserId ? (
-        <div className="text-[12px] text-black/60">Sign in to follow</div>
-      ) : null}
     </div>
   );
 }

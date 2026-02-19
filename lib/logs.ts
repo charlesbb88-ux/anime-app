@@ -25,16 +25,46 @@ async function getVisibilityToUse(userId: string, visibility?: Visibility) {
   return "public" as Visibility;
 }
 
+/**
+ * ✅ Auth helper that NEVER treats "missing session" as an error.
+ * Logged-out users are a normal state: { userId: null, error: null }.
+ * Real errors (network/config/etc.) still return error.
+ */
 async function getAuthedUserId(): Promise<{ userId: string | null; error: any }> {
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
+  try {
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
 
-  if (error) return { userId: null, error };
-  if (!user) return { userId: null, error: new Error("Not authenticated") };
+    if (error) {
+      const msg = String((error as any)?.message ?? "");
+      const name = String((error as any)?.name ?? "");
 
-  return { userId: user.id, error: null };
+      const isMissingSession =
+        name === "AuthSessionMissingError" ||
+        msg.toLowerCase().includes("auth session missing");
+
+      if (isMissingSession) return { userId: null, error: null };
+
+      return { userId: null, error };
+    }
+
+    if (!user) return { userId: null, error: null };
+
+    return { userId: user.id, error: null };
+  } catch (e: any) {
+    const msg = String(e?.message ?? "");
+    const name = String(e?.name ?? "");
+
+    const isMissingSession =
+      name === "AuthSessionMissingError" ||
+      msg.toLowerCase().includes("auth session missing");
+
+    if (isMissingSession) return { userId: null, error: null };
+
+    return { userId: null, error: e };
+  }
 }
 
 /**
@@ -213,8 +243,12 @@ export async function getMyAnimeEpisodeLogCount(
   anime_episode_id: string
 ): Promise<{ count: number; error: any }> {
   const { userId, error: userError } = await getAuthedUserId();
+
+  // ✅ Real error (network/config/etc.)
   if (userError) return { count: 0, error: userError };
-  if (!userId) return { count: 0, error: new Error("Not authenticated") };
+
+  // ✅ Logged out is NOT an error
+  if (!userId) return { count: 0, error: null };
 
   const { count, error } = await supabase
     .from("anime_episode_logs")
@@ -414,7 +448,11 @@ export async function createMangaSeriesLog(
     created_at_iso: (log as any).logged_at ?? loggedAt,
   });
 
-  const normalized = { ...(log as any), is_rewatch: (log as any).is_reread } as MangaSeriesLogRow;
+  const normalized = {
+    ...(log as any),
+    is_rewatch: (log as any).is_reread,
+  } as MangaSeriesLogRow;
+
   return { data: normalized, error: null };
 }
 
@@ -517,7 +555,11 @@ export async function createMangaChapterLog(
     created_at_iso: (log as any).logged_at ?? loggedAt,
   });
 
-  const normalized = { ...(log as any), is_rewatch: (log as any).is_reread } as MangaChapterLogRow;
+  const normalized = {
+    ...(log as any),
+    is_rewatch: (log as any).is_reread,
+  } as MangaChapterLogRow;
+
   return { data: normalized, error: null };
 }
 
@@ -525,8 +567,12 @@ export async function getMyMangaChapterLogCount(
   manga_chapter_id: string
 ): Promise<{ count: number; error: any }> {
   const { userId, error: userError } = await getAuthedUserId();
+
+  // ✅ Real error (network/config/etc.)
   if (userError) return { count: 0, error: userError };
-  if (!userId) return { count: 0, error: new Error("Not authenticated") };
+
+  // ✅ Logged out is NOT an error
+  if (!userId) return { count: 0, error: null };
 
   const { count, error } = await supabase
     .from("manga_chapter_logs")
