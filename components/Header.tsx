@@ -4,7 +4,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../lib/supabaseClient";
-import AuthModal from "./AuthModal";
 import { Search } from "lucide-react";
 
 type UserType = any;
@@ -20,7 +19,6 @@ export default function Header({ transparent = false }: { transparent?: boolean 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
 
   // ✅ AniList-style show/hide
   const [isHidden, setIsHidden] = useState(false);
@@ -292,8 +290,7 @@ export default function Header({ transparent = false }: { transparent?: boolean 
                 gap: "0.75rem",
                 fontSize: "0.95rem",
               }}
-            >
-            </nav>
+            ></nav>
           </div>
 
           {/* Right: discover + auth / user menu */}
@@ -422,22 +419,29 @@ export default function Header({ transparent = false }: { transparent?: boolean 
             ) : (
               <button
                 type="button"
-                onClick={() => setIsAuthOpen(true)}
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent("open-auth-modal", { detail: { mode: "login" } })
+                  );
+                }}
                 style={{
-                  height: AVATAR_PX,
-                  padding: "0 1rem",
-                  borderRadius: 999,
-                  border: "1px solid #000",
-                  background: "#000",
-                  color: "#fff",
+                  height: HEADER_BTN_H,
+                  padding: "0 0.75rem",
+                  borderRadius: 100,
+                  border: "1px solid #ffffff",
+                  background: "#008cff",
+                  color: "#ffffff",
                   cursor: "pointer",
                   fontSize: "0.9rem",
-                  fontWeight: 500,
+                  fontWeight: 700,
                   display: "inline-flex",
                   alignItems: "center",
+                  justifyContent: "center",
+                  lineHeight: "1",
+                  whiteSpace: "nowrap",
                 }}
               >
-                Log in
+                LOG IN
               </button>
             )}
 
@@ -475,6 +479,19 @@ export default function Header({ transparent = false }: { transparent?: boolean 
                   );
                 })}
 
+                {/* ✅ NEW: Settings link at bottom */}
+                <Link
+                  href="/settings"
+                  onClick={() => setIsUserMenuOpen(false)}
+                  style={{
+                    ...dropdownItemStyleBase,
+                    borderTop: menuLinks.length > 0 ? dropdownDividerBorder : "none",
+                    borderBottom: dropdownDividerBorder,
+                  }}
+                >
+                  Settings
+                </Link>
+
                 <button
                   type="button"
                   onClick={handleLogout}
@@ -488,7 +505,7 @@ export default function Header({ transparent = false }: { transparent?: boolean 
                     cursor: "pointer",
                     fontSize: "0.9rem",
                     color: "#b00000",
-                    borderTop: menuLinks.length > 0 ? dropdownDividerBorder : "none",
+                    borderTop: "none",
                   }}
                 >
                   Log out
@@ -498,8 +515,6 @@ export default function Header({ transparent = false }: { transparent?: boolean 
           </div>
         </div>
       </header>
-
-      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
     </>
   );
 }

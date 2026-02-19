@@ -161,7 +161,15 @@ export default function SearchPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search…"
-            className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
+            className="
+  w-full
+  bg-transparent
+  text-base
+  sm:text-sm
+  text-slate-900
+  outline-none
+  placeholder:text-slate-400
+"
             autoComplete="off"
             spellCheck={false}
           />
