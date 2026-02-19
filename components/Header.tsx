@@ -28,7 +28,7 @@ export default function Header({ transparent = false }: { transparent?: boolean 
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   // ✅ layout reservation constants (prevents header jump while auth/avatar loads)
-  const AVATAR_PX = 48; // 3rem
+  const AVATAR_PX = 40; // 3rem
   const HEADER_MIN_PX = 56; // stable header height (includes padding)
 
   // Watch auth state + load profile (username + avatar_url)
