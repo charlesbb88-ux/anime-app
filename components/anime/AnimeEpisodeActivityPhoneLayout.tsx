@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import AnimeSeriesHeaderBackdrop from "@/components/overlays/AnimeSeriesHeaderBackdrop";
+import SmartBackdropImage from "@/components/SmartBackdropImage";
+import { FALLBACK_BACKDROP_SRC } from "@/lib/fallbacks";
 
 const CARD_CLASS = "bg-black p-4 text-neutral-100";
 
@@ -155,6 +156,9 @@ type Props = {
 
   episodeHref: string;
   reviewIdToPostId: Record<string, string>;
+
+  backdropUrl?: string | null; // ✅ add
+  overlaySrc?: string | null; // ✅ add (optional)
 };
 
 export default function AnimeEpisodeActivityPhoneLayout(props: Props) {
@@ -170,11 +174,54 @@ export default function AnimeEpisodeActivityPhoneLayout(props: Props) {
         <div className="relative w-screen">
           {/* backdrop behind everything */}
           <div className="absolute inset-x-0 top-0 z-0">
-            <AnimeSeriesHeaderBackdrop
-              animeId={animeId}
-              overlaySrc="/overlays/my-overlay4.png"
-              backdropHeightClassName="h-[520px]"
-            />
+            <div className="relative w-full overflow-hidden h-[520px] -mt-10">
+              <style jsx>{`
+                .episode-image-frame {
+                  position: absolute;
+                  left: 0;
+                  width: 100%;
+                  height: 100%;
+                  overflow: hidden;
+                  z-index: 0;
+                  top: 0;
+                }
+
+                /* 👇 CHANGE THESE TWO VALUES TO TEST (PHONE ONLY) */
+                @media (max-width: 767px) {
+                  .episode-image-frame {
+                    height: 70%; /* (A) visible image area */
+                    top: 40px; /* (B) move image DOWN */
+                  }
+                }
+              `}</style>
+
+              {/* ✅ IMAGE ONLY (wrapped). Overlay stays full height. */}
+              <div className="episode-image-frame">
+                <SmartBackdropImage
+                  src={props.backdropUrl ?? null}
+                  posterFallbackSrc={posterUrl}
+                  finalFallbackSrc={FALLBACK_BACKDROP_SRC}
+                  alt=""
+                  width={1920}
+                  height={1080}
+                  priority
+                  sizes="100vw"
+                  className="h-full w-full object-cover object-bottom"
+                  posterFallbackObjectPosition="50% 45%"
+                  finalFallbackObjectPosition="50% 13%"
+                />
+              </div>
+
+              {/* ✅ OVERLAY stays full height and does NOT move */}
+              {(props.overlaySrc ?? "/overlays/my-overlay4.png") ? (
+                <img
+                  src={(props.overlaySrc ?? "/overlays/my-overlay4.png") as string}
+                  alt=""
+                  className="pointer-events-none absolute inset-0 z-10 h-full w-full object-cover"
+                />
+              ) : null}
+            </div>
+
             <div className="pointer-events-none -mt-28 h-28 bg-gradient-to-b from-transparent to-black/95" />
           </div>
 
@@ -408,7 +455,9 @@ export default function AnimeEpisodeActivityPhoneLayout(props: Props) {
 
             <div className="min-w-0 pb-1">
               <div className="truncate text-lg font-semibold text-white">{headerTitle}</div>
-              {subLabel ? <div className="mt-1 text-xs font-medium text-neutral-300">{subLabel}</div> : null}
+              {subLabel ? (
+                <div className="mt-1 text-xs font-medium text-neutral-300">{subLabel}</div>
+              ) : null}
             </div>
           </div>
 
