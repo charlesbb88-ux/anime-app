@@ -38,6 +38,9 @@ import { pickEnglishTitle } from "@/lib/pickEnglishTitle";
 import ResponsiveSwitch from "@/components/ResponsiveSwitch";
 import AnimeEpisodePhoneLayout from "@/components/anime/AnimeEpisodePhoneLayout";
 
+import SmartBackdropImage from "@/components/SmartBackdropImage";
+import { FALLBACK_BACKDROP_SRC } from "@/lib/fallbacks";
+
 type AnimeTag = {
   id: number;
   anime_id: string;
@@ -324,28 +327,29 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
   const desktopView = (
     <>
       <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
-        {/* Backdrop (SSR random from public.anime_episode_artwork) */}
-        {backdropUrl && (
-          <div className="relative h-[620px] w-full overflow-hidden">
-            <Image
-              src={backdropUrl}
-              alt=""
-              width={1920}
-              height={1080}
-              priority
-              quality={95}
-              sizes="100vw"
-              className="h-full w-full object-cover object-bottom"
-              unoptimized={backdropUrl.includes("artworks.thetvdb.com")}
-            />
-
-            <img
-              src="/overlays/my-overlay.png"
-              alt=""
-              className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-            />
-          </div>
-        )}
+        {/* Backdrop: episode backdrop → series poster → final fallback */}
+        <div className="relative h-[620px] w-full overflow-hidden">
+          <SmartBackdropImage
+            src={backdropUrl}
+            posterFallbackSrc={anime?.image_url ?? null}
+            finalFallbackSrc={FALLBACK_BACKDROP_SRC}
+            alt=""
+            width={1920}
+            height={1080}
+            priority
+            sizes="100vw"
+            className="h-full w-full object-cover object-bottom"
+            posterFallbackObjectPosition="50% 30%"
+            finalFallbackObjectPosition="50% 13%"
+            deferFinalUntilPosterResolved
+            posterResolved={!isAnimeLoading}
+          />
+          <img
+            src="/overlays/my-overlay.png"
+            alt=""
+            className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+          />
+        </div>
 
         {/* Top section (same structure as series page) */}
         <div className="-mt-5 relative z-10 px-3">
