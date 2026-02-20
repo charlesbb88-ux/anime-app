@@ -20,6 +20,9 @@ import AnimeInfoDropdownMobile from "@/components/anime/AnimeInfoDropdownMobile"
 import EnglishTitle from "@/components/EnglishTitle";
 import { pickEnglishTitle } from "@/lib/pickEnglishTitle";
 
+import SmartBackdropImage from "@/components/SmartBackdropImage";
+import { FALLBACK_BACKDROP_SRC } from "@/lib/fallbacks";
+
 type AnimeTag = {
   id: number;
   anime_id: string;
@@ -213,24 +216,29 @@ export default function AnimePhoneLayout(props: {
 
   return (
     <>
-      {/* ✅ FULL-BLEED BACKDROP */}
-      {backdropUrl && (
-        <div className="relative h-[420px] w-screen overflow-hidden">
-          <Image
-            src={backdropUrl}
-            alt=""
-            fill
-            priority
-            sizes="100vw"
-            className="object-cover object-bottom"
-          />
-          <img
-            src="/overlays/my-overlay.png"
-            alt=""
-            className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-          />
-        </div>
-      )}
+      {/* ✅ FULL-BLEED BACKDROP (backdrop → poster → final fallback) */}
+      <div className="relative h-[420px] w-screen overflow-hidden">
+        <SmartBackdropImage
+          src={backdropUrl}
+          posterFallbackSrc={anime.image_url ?? null}
+          finalFallbackSrc={FALLBACK_BACKDROP_SRC}
+          alt=""
+          // fill-like behavior: make the Image cover the container
+          className="h-full w-full object-cover object-bottom"
+          priority
+          sizes="100vw"
+          // only poster moves (tweak as needed)
+          posterFallbackObjectPosition="50% 30%"
+          // final fallback file positioning (keep your preferred)
+          finalFallbackObjectPosition="50% 13%"
+        />
+
+        <img
+          src="/overlays/my-overlay.png"
+          alt=""
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+        />
+      </div>
 
       {/* ✅ CONTENT */}
       <div className="mx-auto max-w-6xl px-4 pb-8">

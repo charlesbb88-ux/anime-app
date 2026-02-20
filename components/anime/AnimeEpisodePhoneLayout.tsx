@@ -16,6 +16,9 @@ import ActionBoxMobile from "@/components/actions/ActionBoxMobile";
 import AnimeQuickLogBoxMobile from "@/components/anime/AnimeQuickLogBoxMobile";
 import AnimeInfoDropdownMobile from "@/components/anime/AnimeInfoDropdownMobile";
 
+import SmartBackdropImage from "@/components/SmartBackdropImage";
+import { FALLBACK_BACKDROP_SRC } from "@/lib/fallbacks";
+
 type AnimeTag = {
     id: number;
     anime_id: string;
@@ -122,17 +125,24 @@ export default function AnimeEpisodePhoneLayout(props: {
     return (
         <>
             {/* Backdrop */}
-            {backdropUrl && (
+            {(backdropUrl || anime?.image_url) && (
                 <div className="relative h-[420px] w-screen overflow-hidden">
-                    <Image
+                    <SmartBackdropImage
                         src={backdropUrl}
+                        posterFallbackSrc={anime?.image_url ?? null}
+                        finalFallbackSrc={FALLBACK_BACKDROP_SRC}
                         alt=""
-                        fill
                         priority
-                        unoptimized={backdropUrl.includes("artworks.thetvdb.com")}
                         sizes="100vw"
-                        className="object-cover object-bottom"
+                        className="h-full w-full object-cover object-bottom"
+                        // prevent the "final fallback flash" while anime is still loading
+                        deferFinalUntilPosterResolved
+                        posterResolved={!isAnimeLoading}
+                        // optional: if you want the poster fallback positioned differently on phone backdrops
+                        // posterFallbackObjectPosition="50% 30%"
+                        finalFallbackObjectPosition="50% 13%"
                     />
+
                     <img
                         src="/overlays/my-overlay.png"
                         alt=""

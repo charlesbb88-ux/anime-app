@@ -33,6 +33,9 @@ import AnimePhoneLayout from "@/components/anime/AnimePhoneLayout";
 
 import EnglishTitle from "@/components/EnglishTitle";
 
+import SmartBackdropImage from "@/components/SmartBackdropImage";
+import { FALLBACK_BACKDROP_SRC } from "@/lib/fallbacks";
+
 type AnimeTag = {
   id: number;
   anime_id: string;
@@ -351,27 +354,31 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
   const desktopView = (
     <>
       <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
-        {/* Backdrop (from SSR public.anime_artwork) */}
-        {backdropUrl && (
-          <div className="relative h-[620px] w-full overflow-hidden">
-            <Image
-              src={backdropUrl}
-              alt=""
-              width={1920}
-              height={1080}
-              priority
-              sizes="100vw"
-              className="h-full w-full object-cover object-bottom"
-            />
+        {/* Backdrop → Poster → Final fallback */}
+        <div className="relative h-[620px] w-full overflow-hidden">
+          <SmartBackdropImage
+            src={backdropUrl}
+            posterFallbackSrc={anime.image_url ?? null}
+            finalFallbackSrc={FALLBACK_BACKDROP_SRC}
+            alt=""
+            width={1920}
+            height={1080}
+            priority
+            sizes="100vw"
+            className="h-full w-full object-cover object-bottom"
+            // only poster moves (optional — set whatever you want)
+            posterFallbackObjectPosition="50% 30%"
+            // final fallback file positioning (keep your preferred value)
+            finalFallbackObjectPosition="50% 13%"
+          />
 
-            {/* OVERLAY */}
-            <img
-              src="/overlays/my-overlay.png"
-              alt=""
-              className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-            />
-          </div>
-        )}
+          {/* OVERLAY */}
+          <img
+            src="/overlays/my-overlay.png"
+            alt=""
+            className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+          />
+        </div>
 
         {/* Top section */}
         <div className="-mt-5 relative z-10 px-3">
