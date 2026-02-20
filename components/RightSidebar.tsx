@@ -18,6 +18,7 @@ type TopUserRow = {
 
 type TopReviewRow = {
   review_id: string;
+  post_id?: string | null; // ✅ add this
 
   author_id: string;
   author_username: string;
@@ -153,9 +154,14 @@ function TopReviewCard(props: { topReview: TopReviewRow | null; loading: boolean
 
           const mediaHref = isAnime ? `/anime/${mediaSlug}` : `/manga/${mediaSlug}`;
 
+          const postHref = topReview.post_id ? `/posts/${topReview.post_id}` : "#";
+
           return (
             <Link
-              href={`/review/${topReview.review_id}`} // change if your review route differs
+              href={postHref}
+              onClick={(e) => {
+                if (!topReview.post_id) e.preventDefault(); // ✅ prevent broken nav
+              }}
               style={{ textDecoration: "none", color: "inherit" }}
             >
               <div
@@ -337,7 +343,27 @@ export default function RightSidebar() {
           .maybeSingle();
 
         if (error) throw error;
-        if (!cancelled) setTopReview((data ?? null) as TopReviewRow | null);
+
+        if (!data) {
+          if (!cancelled) setTopReview(null);
+          return;
+        }
+
+        // ✅ Look up the post id using review_id
+        const { data: postRow, error: postErr } = await supabase
+          .from("posts")
+          .select("id")
+          .eq("review_id", data.review_id)
+          .maybeSingle();
+
+        if (postErr) throw postErr;
+
+        const merged: TopReviewRow = {
+          ...(data as TopReviewRow),
+          post_id: postRow?.id ?? null,
+        };
+
+        if (!cancelled) setTopReview(merged);
       } catch (e: any) {
         if (!cancelled) {
           setErrorReview(e?.message ?? "Failed to load top review.");

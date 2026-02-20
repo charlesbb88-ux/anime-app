@@ -21,42 +21,42 @@ type Visibility = "public" | "friends" | "private";
 
 type ActivityItem =
   | {
-      id: string;
-      kind: "log";
-      type: "anime_episode";
-      title: string;
-      subLabel?: string;
-      rating: number | null; // 0..100
-      note: null; // ✅ never show notes on this page
-      logged_at: string;
-      visibility: Visibility;
+    id: string;
+    kind: "log";
+    type: "anime_episode";
+    title: string;
+    subLabel?: string;
+    rating: number | null; // 0..100
+    note: null; // ✅ never show notes on this page
+    logged_at: string;
+    visibility: Visibility;
 
-      // episode snapshot flags (from anime_episode_logs)
-      liked?: boolean | null;
+    // episode snapshot flags (from anime_episode_logs)
+    liked?: boolean | null;
 
-      // ✅ if the log submit also created a review, store it so we can suppress the standalone review
-      review_id?: string | null;
-    }
+    // ✅ if the log submit also created a review, store it so we can suppress the standalone review
+    review_id?: string | null;
+  }
   | {
-      id: string;
-      kind: "review";
-      type: "anime_episode_review";
-      title: string;
-      subLabel?: string;
-      logged_at: string; // reviews.created_at
-      rating: number | null; // 0..100
-      content: string | null;
-      contains_spoilers: boolean;
-    }
+    id: string;
+    kind: "review";
+    type: "anime_episode_review";
+    title: string;
+    subLabel?: string;
+    logged_at: string; // reviews.created_at
+    rating: number | null; // 0..100
+    content: string | null;
+    contains_spoilers: boolean;
+  }
   | {
-      id: string;
-      kind: "mark";
-      type: "watched" | "liked" | "watchlist" | "rating";
-      title: string;
-      subLabel?: string;
-      logged_at: string; // user_marks.created_at
-      stars?: number | null; // half-stars 1..10 (only for rating mark)
-    };
+    id: string;
+    kind: "mark";
+    type: "watched" | "liked" | "watchlist" | "rating";
+    title: string;
+    subLabel?: string;
+    logged_at: string; // user_marks.created_at
+    stars?: number | null; // half-stars 1..10 (only for rating mark)
+  };
 
 function getAnimeDisplayTitle(anime: any): string {
   return (
@@ -762,6 +762,8 @@ const AnimeEpisodeActivityPage: NextPage<AnimeEpisodeActivityPageProps> = ({
       error={error}
       episodeHref={episodeHref}
       reviewIdToPostId={reviewIdToPostId}
+      backdropUrl={backdropUrl} // ✅ add this
+      overlaySrc="/overlays/my-overlay4.png" // ✅ optional (if you want it configurable)
     />
   );
 
