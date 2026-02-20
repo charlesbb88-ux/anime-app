@@ -3,6 +3,9 @@
 import React from "react";
 import Image from "next/image";
 
+import SmartBackdropImage from "@/components/SmartBackdropImage";
+import { FALLBACK_BACKDROP_SRC } from "@/lib/fallbacks";
+
 type Props = {
   /** Backdrop URL (already normalized server-side if desired) */
   backdropUrl: string | null;
@@ -63,30 +66,37 @@ export default function MediaHeaderLayout({
   children,
 }: Props) {
   // ✅ Always render the "backdrop area" so the overlay can always show.
-  const showBackdropImage = typeof backdropUrl === "string" && backdropUrl.length > 0;
   const showOverlay = typeof overlaySrc === "string" && overlaySrc.length > 0;
+
+  const safeBackdrop =
+    typeof backdropUrl === "string" && backdropUrl.trim().length > 0 ? backdropUrl.trim() : null;
+
+  const safePoster =
+    typeof posterUrl === "string" && posterUrl.trim().length > 0 ? posterUrl.trim() : null;
 
   return (
     <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
       {/* Backdrop area (always exists; overlay can render even without backdropUrl) */}
-      <div
-  className={`relative w-full overflow-hidden ${backdropHeightClassName} -mt-10`}
->
-
-        {showBackdropImage ? (
-          <Image
-            src={backdropUrl as string}
-            alt=""
-            width={1920}
-            height={1080}
-            priority
-            sizes="100vw"
-            className="h-full w-full object-cover object-bottom"
-          />
-        ) : (
-          // ✅ Fallback so you still see the overlay silhouette/edges
-          <div className="h-full w-full bg-black" />
-        )}
+      <div className={`relative w-full overflow-hidden ${backdropHeightClassName} -mt-10`}>
+        {/* ✅ Backdrop -> poster fallback -> final local fallback
+            ✅ Prevent local final fallback from flashing while poster is still loading */}
+        <SmartBackdropImage
+          src={safeBackdrop}
+          posterFallbackSrc={safePoster}
+          finalFallbackSrc={FALLBACK_BACKDROP_SRC}
+          alt=""
+          width={1920}
+          height={1080}
+          priority
+          sizes="100vw"
+          className="h-full w-full object-cover object-bottom"
+          deferFinalUntilPosterResolved
+          posterResolved={!!safePoster}
+          // Only affects FINAL fallback (your local file), not poster
+          finalFallbackObjectPosition="50% 13%"
+          // If you ever want to move ONLY the poster fallback framing, uncomment:
+          // posterFallbackObjectPosition="50% 30%"
+        />
 
         {showOverlay ? (
           <img
@@ -102,9 +112,9 @@ export default function MediaHeaderLayout({
         <div className="mb-8 flex flex-row gap-7">
           {/* LEFT: Poster + below-poster area (genres/tags/etc) */}
           <div className="flex-shrink-0 w-56">
-            {posterUrl ? (
+            {safePoster ? (
               <img
-                src={posterUrl}
+                src={safePoster}
                 alt={title}
                 className="h-84 w-56 rounded-md object-cover border-2 border-black/100"
               />
