@@ -8,6 +8,7 @@ import { supabase } from "../lib/supabaseClient";
 import { openAuthModal } from "../lib/openAuthModal";
 import CommentRow from "./CommentRow";
 import InfiniteSentinel from "./InfiniteSentinel";
+import FeedComposer from "./FeedComposer";
 
 type Post = {
   id: string;
@@ -759,133 +760,26 @@ export default function PostFeed({
     return h ? h.charAt(0).toUpperCase() : getDisplayName(userId)[0];
   }
 
-  const currentUserInitial = getInitialFromUser(user);
-
-  const composerAvatarNode = (
-    <div
-      style={{
-        width: 46,
-        height: 46,
-        borderRadius: "999px",
-        background: "#e5e5e5",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: TYPO.base,
-        fontWeight: 600,
-        color: "#333",
-        flexShrink: 0,
-        overflow: "hidden",
-      }}
-    >
-      {currentUserAvatarUrl ? (
-        <img
-          src={currentUserAvatarUrl}
-          alt="Your avatar"
-          style={{
-            width: "100%",
-            height: "100%",
-            borderRadius: "50%",
-            objectFit: "cover",
-          }}
-        />
-      ) : (
-        currentUserInitial
-      )}
-    </div>
-  );
-
   // ============================================================
   // RENDER
   // ============================================================
   return (
     <>
-      {/* Composer only when logged in */}
-      {user && (
-        <div
-          style={{
-            border: "1px solid #000",
-            borderRadius: 0,
-            background: "#ffffff",
-            marginBottom: 0,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: "0.7rem",
-              padding: "0.6rem 0.8rem 0.3rem 0.8rem",
-            }}
-          >
-            {currentUserUsername ? (
-              <Link
-                href={`/${currentUserUsername}`}
-                style={{ display: "inline-block", textDecoration: "none" }}
-              >
-                {composerAvatarNode}
-              </Link>
-            ) : (
-              composerAvatarNode
-            )}
-
-            <div style={{ flex: 1 }}>
-              <textarea
-                value={postContent}
-                onChange={(e) => setPostContent(e.target.value)}
-                placeholder={
-                  animeEpisodeId
-                    ? "Talk about this episode…"
-                    : animeId
-                      ? "Talk about this anime…"
-                      : mangaChapterId
-                        ? "Talk about this chapter…"
-                        : mangaId
-                          ? "Talk about this manga…"
-                          : "What's happening?"
-                }
-                style={{
-                  width: "100%",
-                  border: "none",
-                  outline: "none",
-                  resize: "none",
-                  minHeight: "2.8rem",
-                  fontSize: "1.05rem",
-                  fontFamily: "inherit",
-                  padding: 0,
-                }}
-              />
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              alignItems: "center",
-              padding: "0 0.8rem 0.5rem 0.8rem",
-            }}
-          >
-            <button
-              onClick={handlePost}
-              disabled={posting || !postContent.trim()}
-              style={{
-                padding: "0.4rem 1.2rem",
-                borderRadius: "999px",
-                border: "none",
-                background: posting || !postContent.trim() ? "#999" : "#000",
-                color: "#fff",
-                cursor: posting || !postContent.trim() ? "default" : "pointer",
-                fontSize: TYPO.small,
-                fontWeight: 500,
-              }}
-            >
-              {posting ? "Posting…" : "Post"}
-            </button>
-          </div>
-        </div>
-      )}
-
+      <FeedComposer
+        user={user}
+        postContent={postContent}
+        setPostContent={setPostContent}
+        posting={posting}
+        onPost={handlePost}
+        animeId={animeId}
+        animeEpisodeId={animeEpisodeId}
+        mangaId={mangaId}
+        mangaChapterId={mangaChapterId}
+        currentUserAvatarUrl={currentUserAvatarUrl}
+        currentUserUsername={currentUserUsername}
+        typoBase={TYPO.base}
+        typoSmall={TYPO.small}
+      />
       {/* FEED */}
       <div>
         {isLoadingPosts ? null : posts.length === 0 ? (
