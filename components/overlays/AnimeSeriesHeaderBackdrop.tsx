@@ -1,108 +1,137 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
 import { FALLBACK_BACKDROP_SRC } from "@/lib/fallbacks";
+import SmartBackdropImage from "@/components/SmartBackdropImage";
 
 function normalizeBackdropUrl(url: string) {
-  if (!url) return url;
-  if (url.includes("https://image.tmdb.org/t/p/original/")) {
-    return url.replace("/t/p/original/", "/t/p/w1280/");
-  }
-  return url;
+    if (!url) return url;
+    if (url.includes("https://image.tmdb.org/t/p/original/")) {
+        return url.replace("/t/p/original/", "/t/p/w1280/");
+    }
+    return url;
 }
 
 type AnimeArtworkRow = {
-  url: string | null;
-  is_primary: boolean | null;
-  vote: number | null;
-  width: number | null;
-  kind: string | null;
+    url: string | null;
+    is_primary: boolean | null;
+    vote: number | null;
+    width: number | null;
+    kind: string | null;
 };
 
 type Props = {
-  animeId: string;
-  overlaySrc?: string | null;
-  backdropHeightClassName?: string; // default matches MediaHeaderLayout
+    animeId: string;
+
+    /** Optional: if you already have the poster URL, pass it and we won't fetch it. */
+    posterUrl?: string | null;
+
+    overlaySrc?: string | null;
+    backdropHeightClassName?: string; // default matches MediaHeaderLayout
 };
 
 export default function AnimeSeriesHeaderBackdrop({
-  animeId,
-  overlaySrc = "/overlays/my-overlay4.png",
-  backdropHeightClassName = "h-[620px]",
+    animeId,
+    posterUrl: posterUrlProp = null,
+    overlaySrc = "/overlays/my-overlay4.png",
+    backdropHeightClassName = "h-[620px]",
 }: Props) {
-  const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
-  const [resolved, setResolved] = useState(false);
+    const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
+    const [posterUrl, setPosterUrl] = useState<string | null>(posterUrlProp);
+    const [resolved, setResolved] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
+    // keep posterUrl in sync if parent passes it
+    useEffect(() => {
+        setPosterUrl(posterUrlProp ?? null);
+    }, [posterUrlProp]);
 
-    async function run() {
-      setResolved(false);
+    useEffect(() => {
+        let cancelled = false;
 
-      if (!animeId) {
-        if (!cancelled) setResolved(true);
-        return;
-      }
+        async function run() {
+            setResolved(false);
 
-      const { data, error } = await supabase
-        .from("anime_artwork")
-        .select("url, is_primary, vote, width, kind")
-        .eq("anime_id", animeId)
-        .in("kind", ["backdrop", "3"])
-        .limit(50);
+            if (!animeId) {
+                if (!cancelled) setResolved(true);
+                return;
+            }
 
-      if (cancelled) return;
+            // 1) Fetch backdrops
+            const { data, error } = await supabase
+                .from("anime_artwork")
+                .select("url, is_primary, vote, width, kind")
+                .eq("anime_id", animeId)
+                .in("kind", ["backdrop", "3"])
+                .limit(50);
 
-      if (error || !data || data.length === 0) {
-        if (error) console.error("AnimeSeriesHeaderBackdrop: anime_artwork error:", error);
-        setBackdropUrl(null);
-        setResolved(true);
-        return;
-      }
+            if (cancelled) return;
 
-      const arts = data as AnimeArtworkRow[];
+            if (error || !data || data.length === 0) {
+                if (error) console.error("AnimeSeriesHeaderBackdrop: anime_artwork error:", error);
+                setBackdropUrl(null);
+            } else {
+                const arts = data as AnimeArtworkRow[];
 
-      const sorted = [...arts].sort((a, b) => {
-        const ap = a.is_primary ? 1 : 0;
-        const bp = b.is_primary ? 1 : 0;
-        if (bp !== ap) return bp - ap;
+                const sorted = [...arts].sort((a, b) => {
+                    const ap = a.is_primary ? 1 : 0;
+                    const bp = b.is_primary ? 1 : 0;
+                    if (bp !== ap) return bp - ap;
 
-        const av = typeof a.vote === "number" ? a.vote : -1;
-        const bv = typeof b.vote === "number" ? b.vote : -1;
-        if (bv !== av) return bv - av;
+                    const av = typeof a.vote === "number" ? a.vote : -1;
+                    const bv = typeof b.vote === "number" ? b.vote : -1;
+                    if (bv !== av) return bv - av;
 
-        const aw = typeof a.width === "number" ? a.width : -1;
-        const bw = typeof b.width === "number" ? b.width : -1;
-        return bw - aw;
-      });
+                    const aw = typeof a.width === "number" ? a.width : -1;
+                    const bw = typeof b.width === "number" ? b.width : -1;
+                    return bw - aw;
+                });
 
-      const topN = sorted.slice(0, Math.min(12, sorted.length));
-      const pick = topN[Math.floor(Math.random() * topN.length)];
-      const rawUrl = pick?.url ?? null;
+                const topN = sorted.slice(0, Math.min(12, sorted.length));
+                const pick = topN[Math.floor(Math.random() * topN.length)];
+                const rawUrl = pick?.url ?? null;
 
-      setBackdropUrl(rawUrl ? normalizeBackdropUrl(rawUrl) : null);
-      setResolved(true);
-    }
+                setBackdropUrl(rawUrl ? normalizeBackdropUrl(rawUrl) : null);
+            }
 
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [animeId]);
+            // 2) Fetch poster only if we don't already have one from props
+            if (!posterUrlProp) {
+                const { data: a, error: aErr } = await supabase
+                    .from("anime")
+                    .select("image_url")
+                    .eq("id", animeId)
+                    .maybeSingle();
 
-  const showOverlay = useMemo(
-    () => typeof overlaySrc === "string" && overlaySrc.length > 0,
-    [overlaySrc]
-  );
+                if (cancelled) return;
 
-  return (
-    <div className={`relative w-full overflow-hidden ${backdropHeightClassName} -mt-10`}>
-      {/* ✅ PHONE TEST KNOBS (SERIES):
+                if (aErr) {
+                    console.error("AnimeSeriesHeaderBackdrop: anime poster fetch error:", aErr);
+                    setPosterUrl(null);
+                } else {
+                    setPosterUrl(a?.image_url ?? null);
+                }
+            }
+
+            setResolved(true);
+        }
+
+        run();
+        return () => {
+            cancelled = true;
+        };
+    }, [animeId, posterUrlProp]);
+
+    const showOverlay = useMemo(
+        () => typeof overlaySrc === "string" && overlaySrc.length > 0,
+        [overlaySrc]
+    );
+
+    return (
+        <div className={`relative w-full overflow-hidden ${backdropHeightClassName} -mt-10`}>
+            {/* ✅ PHONE TEST KNOBS (SERIES):
           1) height % controls how much of the image area is visible (brings bottom up)
           2) top px controls how far DOWN the image sits (only the image) */}
-      <style jsx>{`
+            <style jsx>{`
         .series-image-frame {
           position: absolute;
           left: 0;
@@ -122,43 +151,35 @@ export default function AnimeSeriesHeaderBackdrop({
         }
       `}</style>
 
-      {/* ✅ IMAGE ONLY (wrapped). Overlay stays full height. */}
-      {!resolved ? null : (
-        <div className="series-image-frame">
-          {backdropUrl ? (
-            <Image
-              src={backdropUrl}
-              alt=""
-              width={1920}
-              height={1080}
-              priority
-              sizes="100vw"
-              className="h-full w-full object-cover object-bottom"
-            />
-          ) : (
-            <Image
-              src={FALLBACK_BACKDROP_SRC}
-              alt=""
-              width={1920}
-              height={1080}
-              priority
-              sizes="100vw"
-              className="h-full w-full object-cover"
-              style={{ objectPosition: "50% 13%" }} // 👈 fallback-only vertical adjust
-            />
-          )}
-        </div>
-      )}
+            {/* ✅ IMAGE ONLY (wrapped). Overlay stays full height. */}
+            {!resolved ? null : (
+                <div className="series-image-frame">
+                    <SmartBackdropImage
+                        src={backdropUrl}
+                        posterFallbackSrc={posterUrl}
+                        finalFallbackSrc={FALLBACK_BACKDROP_SRC}
+                        alt=""
+                        width={1920}
+                        height={1080}
+                        priority
+                        sizes="100vw"
+                        className="h-full w-full object-cover object-bottom"
 
-      {/* ✅ OVERLAY stays full height and does NOT move */}
-      {showOverlay ? (
-        <img
-          src={overlaySrc as string}
-          alt=""
-          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-          style={{ zIndex: 1 }}
-        />
-      ) : null}
-    </div>
-  );
+                        posterFallbackObjectPosition="50% 45%"   // 👈 MOVE ONLY POSTER
+                        finalFallbackObjectPosition="50% 13%"
+                    />
+                </div>
+            )}
+
+            {/* ✅ OVERLAY stays full height and does NOT move */}
+            {showOverlay ? (
+                <img
+                    src={overlaySrc as string}
+                    alt=""
+                    className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+                    style={{ zIndex: 1 }}
+                />
+            ) : null}
+        </div>
+    );
 }
