@@ -1,7 +1,8 @@
 "use client";
 
-import React from "react";
+import React, { useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import ComposerActionRow from "@/components/composer/ComposerActionRow";
 
 type Props = {
   // auth
@@ -12,6 +13,9 @@ type Props = {
   setPostContent: (v: string) => void;
   posting: boolean;
   onPost: () => void;
+
+  // button label mode
+  mode?: "post" | "reply";
 
   // context (for placeholder)
   animeId?: string;
@@ -35,6 +39,8 @@ export default function FeedComposer({
   posting,
   onPost,
 
+  mode,
+
   animeId,
   animeEpisodeId,
   mangaId,
@@ -48,6 +54,9 @@ export default function FeedComposer({
 }: Props) {
   if (!user) return null;
 
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [active, setActive] = useState(false);
+
   function getInitialFromUser(userObj: any) {
     const email: string = userObj?.email || "";
     const c = email.trim()[0];
@@ -55,6 +64,62 @@ export default function FeedComposer({
   }
 
   const currentUserInitial = getInitialFromUser(user);
+
+  const inferredMode: "post" | "reply" = useMemo(() => {
+    if (mode) return mode;
+    if (typeof window === "undefined") return "post";
+    const path = window.location.pathname || "";
+    if (path.startsWith("/posts") || path.startsWith("/comments")) return "reply";
+    return "post";
+  }, [mode]);
+
+  const isReply = inferredMode === "reply";
+  const actionLabel = isReply ? "Reply" : "Post";
+  const actioningLabel = isReply ? "Replying…" : "Posting…";
+
+  const contextPlaceholder = animeEpisodeId
+    ? "Talk about this episode…"
+    : animeId
+      ? "Talk about this anime…"
+      : mangaChapterId
+        ? "Talk about this chapter…"
+        : mangaId
+          ? "Talk about this manga…"
+          : "What's happening?";
+
+  const placeholder = isReply ? "Post your reply" : contextPlaceholder;
+
+  const isCollapsed = !active && !postContent.trim();
+
+  function autoGrow(el: HTMLTextAreaElement) {
+    el.style.height = "auto";
+    const maxHeight = 20 * 24;
+    const newHeight = Math.min(el.scrollHeight, maxHeight);
+    el.style.height = `${newHeight}px`;
+    el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
+  }
+
+  function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    setPostContent(e.target.value);
+    if (textareaRef.current) autoGrow(textareaRef.current);
+  }
+
+  function handleFocus() {
+    setActive(true);
+    if (textareaRef.current) autoGrow(textareaRef.current);
+  }
+
+  function handleBlur() {
+    if (!postContent.trim()) {
+      setActive(false);
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "26px";
+        textareaRef.current.style.overflowY = "hidden";
+      }
+    }
+  }
+
+  const disabled = posting || !postContent.trim();
 
   const composerAvatarNode = (
     <div
@@ -74,6 +139,7 @@ export default function FeedComposer({
       }}
     >
       {currentUserAvatarUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={currentUserAvatarUrl}
           alt="Your avatar"
@@ -82,6 +148,7 @@ export default function FeedComposer({
             height: "100%",
             borderRadius: "50%",
             objectFit: "cover",
+            display: "block",
           }}
         />
       ) : (
@@ -89,16 +156,6 @@ export default function FeedComposer({
       )}
     </div>
   );
-
-  const placeholder = animeEpisodeId
-    ? "Talk about this episode…"
-    : animeId
-      ? "Talk about this anime…"
-      : mangaChapterId
-        ? "Talk about this chapter…"
-        : mangaId
-          ? "Talk about this manga…"
-          : "What's happening?";
 
   return (
     <div
@@ -112,9 +169,9 @@ export default function FeedComposer({
       <div
         style={{
           display: "flex",
-          alignItems: "flex-start",
+          alignItems: active ? "flex-start" : "center",
           gap: "0.7rem",
-          padding: "0.6rem 0.8rem 0.3rem 0.8rem",
+          padding: active ? "0.6rem 0.8rem 0.3rem 0.8rem" : "0.45rem 0.8rem",
         }}
       >
         {currentUserUsername ? (
@@ -130,48 +187,88 @@ export default function FeedComposer({
 
         <div style={{ flex: 1 }}>
           <textarea
+            ref={textareaRef}
             value={postContent}
-            onChange={(e) => setPostContent(e.target.value)}
-            placeholder={placeholder}
+            onChange={handleChange}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
+            placeholder={isCollapsed ? placeholder : ""}
+            rows={1}
             style={{
               width: "100%",
               border: "none",
               outline: "none",
               resize: "none",
-              minHeight: "2.8rem",
+              background: "transparent",
+              padding: isCollapsed ? "0" : "0.6rem 0",
+              height: isCollapsed ? "26px" : "auto",
+              minHeight: isCollapsed ? "26px" : "36px",
               fontSize: "1.05rem",
               fontFamily: "inherit",
-              padding: 0,
+              lineHeight: isCollapsed ? "30px" : 1.5,
+              overflowY: "hidden",
             }}
           />
         </div>
+
+        {isCollapsed && (
+          <button
+            onClick={onPost}
+            disabled={disabled}
+            style={{
+              padding: "0.4rem 0.95rem",
+              borderRadius: "999px",
+              border: "none",
+              background: disabled ? "#a0a0a0" : "#000",
+              color: "#fff",
+              cursor: disabled ? "default" : "pointer",
+              fontSize: typoSmall,
+              fontWeight: 500,
+            }}
+          >
+            {posting ? actioningLabel : actionLabel}
+          </button>
+        )}
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          alignItems: "center",
-          padding: "0 0.8rem 0.5rem 0.8rem",
-        }}
-      >
-        <button
-          onClick={onPost}
-          disabled={posting || !postContent.trim()}
-          style={{
-            padding: "0.4rem 1.2rem",
-            borderRadius: "999px",
-            border: "none",
-            background: posting || !postContent.trim() ? "#999" : "#000",
-            color: "#fff",
-            cursor: posting || !postContent.trim() ? "default" : "pointer",
-            fontSize: typoSmall,
-            fontWeight: 500,
-          }}
-        >
-          {posting ? "Posting…" : "Post"}
-        </button>
-      </div>
+      {!isCollapsed ? (
+        <>
+          {/* ✅ Twitter-style action row (only when expanded) */}
+          <ComposerActionRow
+            value={postContent}
+            setValue={setPostContent}
+            textareaRef={textareaRef}
+            disabled={posting}
+            showCode
+          />
+
+          {/* bottom-right submit */}
+          <div
+            style={{
+              padding: "0 0.8rem 0.5rem 0.8rem",
+              display: "flex",
+              justifyContent: "flex-end",
+            }}
+          >
+            <button
+              onClick={onPost}
+              disabled={disabled}
+              style={{
+                padding: "0.4rem 0.95rem",
+                borderRadius: "999px",
+                border: "none",
+                background: disabled ? "#a0a0a0" : "#000",
+                color: "#fff",
+                cursor: disabled ? "default" : "pointer",
+                fontSize: typoSmall,
+                fontWeight: 500,
+              }}
+            >
+              {posting ? actioningLabel : actionLabel}
+            </button>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
