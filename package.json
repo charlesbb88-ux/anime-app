@@ -9,9 +9,16 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@lexical/link": "^0.40.0",
+    "@lexical/list": "^0.40.0",
+    "@lexical/react": "^0.40.0",
+    "@lexical/rich-text": "^0.40.0",
+    "@lexical/selection": "^0.40.0",
+    "@lexical/utils": "^0.40.0",
     "@supabase/supabase-js": "^2.86.0",
     "date-fns": "^4.1.0",
     "flatpickr": "^4.6.13",
+    "lexical": "^0.40.0",
     "lucide-react": "^0.555.0",
     "next": "^16.0.7",
     "react": "19.2.0",
