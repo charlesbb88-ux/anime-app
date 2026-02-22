@@ -1,33 +1,29 @@
 "use client";
 
 import React, { useMemo, useRef, useState } from "react";
+import type { LexicalEditor } from "lexical";
 import Link from "next/link";
-import ComposerActionRow from "@/components/composer/ComposerActionRow";
+import ComposerRichEditor from "@/components/composer/ComposerRichEditor";
+import ComposerActionRowLexical from "@/components/composer/ComposerActionRowLexical";
 
 type Props = {
-  // auth
   user: any | null;
 
-  // composer state
   postContent: string;
   setPostContent: (v: string) => void;
   posting: boolean;
   onPost: () => void;
 
-  // button label mode
   mode?: "post" | "reply";
 
-  // context (for placeholder)
   animeId?: string;
   animeEpisodeId?: string;
   mangaId?: string;
   mangaChapterId?: string;
 
-  // current user profile display
   currentUserAvatarUrl: string | null;
   currentUserUsername: string | null;
 
-  // typography (matches your existing)
   typoBase: string;
   typoSmall: string;
 };
@@ -54,8 +50,19 @@ export default function FeedComposer({
 }: Props) {
   if (!user) return null;
 
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [active, setActive] = useState(false);
+
+  // ✅ Recommended safety refs (prevents collapse when interacting with toolbar)
+  const composerRef = useRef<HTMLDivElement | null>(null);
+  const editorRef = useRef<LexicalEditor | null>(null);
+
+  function focusLexical() {
+    const ed = editorRef.current;
+    if (!ed) return;
+    try {
+      ed.focus();
+    } catch {}
+  }
 
   function getInitialFromUser(userObj: any) {
     const email: string = userObj?.email || "";
@@ -90,36 +97,34 @@ export default function FeedComposer({
   const placeholder = isReply ? "Post your reply" : contextPlaceholder;
 
   const isCollapsed = !active && !postContent.trim();
+  const disabled = posting || !postContent.trim();
 
-  function autoGrow(el: HTMLTextAreaElement) {
-    el.style.height = "auto";
-    const maxHeight = 20 * 24;
-    const newHeight = Math.min(el.scrollHeight, maxHeight);
-    el.style.height = `${newHeight}px`;
-    el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
-  }
-
-  function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    setPostContent(e.target.value);
-    if (textareaRef.current) autoGrow(textareaRef.current);
+  function expandAndFocus() {
+    setActive(true);
+    requestAnimationFrame(() => focusLexical());
   }
 
   function handleFocus() {
     setActive(true);
-    if (textareaRef.current) autoGrow(textareaRef.current);
   }
 
+  // ✅ Only collapse if focus truly left the whole composer area (incl. toolbar)
   function handleBlur() {
-    if (!postContent.trim()) {
-      setActive(false);
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "26px";
-        textareaRef.current.style.overflowY = "hidden";
-      }
-    }
-  }
+    // Defer one tick so clicks on toolbar can run without collapsing.
+    window.setTimeout(() => {
+      if (postContent.trim()) return;
 
-  const disabled = posting || !postContent.trim();
+      const activeEl = document.activeElement as HTMLElement | null;
+      const stillInsideComposer = !!activeEl && !!composerRef.current?.contains(activeEl);
+
+      const rootEl = editorRef.current?.getRootElement() as HTMLElement | null;
+      const stillInsideEditor = !!activeEl && !!rootEl?.contains(activeEl);
+
+      if (!stillInsideComposer && !stillInsideEditor) {
+        setActive(false);
+      }
+    }, 0);
+  }
 
   const composerAvatarNode = (
     <div
@@ -159,6 +164,7 @@ export default function FeedComposer({
 
   return (
     <div
+      ref={composerRef}
       style={{
         border: "1px solid #000",
         borderRadius: 0,
@@ -175,39 +181,36 @@ export default function FeedComposer({
         }}
       >
         {currentUserUsername ? (
-          <Link
-            href={`/${currentUserUsername}`}
-            style={{ display: "inline-block", textDecoration: "none" }}
-          >
+          <Link href={`/${currentUserUsername}`} style={{ display: "inline-block", textDecoration: "none" }}>
             {composerAvatarNode}
           </Link>
         ) : (
           composerAvatarNode
         )}
 
-        <div style={{ flex: 1 }}>
-          <textarea
-            ref={textareaRef}
-            value={postContent}
-            onChange={handleChange}
+        {/* ✅ clickable area that always expands + focuses */}
+        <div
+          style={{ flex: 1 }}
+          onMouseDown={(e) => {
+            // only do this when collapsed; otherwise let Lexical handle selection normally
+            if (!isCollapsed) return;
+            // prevent the click from “blurring” other things first
+            e.preventDefault();
+            expandAndFocus();
+          }}
+        >
+          <ComposerRichEditor
+            valueText={postContent}
+            setValueText={setPostContent}
+            placeholder={isCollapsed ? placeholder : ""}
+            active={!isCollapsed}
             onFocus={handleFocus}
             onBlur={handleBlur}
-            placeholder={isCollapsed ? placeholder : ""}
-            rows={1}
-            style={{
-              width: "100%",
-              border: "none",
-              outline: "none",
-              resize: "none",
-              background: "transparent",
-              padding: isCollapsed ? "0" : "0.6rem 0",
-              height: isCollapsed ? "26px" : "auto",
-              minHeight: isCollapsed ? "26px" : "36px",
-              fontSize: "1.05rem",
-              fontFamily: "inherit",
-              lineHeight: isCollapsed ? "30px" : 1.5,
-              overflowY: "hidden",
+            typoBase={typoBase}
+            onEditorReady={(ed) => {
+              editorRef.current = ed;
             }}
+            toolbar={!isCollapsed ? <ComposerActionRowLexical disabled={posting} /> : undefined}
           />
         </div>
 
@@ -232,42 +235,30 @@ export default function FeedComposer({
       </div>
 
       {!isCollapsed ? (
-        <>
-          {/* ✅ Twitter-style action row (only when expanded) */}
-          <ComposerActionRow
-            value={postContent}
-            setValue={setPostContent}
-            textareaRef={textareaRef}
-            disabled={posting}
-            showCode
-          />
-
-          {/* bottom-right submit */}
-          <div
+        <div
+          style={{
+            padding: "0 0.8rem 0.5rem 0.8rem",
+            display: "flex",
+            justifyContent: "flex-end",
+          }}
+        >
+          <button
+            onClick={onPost}
+            disabled={disabled}
             style={{
-              padding: "0 0.8rem 0.5rem 0.8rem",
-              display: "flex",
-              justifyContent: "flex-end",
+              padding: "0.4rem 0.95rem",
+              borderRadius: "999px",
+              border: "none",
+              background: disabled ? "#a0a0a0" : "#000",
+              color: "#fff",
+              cursor: disabled ? "default" : "pointer",
+              fontSize: typoSmall,
+              fontWeight: 500,
             }}
           >
-            <button
-              onClick={onPost}
-              disabled={disabled}
-              style={{
-                padding: "0.4rem 0.95rem",
-                borderRadius: "999px",
-                border: "none",
-                background: disabled ? "#a0a0a0" : "#000",
-                color: "#fff",
-                cursor: disabled ? "default" : "pointer",
-                fontSize: typoSmall,
-                fontWeight: 500,
-              }}
-            >
-              {posting ? actioningLabel : actionLabel}
-            </button>
-          </div>
-        </>
+            {posting ? actioningLabel : actionLabel}
+          </button>
+        </div>
       ) : null}
     </div>
   );
