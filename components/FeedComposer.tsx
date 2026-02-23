@@ -10,11 +10,12 @@ import { parseYouTubeId, type PendingAttachment } from "@/lib/postAttachments";
 
 // ✅ Attachment limits (Twitter-ish)
 const MAX_MEDIA = 4; // images/gifs
+const MAX_VIDEO = 1; // twitter-ish: 1 video
 const MAX_YOUTUBE = 1;
-const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10MB
-// Optional: total cap (media + youtube). This equals 5 by default.
-// If you don't want a total cap beyond the per-type caps, remove this const and related checks.
-const MAX_TOTAL_ATTACHMENTS = MAX_MEDIA + MAX_YOUTUBE;
+
+// Keep this conservative unless you explicitly want bigger uploads.
+// If you do want bigger, bump it to 25MB or 50MB.
+const MAX_FILE_BYTES = 50 * 1024 * 1024; // 50MB
 
 type Props = {
   user: any | null;
@@ -41,11 +42,26 @@ type Props = {
 
   pendingAttachments: PendingAttachment[];
   setPendingAttachments: (
-    v:
-      | PendingAttachment[]
-      | ((prev: PendingAttachment[]) => PendingAttachment[])
+    v: PendingAttachment[] | ((prev: PendingAttachment[]) => PendingAttachment[])
   ) => void;
 };
+
+function isVideoFile(f: File) {
+  const t = (f.type || "").toLowerCase();
+  if (t.startsWith("video/")) return true;
+
+  // fallback: extension check (rare, but helps if MIME missing)
+  const name = (f.name || "").toLowerCase();
+  return name.endsWith(".mp4") || name.endsWith(".webm");
+}
+
+function isImageLikeFile(f: File) {
+  const t = (f.type || "").toLowerCase();
+  if (t.startsWith("image/")) return true;
+
+  const name = (f.name || "").toLowerCase();
+  return name.endsWith(".gif");
+}
 
 export default function FeedComposer({
   user,
@@ -80,21 +96,30 @@ export default function FeedComposer({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // ✅ Helper counters
-  function countPendingMedia(pending: PendingAttachment[]) {
+  function countPendingImages(pending: PendingAttachment[]) {
     return pending.filter((a: any) => a?.kind === "image").length;
   }
-
+  function countPendingVideos(pending: PendingAttachment[]) {
+    return pending.filter((a: any) => a?.kind === "video").length;
+  }
   function countPendingYouTube(pending: PendingAttachment[]) {
     return pending.filter((a: any) => a?.kind === "youtube").length;
   }
 
-  // ✅ Enforce limits before anything "gets added"
+  // ✅ Add media files (images/gifs/videos) with Twitter-ish constraints
   function addFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
 
     const picked = Array.from(files);
 
-    // 1) size filter
+    // 1) reject unknown types early (helps avoid weird files)
+    const bad = picked.find((f) => !isImageLikeFile(f) && !isVideoFile(f));
+    if (bad) {
+      window.alert("Only images/GIFs and MP4/WEBM videos are supported.");
+      return;
+    }
+
+    // 2) size filter
     const tooBig = picked.find((f) => f.size > MAX_FILE_BYTES);
     if (tooBig) {
       window.alert(
@@ -105,15 +130,54 @@ export default function FeedComposer({
       return;
     }
 
-    // 2) enforce max media count (and optional total cap)
+    // 3) Twitter-ish rule: no mixing video with image grid
+    const pickedHasVideo = picked.some(isVideoFile);
+    const pickedHasImage = picked.some(isImageLikeFile);
+
     setPendingAttachments((prev: PendingAttachment[]) => {
-      // Optional total cap
-      if (prev.length >= MAX_TOTAL_ATTACHMENTS) {
-        window.alert(`You can only add up to ${MAX_TOTAL_ATTACHMENTS} attachments total.`);
+      const hasVideoAlready = countPendingVideos(prev) > 0;
+      const hasImagesAlready = countPendingImages(prev) > 0;
+
+      // If you already have images, you cannot add a video
+      if (hasImagesAlready && pickedHasVideo) {
+        window.alert("You can’t add a video to a post that already has images/GIFs.");
         return prev;
       }
 
-      const currentMedia = countPendingMedia(prev);
+      // If you already have a video, you cannot add images
+      if (hasVideoAlready && pickedHasImage) {
+        window.alert("You can’t add images/GIFs to a post that already has a video.");
+        return prev;
+      }
+
+      // If the user picked BOTH images and video in one selection, reject
+      if (pickedHasVideo && pickedHasImage) {
+        window.alert("Pick either images/GIFs OR one video (not both).");
+        return prev;
+      }
+
+      // If picking a video
+      if (pickedHasVideo) {
+        const currentVideos = countPendingVideos(prev);
+        if (currentVideos >= MAX_VIDEO) {
+          window.alert(`You can only attach ${MAX_VIDEO} video per post.`);
+          return prev;
+        }
+
+        const file = picked.find(isVideoFile);
+        if (!file) return prev;
+
+        // only 1 video, so ignore additional picks
+        if (picked.length > 1) {
+          window.alert("Only the first video was added (1 video max).");
+        }
+
+        const next: PendingAttachment = { kind: "video" as const, file };
+        return [...prev, next];
+      }
+
+      // Otherwise picking images/gifs
+      const currentMedia = countPendingImages(prev);
       const remainingMediaSlots = Math.max(0, MAX_MEDIA - currentMedia);
 
       if (remainingMediaSlots <= 0) {
@@ -121,35 +185,17 @@ export default function FeedComposer({
         return prev;
       }
 
-      // Respect total cap too (if enabled)
-      const remainingTotalSlots = Math.max(0, MAX_TOTAL_ATTACHMENTS - prev.length);
-      if (remainingTotalSlots <= 0) {
-        window.alert(`You can only add up to ${MAX_TOTAL_ATTACHMENTS} attachments total.`);
-        return prev;
-      }
+      const nextFiles = picked.slice(0, remainingMediaSlots);
+      const next = nextFiles.map(
+        (f) =>
+          ({
+            kind: "image" as const,
+            file: f,
+          }) as PendingAttachment
+      );
 
-      const allowedSlots = Math.min(remainingMediaSlots, remainingTotalSlots);
-
-      const nextFiles = picked.slice(0, allowedSlots);
-      const next = nextFiles.map((f) => ({
-        kind: "image" as const,
-        file: f,
-      })) as PendingAttachment[];
-
-      // If they selected more than allowed, tell them (optional)
-      if (picked.length > allowedSlots) {
-        // Prefer a clear message that respects both caps
-        if (allowedSlots === remainingMediaSlots && allowedSlots !== remainingTotalSlots) {
-          window.alert(
-            `Only the first ${allowedSlots} file(s) were added (you hit the total cap of ${MAX_TOTAL_ATTACHMENTS}).`
-          );
-        } else if (allowedSlots === remainingTotalSlots && allowedSlots !== remainingMediaSlots) {
-          window.alert(
-            `Only the first ${allowedSlots} file(s) were added (you hit the total cap of ${MAX_TOTAL_ATTACHMENTS}).`
-          );
-        } else {
-          window.alert(`Only the first ${allowedSlots} file(s) were added (max ${MAX_MEDIA}).`);
-        }
+      if (picked.length > remainingMediaSlots) {
+        window.alert(`Only the first ${remainingMediaSlots} file(s) were added (max ${MAX_MEDIA}).`);
       }
 
       return [...prev, ...next];
@@ -167,12 +213,6 @@ export default function FeedComposer({
   // ✅ Enforce YouTube limit + validate + prevent duplicate
   function onAddYouTube() {
     setPendingAttachments((prev: PendingAttachment[]) => {
-      // Optional total cap
-      if (prev.length >= MAX_TOTAL_ATTACHMENTS) {
-        window.alert(`You can only add up to ${MAX_TOTAL_ATTACHMENTS} attachments total.`);
-        return prev;
-      }
-
       const currentYT = countPendingYouTube(prev);
       if (currentYT >= MAX_YOUTUBE) {
         window.alert(`You can only add ${MAX_YOUTUBE} YouTube link per post.`);
@@ -236,12 +276,12 @@ export default function FeedComposer({
   const contextPlaceholder = animeEpisodeId
     ? "Talk about this episode…"
     : animeId
-      ? "Talk about this anime…"
-      : mangaChapterId
-        ? "Talk about this chapter…"
-        : mangaId
-          ? "Talk about this manga…"
-          : "What's happening?";
+    ? "Talk about this anime…"
+    : mangaChapterId
+    ? "Talk about this chapter…"
+    : mangaId
+    ? "Talk about this manga…"
+    : "What's happening?";
 
   const placeholder = isReply ? "Post your reply" : contextPlaceholder;
 
@@ -253,10 +293,7 @@ export default function FeedComposer({
     pendingAttachments.some((a: any) => a?.status === "uploading");
 
   // ✅ Allow attachment-only posts (so you can post media without text)
-  const disabled =
-    posting ||
-    hasUploading ||
-    (!postContent.trim() && pendingAttachments.length === 0);
+  const disabled = posting || hasUploading || (!postContent.trim() && pendingAttachments.length === 0);
 
   function expandAndFocus() {
     setActive(true);
@@ -269,11 +306,10 @@ export default function FeedComposer({
 
   // ✅ Only collapse if focus truly left the whole composer area (incl. toolbar)
   function handleBlur() {
-    // Defer one tick so clicks on toolbar can run without collapsing.
     window.setTimeout(() => {
       if (postContent.trim()) return;
 
-      // If they have attachments, keep it open (prevents weird UX)
+      // If they have attachments, keep it open
       if (pendingAttachments.length > 0) return;
 
       const activeEl = document.activeElement as HTMLElement | null;
@@ -337,7 +373,8 @@ export default function FeedComposer({
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*,.gif"
+        // ✅ images/gifs + mp4/webm
+        accept="image/*,.gif,video/mp4,video/webm"
         multiple
         style={{ display: "none" }}
         onChange={(e) => {
@@ -356,10 +393,7 @@ export default function FeedComposer({
         }}
       >
         {currentUserUsername ? (
-          <Link
-            href={`/${currentUserUsername}`}
-            style={{ display: "inline-block", textDecoration: "none" }}
-          >
+          <Link href={`/${currentUserUsername}`} style={{ display: "inline-block", textDecoration: "none" }}>
             {composerAvatarNode}
           </Link>
         ) : (
@@ -370,9 +404,7 @@ export default function FeedComposer({
         <div
           style={{ flex: 1 }}
           onMouseDown={(e) => {
-            // only do this when collapsed; otherwise let Lexical handle selection normally
             if (!isCollapsed) return;
-            // prevent the click from “blurring” other things first
             e.preventDefault();
             expandAndFocus();
           }}
@@ -398,10 +430,7 @@ export default function FeedComposer({
                     onAddYouTube={onAddYouTube}
                   />
 
-                  <ComposerPendingAttachments
-                    items={pendingAttachments}
-                    onRemove={removeAttachmentAt}
-                  />
+                  <ComposerPendingAttachments items={pendingAttachments} onRemove={removeAttachmentAt} />
                 </div>
               ) : undefined
             }

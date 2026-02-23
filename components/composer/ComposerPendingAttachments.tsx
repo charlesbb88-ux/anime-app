@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { PendingAttachment } from "@/lib/postAttachments";
 
 type Props = {
@@ -8,7 +8,7 @@ type Props = {
   onRemove: (index: number) => void;
 };
 
-function Thumb({ file }: { file: File }) {
+function ObjectUrlMedia({ file }: { file: File }) {
   const [src, setSrc] = useState<string | null>(null);
 
   useEffect(() => {
@@ -19,6 +19,27 @@ function Thumb({ file }: { file: File }) {
 
   if (!src) return null;
 
+  const isVideo = (file.type || "").startsWith("video/");
+
+  if (isVideo) {
+    return (
+      <video
+        src={src}
+        muted
+        loop
+        playsInline
+        preload="metadata"
+        style={{
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          display: "block",
+        }}
+      />
+    );
+  }
+
+  // image/gif
   // eslint-disable-next-line @next/next/no-img-element
   return (
     <img
@@ -31,6 +52,33 @@ function Thumb({ file }: { file: File }) {
         display: "block",
       }}
     />
+  );
+}
+
+function RemoveBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+      title="Remove"
+      style={{
+        position: "absolute",
+        top: 8,
+        right: 8,
+        width: 28,
+        height: 28,
+        borderRadius: 999,
+        border: "1px solid rgba(0,0,0,0.2)",
+        background: "rgba(255,255,255,0.9)",
+        cursor: "pointer",
+        fontSize: 16,
+        lineHeight: "28px",
+        padding: 0,
+      }}
+    >
+      ×
+    </button>
   );
 }
 
@@ -48,6 +96,9 @@ export default function ComposerPendingAttachments({ items, onRemove }: Props) {
         }}
       >
         {items.map((a, idx) => {
+          // -----------------------
+          // IMAGE / GIF (kind=image)
+          // -----------------------
           if (a.kind === "image") {
             return (
               <div
@@ -62,35 +113,56 @@ export default function ComposerPendingAttachments({ items, onRemove }: Props) {
                   background: "#f3f4f6",
                 }}
               >
-                <Thumb file={a.file} />
-
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => onRemove(idx)}
-                  title="Remove"
-                  style={{
-                    position: "absolute",
-                    top: 8,
-                    right: 8,
-                    width: 28,
-                    height: 28,
-                    borderRadius: 999,
-                    border: "1px solid rgba(0,0,0,0.2)",
-                    background: "rgba(255,255,255,0.9)",
-                    cursor: "pointer",
-                    fontSize: 16,
-                    lineHeight: "28px",
-                    padding: 0,
-                  }}
-                >
-                  ×
-                </button>
+                <ObjectUrlMedia file={a.file} />
+                <RemoveBtn onClick={() => onRemove(idx)} />
               </div>
             );
           }
 
-          // youtube
+          // -----------------------
+          // VIDEO (kind=video)
+          // -----------------------
+          if (a.kind === "video") {
+            return (
+              <div
+                key={`vid-${idx}`}
+                style={{
+                  position: "relative",
+                  width: "100%",
+                  aspectRatio: "16 / 10",
+                  borderRadius: 12,
+                  overflow: "hidden",
+                  border: "1px solid rgba(0,0,0,0.12)",
+                  background: "#000",
+                }}
+              >
+                <ObjectUrlMedia file={a.file} />
+
+                {/* badge */}
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 10,
+                    bottom: 10,
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    background: "rgba(255,255,255,0.92)",
+                    border: "1px solid rgba(0,0,0,0.12)",
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  Video
+                </div>
+
+                <RemoveBtn onClick={() => onRemove(idx)} />
+              </div>
+            );
+          }
+
+          // -----------------------
+          // YOUTUBE
+          // -----------------------
           const thumb = a.youtubeId
             ? `https://img.youtube.com/vi/${a.youtubeId}/hqdefault.jpg`
             : null;
@@ -123,7 +195,7 @@ export default function ComposerPendingAttachments({ items, onRemove }: Props) {
                 />
               ) : null}
 
-              {/* play badge */}
+              {/* badge */}
               <div
                 style={{
                   position: "absolute",
@@ -140,28 +212,7 @@ export default function ComposerPendingAttachments({ items, onRemove }: Props) {
                 YouTube
               </div>
 
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => onRemove(idx)}
-                title="Remove"
-                style={{
-                  position: "absolute",
-                  top: 8,
-                  right: 8,
-                  width: 28,
-                  height: 28,
-                  borderRadius: 999,
-                  border: "1px solid rgba(0,0,0,0.2)",
-                  background: "rgba(255,255,255,0.9)",
-                  cursor: "pointer",
-                  fontSize: 16,
-                  lineHeight: "28px",
-                  padding: 0,
-                }}
-              >
-                ×
-              </button>
+              <RemoveBtn onClick={() => onRemove(idx)} />
             </div>
           );
         })}
