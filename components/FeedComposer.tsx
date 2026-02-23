@@ -8,6 +8,14 @@ import ComposerActionRowLexical from "@/components/composer/ComposerActionRowLex
 import ComposerPendingAttachments from "@/components/composer/ComposerPendingAttachments";
 import { parseYouTubeId, type PendingAttachment } from "@/lib/postAttachments";
 
+// ✅ Attachment limits (Twitter-ish)
+const MAX_MEDIA = 4; // images/gifs
+const MAX_YOUTUBE = 1;
+const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10MB
+// Optional: total cap (media + youtube). This equals 5 by default.
+// If you don't want a total cap beyond the per-type caps, remove this const and related checks.
+const MAX_TOTAL_ATTACHMENTS = MAX_MEDIA + MAX_YOUTUBE;
+
 type Props = {
   user: any | null;
 
@@ -71,10 +79,81 @@ export default function FeedComposer({
   const editorRef = useRef<LexicalEditor | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // ✅ Helper counters
+  function countPendingMedia(pending: PendingAttachment[]) {
+    return pending.filter((a: any) => a?.kind === "image").length;
+  }
+
+  function countPendingYouTube(pending: PendingAttachment[]) {
+    return pending.filter((a: any) => a?.kind === "youtube").length;
+  }
+
+  // ✅ Enforce limits before anything "gets added"
   function addFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
-    const next = Array.from(files).map((f) => ({ kind: "image" as const, file: f }));
-    setPendingAttachments((prev: any[]) => [...prev, ...next]);
+
+    const picked = Array.from(files);
+
+    // 1) size filter
+    const tooBig = picked.find((f) => f.size > MAX_FILE_BYTES);
+    if (tooBig) {
+      window.alert(
+        `That file is too big (${Math.round(tooBig.size / 1024 / 1024)}MB). Max is ${Math.round(
+          MAX_FILE_BYTES / 1024 / 1024
+        )}MB.`
+      );
+      return;
+    }
+
+    // 2) enforce max media count (and optional total cap)
+    setPendingAttachments((prev: PendingAttachment[]) => {
+      // Optional total cap
+      if (prev.length >= MAX_TOTAL_ATTACHMENTS) {
+        window.alert(`You can only add up to ${MAX_TOTAL_ATTACHMENTS} attachments total.`);
+        return prev;
+      }
+
+      const currentMedia = countPendingMedia(prev);
+      const remainingMediaSlots = Math.max(0, MAX_MEDIA - currentMedia);
+
+      if (remainingMediaSlots <= 0) {
+        window.alert(`You can only attach up to ${MAX_MEDIA} images/GIFs per post.`);
+        return prev;
+      }
+
+      // Respect total cap too (if enabled)
+      const remainingTotalSlots = Math.max(0, MAX_TOTAL_ATTACHMENTS - prev.length);
+      if (remainingTotalSlots <= 0) {
+        window.alert(`You can only add up to ${MAX_TOTAL_ATTACHMENTS} attachments total.`);
+        return prev;
+      }
+
+      const allowedSlots = Math.min(remainingMediaSlots, remainingTotalSlots);
+
+      const nextFiles = picked.slice(0, allowedSlots);
+      const next = nextFiles.map((f) => ({
+        kind: "image" as const,
+        file: f,
+      })) as PendingAttachment[];
+
+      // If they selected more than allowed, tell them (optional)
+      if (picked.length > allowedSlots) {
+        // Prefer a clear message that respects both caps
+        if (allowedSlots === remainingMediaSlots && allowedSlots !== remainingTotalSlots) {
+          window.alert(
+            `Only the first ${allowedSlots} file(s) were added (you hit the total cap of ${MAX_TOTAL_ATTACHMENTS}).`
+          );
+        } else if (allowedSlots === remainingTotalSlots && allowedSlots !== remainingMediaSlots) {
+          window.alert(
+            `Only the first ${allowedSlots} file(s) were added (you hit the total cap of ${MAX_TOTAL_ATTACHMENTS}).`
+          );
+        } else {
+          window.alert(`Only the first ${allowedSlots} file(s) were added (max ${MAX_MEDIA}).`);
+        }
+      }
+
+      return [...prev, ...next];
+    });
   }
 
   function onPickImages() {
@@ -85,18 +164,45 @@ export default function FeedComposer({
     setPendingAttachments((prev) => prev.filter((_, i) => i !== idx));
   }
 
+  // ✅ Enforce YouTube limit + validate + prevent duplicate
   function onAddYouTube() {
-    const url = window.prompt("Paste YouTube link:");
-    if (!url) return;
-    const id = parseYouTubeId(url);
-    if (!id) {
-      alert("Could not detect a YouTube video id from that link.");
-      return;
-    }
-    setPendingAttachments((prev: any[]) => [
-      ...prev,
-      { kind: "youtube" as const, youtubeId: id, url },
-    ]);
+    setPendingAttachments((prev: PendingAttachment[]) => {
+      // Optional total cap
+      if (prev.length >= MAX_TOTAL_ATTACHMENTS) {
+        window.alert(`You can only add up to ${MAX_TOTAL_ATTACHMENTS} attachments total.`);
+        return prev;
+      }
+
+      const currentYT = countPendingYouTube(prev);
+      if (currentYT >= MAX_YOUTUBE) {
+        window.alert(`You can only add ${MAX_YOUTUBE} YouTube link per post.`);
+        return prev;
+      }
+
+      const url = window.prompt("Paste YouTube link:");
+      if (!url) return prev;
+
+      const id = parseYouTubeId(url);
+      if (!id) {
+        window.alert("That doesn’t look like a valid YouTube link.");
+        return prev;
+      }
+
+      const already = prev.some((a: any) => a?.kind === "youtube" && a?.youtubeId === id);
+      if (already) {
+        window.alert("That YouTube video is already attached.");
+        return prev;
+      }
+
+      return [
+        ...prev,
+        {
+          kind: "youtube" as const,
+          url: url.trim(),
+          youtubeId: id,
+        } as PendingAttachment,
+      ];
+    });
   }
 
   function focusLexical() {
@@ -104,7 +210,7 @@ export default function FeedComposer({
     if (!ed) return;
     try {
       ed.focus();
-    } catch { }
+    } catch {}
   }
 
   function getInitialFromUser(userObj: any) {
@@ -140,7 +246,17 @@ export default function FeedComposer({
   const placeholder = isReply ? "Post your reply" : contextPlaceholder;
 
   const isCollapsed = !active && !postContent.trim();
-  const disabled = posting || !postContent.trim();
+
+  // ✅ If your PendingAttachment ever includes status, we’ll respect it without requiring it
+  const hasUploading =
+    Array.isArray(pendingAttachments) &&
+    pendingAttachments.some((a: any) => a?.status === "uploading");
+
+  // ✅ Allow attachment-only posts (so you can post media without text)
+  const disabled =
+    posting ||
+    hasUploading ||
+    (!postContent.trim() && pendingAttachments.length === 0);
 
   function expandAndFocus() {
     setActive(true);
@@ -156,6 +272,9 @@ export default function FeedComposer({
     // Defer one tick so clicks on toolbar can run without collapsing.
     window.setTimeout(() => {
       if (postContent.trim()) return;
+
+      // If they have attachments, keep it open (prevents weird UX)
+      if (pendingAttachments.length > 0) return;
 
       const activeEl = document.activeElement as HTMLElement | null;
       const stillInsideComposer = !!activeEl && !!composerRef.current?.contains(activeEl);
@@ -227,6 +346,7 @@ export default function FeedComposer({
           e.currentTarget.value = "";
         }}
       />
+
       <div
         style={{
           display: "flex",
@@ -236,7 +356,10 @@ export default function FeedComposer({
         }}
       >
         {currentUserUsername ? (
-          <Link href={`/${currentUserUsername}`} style={{ display: "inline-block", textDecoration: "none" }}>
+          <Link
+            href={`/${currentUserUsername}`}
+            style={{ display: "inline-block", textDecoration: "none" }}
+          >
             {composerAvatarNode}
           </Link>
         ) : (
@@ -270,7 +393,7 @@ export default function FeedComposer({
               !isCollapsed ? (
                 <div>
                   <ComposerActionRowLexical
-                    disabled={posting}
+                    disabled={posting || hasUploading}
                     onPickImages={onPickImages}
                     onAddYouTube={onAddYouTube}
                   />
