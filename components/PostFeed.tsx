@@ -9,10 +9,16 @@ import { openAuthModal } from "../lib/openAuthModal";
 import CommentRow from "./CommentRow";
 import InfiniteSentinel from "./InfiniteSentinel";
 import FeedComposer from "./FeedComposer";
+import { insertAttachments, type PendingAttachment } from "@/lib/postAttachments";
 
 type Post = {
   id: string;
-  content: string;
+
+  content: string; // legacy
+  content_text?: string | null;
+  content_json?: any | null;
+  content_html?: string | null;
+
   created_at: string;
   user_id: string;
 
@@ -79,6 +85,16 @@ type ReviewRow = {
   author_liked: boolean | null;
 };
 
+type PostAttachmentRow = {
+  id: string;
+  post_id: string;
+  kind: "image" | "youtube";
+  url: string;
+  meta: any;
+  sort_order: number;
+  created_at: string;
+};
+
 const TYPO = {
   base: "1rem",
   small: "0.9rem",
@@ -106,8 +122,14 @@ export default function PostFeed({
 
   const [user, setUser] = useState<any>(null);
   const [postContent, setPostContent] = useState("");
+  const [postContentJson, setPostContentJson] = useState<any>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [posting, setPosting] = useState(false);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  // post.id -> rendered attachments rows
+  const [attachmentsByPostId, setAttachmentsByPostId] = useState<
+    Record<string, PostAttachmentRow[]>
+  >({});
 
   // post.id -> review row
   const [reviewsByPostId, setReviewsByPostId] = useState<Record<string, ReviewRow>>(
@@ -304,6 +326,7 @@ export default function PostFeed({
       setHasMore(true);
       setCursorCreatedAt(null);
       setCursorId(null);
+      setAttachmentsByPostId({});
     } else {
       if (loadingMore) return;
       if (!hasMore) return;
@@ -317,7 +340,7 @@ export default function PostFeed({
       let query = supabase
         .from("posts")
         .select(
-          "id, content, created_at, user_id, anime_id, anime_episode_id, manga_id, manga_chapter_id, review_id"
+          "id, user_id, content, content_text, content_json, created_at, anime_id, anime_episode_id, manga_id, manga_chapter_id, review_id"
         )
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
@@ -340,6 +363,9 @@ export default function PostFeed({
 
       if (postsError) {
         console.error("Error fetching posts:", postsError);
+        console.error("PostgREST message:", (postsError as any)?.message);
+        console.error("PostgREST details:", (postsError as any)?.details);
+        console.error("PostgREST hint:", (postsError as any)?.hint);
         if (isInitial) setPosts([]);
         setHasMore(false);
         return;
@@ -372,6 +398,33 @@ export default function PostFeed({
       // ------------------------------------------------------------
       const newIds = newPosts.map((p) => p.id);
       const newUserIds = Array.from(new Set(newPosts.map((p) => p.user_id)));
+
+      // -------------------------------
+      // LOAD ATTACHMENTS for new posts
+      // -------------------------------
+      if (newIds.length > 0) {
+        const { data: attRows, error: attErr } = await supabase
+          .from("post_attachments")
+          .select("id, post_id, kind, url, meta, sort_order, created_at")
+          .in("post_id", newIds)
+          .order("sort_order", { ascending: true });
+
+        if (attErr) {
+          console.error("Error loading attachments:", attErr);
+        } else {
+          setAttachmentsByPostId((prev) => {
+            const next = { ...prev };
+            (attRows || []).forEach((r: any) => {
+              const list = next[r.post_id] ? [...next[r.post_id]] : [];
+              list.push(r);
+              // keep sorted
+              list.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+              next[r.post_id] = list;
+            });
+            return next;
+          });
+        }
+      }
 
       // likes counts for new posts
       if (newIds.length > 0) {
@@ -584,13 +637,15 @@ export default function PostFeed({
     if (!user) return;
 
     const trimmed = postContent.trim();
-    if (!trimmed) return;
+    if (!trimmed && pendingAttachments.length === 0) return;
 
     setPosting(true);
 
     const payload: any = {
-      content: trimmed,
       user_id: user.id,
+      content_text: trimmed || null,
+      content_json: postContentJson,
+      content: trimmed || "", // keep legacy if you want
     };
 
     if (animeId) payload.anime_id = animeId;
@@ -599,19 +654,41 @@ export default function PostFeed({
     if (mangaId) payload.manga_id = mangaId;
     if (mangaChapterId) payload.manga_chapter_id = mangaChapterId;
 
-    const { error } = await supabase.from("posts").insert(payload);
+    const { data: created, error: insertErr } = await supabase
+      .from("posts")
+      .insert(payload)
+      .select("id")
+      .single();
 
-    setPosting(false);
-
-    if (error) {
-      console.error("Error creating post:", error);
+    if (insertErr) {
+      console.error("Error creating post:", insertErr);
+      setPosting(false);
       return;
     }
 
-    setPostContent("");
-    await fetchFeed("initial");
+    const postId = created.id as string;
 
+    // ✅ upload + insert post_attachments rows
+    try {
+      await insertAttachments({
+        supabase,
+        postId,
+        userId: user.id,
+        attachments: pendingAttachments,   // ✅ correct key
+      });
+
+      setPendingAttachments([]);
+    } catch (e) {
+      console.error("Error inserting attachments:", e);
+    }
+
+    setPostContent("");
+    setPostContentJson(null);
+
+    await fetchFeed("initial");
     if (user?.id) fetchLikedByMe(user.id);
+
+    setPosting(false);
   }
 
   // ============================================================
@@ -769,6 +846,9 @@ export default function PostFeed({
         user={user}
         postContent={postContent}
         setPostContent={setPostContent}
+        setPostContentJson={setPostContentJson}
+        pendingAttachments={pendingAttachments}
+        setPendingAttachments={setPendingAttachments}
         posting={posting}
         onPost={handlePost}
         animeId={animeId}
@@ -802,6 +882,20 @@ export default function PostFeed({
         ) : (
           <>
             {posts.map((p) => {
+              if (p.content_html) {
+                console.log("HAS HTML", p.id, p.content_html.slice(0, 120));
+              } else {
+                console.log("NO HTML", p.id);
+              }
+              if (p.content_json) {
+                console.log("JSON TYPE", typeof p.content_json);
+                const s = typeof p.content_json === "string" ? p.content_json : JSON.stringify(p.content_json);
+                console.log("JSON PREVIEW", p.id, s.slice(0, 250));
+              } else {
+                console.log("NO JSON", p.id);
+              }
+
+              console.log("ATT COUNT", p.id, (attachmentsByPostId[p.id] || []).length);
               const isOwner = user && user.id === p.user_id;
               const isMenuOpen = openMenuPostId === p.id;
               const likeCount = likeCounts[p.id] || 0;
@@ -893,6 +987,7 @@ export default function PostFeed({
               }
 
               const review = reviewsByPostId[p.id];
+              const atts = attachmentsByPostId[p.id] || [];
 
               return review ? (
                 <ReviewPostRow
@@ -902,6 +997,9 @@ export default function PostFeed({
                   userId={p.user_id}
                   createdAt={p.created_at}
                   content={(review.content ?? p.content) as string}
+                  contentText={p.content_text ?? null}
+                  contentJson={p.content_json ?? null}
+                  attachments={atts}
                   rating={review.rating}
                   containsSpoilers={!!review.contains_spoilers}
                   authorLiked={!!review.author_liked}
@@ -940,6 +1038,9 @@ export default function PostFeed({
                   userId={p.user_id}
                   createdAt={p.created_at}
                   content={p.content}
+                  contentText={p.content_text ?? null}
+                  contentJson={p.content_json ?? null}
+                  attachments={atts}
                   displayName={displayName}
                   initial={initial}
                   username={handle ?? undefined}

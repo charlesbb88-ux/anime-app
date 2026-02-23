@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { Heart } from "lucide-react";
 import ActionRow from "./ActionRow";
+import RichPostRenderer from "@/components/composer/RichPostRenderer";
+import PostAttachments from "@/components/composer/PostAttachments";
 
 const POSTER_W = 72;
 const POSTER_H = 108;
@@ -18,6 +20,14 @@ export type ReviewPostRowProps = {
   createdAt: string;
 
   content: string;
+
+  // ✅ NEW: renderer inputs (prefer these if provided)
+  contentText?: string | null;
+  contentJson?: any | null;
+
+  // ✅ NEW: attachments for this post
+  attachments?: any[];
+
   rating: number | null; // reviews.rating: 0..100 (or null)
   containsSpoilers?: boolean;
 
@@ -320,6 +330,7 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
     postId,
     createdAt,
     content,
+    attachments,
     rating,
     containsSpoilers = false,
 
@@ -705,18 +716,18 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
           </div>
 
           {/* Text */}
-          <p
-            style={{
-              margin: 0,
-              fontSize: contentFontSize,
-              fontWeight: 400,
-              lineHeight: 1.5,
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-            }}
-          >
-            {content}
-          </p>
+          <RichPostRenderer
+            json={props.contentJson ?? null}
+            fallbackText={props.contentText ?? content}
+            fontSize={contentFontSize}
+            fontWeight={400}
+            lineHeight={1.5}
+          />
+          {(props.attachments?.length ?? 0) > 0 ? (
+            <div style={{ marginTop: 10 }}>
+              <PostAttachments items={props.attachments as any} />
+            </div>
+          ) : null}
 
           <div style={{ clear: "both" }} />
         </div>
