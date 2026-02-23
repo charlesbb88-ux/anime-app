@@ -26,7 +26,13 @@ function normalizeThumbUrl(url: string) {
 }
 
 function pickBestArtwork(rows: ArtworkRow[]): string | null {
-  const usable = rows.filter((r) => r.url);
+  const usable = rows
+    .map((r) => ({
+      ...r,
+      url: typeof r.url === "string" ? r.url.trim() : null,
+    }))
+    .filter((r) => Boolean(r.url));
+
   if (usable.length === 0) return null;
 
   usable.sort((a, b) => {
@@ -53,15 +59,23 @@ type Props = {
   className?: string;
   alt?: string;
 
+  // ✅ NEW: wrapper class so parent can avoid reserving space when missing
+  outerClassName?: string;
+
   // optional: show a placeholder box even if no image
   showPlaceholder?: boolean;
+
+  // ✅ NEW: if true, returns null when missing (no placeholder, no reserved space)
+  hideIfMissing?: boolean;
 };
 
 export default function AnimeEpisodeThumb({
   episodeId,
   className,
+  outerClassName,
   alt = "",
   showPlaceholder = true,
+  hideIfMissing = false,
 }: Props) {
   const [url, setUrl] = useState<string | null>(null);
 
@@ -111,18 +125,30 @@ export default function AnimeEpisodeThumb({
   }, [episodeId, cacheKey, cache]);
 
   if (!url) {
+    if (hideIfMissing) return null;
     if (!showPlaceholder) return null;
-    return <div className={["bg-black/15", className ?? ""].join(" ")} />;
+
+    return (
+      <div
+        className={[
+          outerClassName ?? "",
+          "bg-black/15",
+          className ?? "",
+        ].join(" ")}
+      />
+    );
   }
 
   return (
-    <img
-      src={url}
-      alt={alt}
-      className={["h-full w-full object-cover", className ?? ""].join(" ")}
-      draggable={false}
-      loading="lazy"
-      decoding="async"
-    />
+    <div className={outerClassName ?? ""}>
+      <img
+        src={url}
+        alt={alt}
+        className={["h-full w-full object-cover", className ?? ""].join(" ")}
+        draggable={false}
+        loading="lazy"
+        decoding="async"
+      />
+    </div>
   );
 }

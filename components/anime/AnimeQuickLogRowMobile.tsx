@@ -350,8 +350,7 @@ export default function AnimeQuickLogRowMobile({
           scroll: false,
         });
       }
-
-      onMessage?.(`Logged Ep ${ep.episode_number} ✅`);
+      onMessage?.(`Logged Episode ${ep.episode_number} ✅`);
     } finally {
       setBusy(false);
     }
@@ -487,18 +486,18 @@ export default function AnimeQuickLogRowMobile({
             >
               <div className="flex items-center justify-between gap-2 px-3 py-2.5">
                 <div className="flex min-w-0 items-center gap-2">
-                  <div className="-ml-3 -my-2.5 w-24 shrink-0 overflow-hidden rounded-xs bg-black/20">
-                    <AnimeEpisodeThumb
-                      episodeId={nextEpisode.id}
-                      alt=""
-                      showPlaceholder
-                      className="h-auto w-full object-contain"
-                    />
-                  </div>
+                  <AnimeEpisodeThumb
+                    episodeId={nextEpisode.id}
+                    alt=""
+                    hideIfMissing
+                    showPlaceholder={false}
+                    outerClassName="-ml-3 -my-2.5 w-24 shrink-0 overflow-hidden rounded-xs bg-black/20"
+                    className="h-auto w-full object-contain"
+                  />
 
                   <div className="min-w-0">
                     <div className="text-[12px] font-semibold text-gray-100">
-                      Ep {nextEpisode.episode_number}
+                      Episode {nextEpisode.episode_number}
                     </div>
                     {title ? (
                       <div className="mt-0.5 truncate text-[11px] text-gray-500">{title}</div>
