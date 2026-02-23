@@ -14,25 +14,19 @@ import {
     type LexicalEditor,
 } from "lexical";
 
-export type Props = {
+type Props = {
     valueText: string;
     setValueText: (v: string) => void;
     placeholder: string;
-
-    /** true when expanded / active */
     active: boolean;
-
     onFocus: () => void;
     onBlur: () => void;
-
-    /** your existing typography size string like "1rem" */
     typoBase: string;
-
-    /** optional toolbar row rendered under editor (must be inside LexicalComposer) */
     toolbar?: React.ReactNode;
+    onEditorReady?: (editor: any) => void;
 
-    /** lets parent store editor + focus it after expand */
-    onEditorReady?: (editor: LexicalEditor) => void;
+    // ✅ ADD
+    setValueJson?: (json: any) => void;
 };
 
 function EditorReadyPlugin({
@@ -83,6 +77,7 @@ export default function ComposerRichEditor({
     typoBase,
     toolbar,
     onEditorReady,
+    setValueJson,
 }: Props) {
     const initialConfig = useMemo(
         () => ({
@@ -178,6 +173,12 @@ export default function ComposerRichEditor({
 
                 <OnChangePlugin
                     onChange={(editorState) => {
+                        // ✅ 1) send JSON to parent (no need to "read")
+                        if (setValueJson) {
+                            setValueJson(editorState.toJSON());
+                        }
+
+                        // ✅ 2) keep your plain text shadow
                         editorState.read(() => {
                             const text = $getRoot().getTextContent();
                             setValueText(text);

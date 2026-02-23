@@ -4,12 +4,20 @@ import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import ActionRow from "./ActionRow";
+import RichPostRenderer from "@/components/composer/RichPostRenderer";
+import PostAttachments from "@/components/composer/PostAttachments";
 
 export type CommentRowProps = {
   id: string;
   userId: string;
   createdAt: string;
   content: string;
+
+  // ✅ NEW: renderer inputs (prefer these if provided)
+  contentText?: string | null;
+  contentJson?: any | null;
+  // ✅ NEW: attachments for this post
+  attachments?: any[];
 
   displayName: string; // e.g. "@charles"
   initial: string;
@@ -85,6 +93,7 @@ export default function CommentRow(props: CommentRowProps) {
     id,
     createdAt,
     content,
+    attachments,
     displayName,
     initial,
     username,
@@ -410,18 +419,18 @@ export default function CommentRow(props: CommentRowProps) {
           )}
         </div>
 
-        <p
-          style={{
-            margin: 0,
-            fontSize: contentFontSize,
-            fontWeight: contentFontWeight,
-            lineHeight: 1.5,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-          }}
-        >
-          {content}
-        </p>
+        <RichPostRenderer
+          json={props.contentJson ?? null}
+          fallbackText={props.contentText ?? content}
+          fontSize={contentFontSize}
+          fontWeight={contentFontWeight}
+          lineHeight={1.5}
+        />
+        {(props.attachments?.length ?? 0) > 0 ? (
+          <div style={{ marginTop: 10 }}>
+            <PostAttachments items={props.attachments as any} />
+          </div>
+        ) : null}
       </div>
     </div>
   );

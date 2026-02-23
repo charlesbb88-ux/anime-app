@@ -5,6 +5,8 @@ import type { LexicalEditor } from "lexical";
 import Link from "next/link";
 import ComposerRichEditor from "@/components/composer/ComposerRichEditor";
 import ComposerActionRowLexical from "@/components/composer/ComposerActionRowLexical";
+import ComposerPendingAttachments from "@/components/composer/ComposerPendingAttachments";
+import { parseYouTubeId, type PendingAttachment } from "@/lib/postAttachments";
 
 type Props = {
   user: any | null;
@@ -26,12 +28,24 @@ type Props = {
 
   typoBase: string;
   typoSmall: string;
+
+  setPostContentJson?: (v: any) => void;
+
+  pendingAttachments: PendingAttachment[];
+  setPendingAttachments: (
+    v:
+      | PendingAttachment[]
+      | ((prev: PendingAttachment[]) => PendingAttachment[])
+  ) => void;
 };
 
 export default function FeedComposer({
   user,
   postContent,
   setPostContent,
+  setPostContentJson,
+  pendingAttachments,
+  setPendingAttachments,
   posting,
   onPost,
 
@@ -55,13 +69,42 @@ export default function FeedComposer({
   // ✅ Recommended safety refs (prevents collapse when interacting with toolbar)
   const composerRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<LexicalEditor | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  function addFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const next = Array.from(files).map((f) => ({ kind: "image" as const, file: f }));
+    setPendingAttachments((prev: any[]) => [...prev, ...next]);
+  }
+
+  function onPickImages() {
+    fileInputRef.current?.click();
+  }
+
+  function removeAttachmentAt(idx: number) {
+    setPendingAttachments((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function onAddYouTube() {
+    const url = window.prompt("Paste YouTube link:");
+    if (!url) return;
+    const id = parseYouTubeId(url);
+    if (!id) {
+      alert("Could not detect a YouTube video id from that link.");
+      return;
+    }
+    setPendingAttachments((prev: any[]) => [
+      ...prev,
+      { kind: "youtube" as const, youtubeId: id, url },
+    ]);
+  }
 
   function focusLexical() {
     const ed = editorRef.current;
     if (!ed) return;
     try {
       ed.focus();
-    } catch {}
+    } catch { }
   }
 
   function getInitialFromUser(userObj: any) {
@@ -172,6 +215,18 @@ export default function FeedComposer({
         marginBottom: 0,
       }}
     >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,.gif"
+        multiple
+        style={{ display: "none" }}
+        onChange={(e) => {
+          addFiles(e.target.files);
+          // allow re-picking the same file again later
+          e.currentTarget.value = "";
+        }}
+      />
       <div
         style={{
           display: "flex",
@@ -202,6 +257,7 @@ export default function FeedComposer({
           <ComposerRichEditor
             valueText={postContent}
             setValueText={setPostContent}
+            setValueJson={setPostContentJson}
             placeholder={isCollapsed ? placeholder : ""}
             active={!isCollapsed}
             onFocus={handleFocus}
@@ -210,7 +266,22 @@ export default function FeedComposer({
             onEditorReady={(ed) => {
               editorRef.current = ed;
             }}
-            toolbar={!isCollapsed ? <ComposerActionRowLexical disabled={posting} /> : undefined}
+            toolbar={
+              !isCollapsed ? (
+                <div>
+                  <ComposerActionRowLexical
+                    disabled={posting}
+                    onPickImages={onPickImages}
+                    onAddYouTube={onAddYouTube}
+                  />
+
+                  <ComposerPendingAttachments
+                    items={pendingAttachments}
+                    onRemove={removeAttachmentAt}
+                  />
+                </div>
+              ) : undefined
+            }
           />
         </div>
 
