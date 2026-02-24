@@ -45,6 +45,28 @@ function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
 }
 
+const PHONE_MAX_WIDTH_PX = 767;
+
+function useIsPhone() {
+  const [isPhone, setIsPhone] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${PHONE_MAX_WIDTH_PX}px)`);
+    const update = () => setIsPhone(mq.matches);
+    update();
+
+    if (typeof (mq as any).addEventListener === "function") {
+      (mq as any).addEventListener("change", update);
+      return () => (mq as any).removeEventListener("change", update);
+    } else {
+      mq.addListener(update);
+      return () => mq.removeListener(update);
+    }
+  }, []);
+
+  return isPhone;
+}
+
 export default function ProfileMediaHeaderLayout({
   backdropUrl,
   backdropPosX = 50,
@@ -68,6 +90,7 @@ export default function ProfileMediaHeaderLayout({
   hideTabs = false,
 }: Props) {
   const router = useRouter();
+  const isPhone = useIsPhone();
 
   const showBackdropImage = typeof backdropUrl === "string" && backdropUrl.length > 0;
   const showOverlay = typeof overlaySrc === "string" && overlaySrc.length > 0;
@@ -84,11 +107,10 @@ export default function ProfileMediaHeaderLayout({
   }
 
   function tabClass(isActiveTab: boolean) {
-    return `pb-2 ${
-      isActiveTab
-        ? "border-b-2 border-slate-900 text-slate-900"
-        : "text-slate-500 hover:text-slate-800"
-    }`;
+    return `pb-2 ${isActiveTab
+      ? "border-b-2 border-slate-900 text-slate-900"
+      : "text-slate-500 hover:text-slate-800"
+      }`;
   }
 
   const computedActive: Tab = useMemo(() => {
@@ -188,7 +210,18 @@ export default function ProfileMediaHeaderLayout({
   }, [imgSize, backdropBox.w, backdropBox.h, zoom, posX, posY, hideBottom]);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 pt-0 pb-0">
+    <div
+      className={isPhone ? "pt-0 pb-0" : "mx-auto max-w-6xl px-4 pt-0 pb-0"}
+      style={
+        isPhone
+          ? {
+            width: "100vw",
+            marginLeft: "calc(50% - 50vw)",
+            marginRight: "calc(50% - 50vw)",
+          }
+          : undefined
+      }
+    >
       {/* Backdrop */}
       <div
         ref={backdropBoxRef}

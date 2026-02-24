@@ -10,11 +10,14 @@ type Attachment = {
   url: string;
   meta?: any;
   sort_order?: number;
+
+  // ✅ DB columns you’re now filling
+  width?: number | null;
+  height?: number | null;
 };
 
 // ---------------------------------------------
 // Tiny global "only one video plays" coordinator
-// (no libraries; safe in Next client)
 // ---------------------------------------------
 const NOW_PLAYING_EVENT = "post_video_now_playing";
 
@@ -30,6 +33,25 @@ function subscribeNowPlaying(fn: (token: string) => void) {
   };
   window.addEventListener(NOW_PLAYING_EVENT, handler as any);
   return () => window.removeEventListener(NOW_PLAYING_EVENT, handler as any);
+}
+
+// ---------------------------------------------
+// Aspect ratio helpers
+// ---------------------------------------------
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function getAspectPct(a: { width?: number | null; height?: number | null }, fallbackPct = 56.25) {
+  const w = a.width ?? null;
+  const h = a.height ?? null;
+  if (!w || !h || w <= 0 || h <= 0) return fallbackPct;
+
+  // percent = (h / w) * 100
+  const pct = (h / w) * 100;
+
+  // keep things sane; avoids insane tall/flat placeholders
+  return clamp(pct, 25, 180);
 }
 
 export default function PostAttachments({ items }: { items: Attachment[] }) {
@@ -48,10 +70,7 @@ export default function PostAttachments({ items }: { items: Attachment[] }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxStart, setLightboxStart] = useState(0);
 
-  const lightboxItems = useMemo(
-    () => images.map((x) => ({ id: x.id, url: x.url })),
-    [images]
-  );
+  const lightboxItems = useMemo(() => images.map((x) => ({ id: x.id, url: x.url })), [images]);
 
   function openLightboxAt(index: number) {
     setLightboxStart(index);
@@ -63,7 +82,14 @@ export default function PostAttachments({ items }: { items: Attachment[] }) {
       {images.length > 0 ? <ImageGrid images={images} onOpen={openLightboxAt} /> : null}
 
       {videos.map((a, idx) => (
-        <TwitterVideoCard key={a.id ?? `vid-${idx}`} url={a.url} token={a.id ?? `vid-${idx}-${a.url}`} />
+        <TwitterVideoCard
+          key={a.id ?? `vid-${idx}`}
+          url={a.url}
+          token={a.id ?? `vid-${idx}-${a.url}`}
+          // ✅ pass dims for reserved space
+          width={a.width ?? null}
+          height={a.height ?? null}
+        />
       ))}
 
       {yts.map((a, idx) => (
@@ -94,8 +120,10 @@ function ImageGrid({
   const extra = images.length - 4;
 
   // ✅ If only 1 image: DO NOT crop and DO NOT shrink into a centered box.
+  // Reserve space using stored width/height to avoid layout jump.
   if (images.length === 1) {
     const a = images[0];
+    const paddingTop = `${getAspectPct(a, 56.25)}%`;
 
     return (
       <button
@@ -104,14 +132,24 @@ function ImageGrid({
         className="block w-full overflow-hidden rounded-lg border border-black bg-white text-left p-0 leading-none"
         style={{ cursor: "zoom-in" }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={a.url}
-          alt=""
-          loading="lazy"
-          className="block w-full h-auto"
-          style={{ maxHeight: "70vh", objectFit: "contain" }}
-        />
+        <div className="relative w-full bg-white" style={{ paddingTop }}>
+          {/* placeholder */}
+          <div className="absolute inset-0 bg-neutral-100" />
+          {/* actual */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={a.url}
+            alt=""
+            loading="lazy"
+            className="absolute inset-0 block w-full h-full"
+            style={{
+              // no crop
+              objectFit: "contain",
+              // cap height like before (prevents mega-tall images)
+              maxHeight: "70vh",
+            }}
+          />
+        </div>
       </button>
     );
   }
@@ -169,7 +207,10 @@ function ImgTileCrop({
       className="relative w-full bg-white text-left block p-0 leading-none border-0"
       style={{ cursor: "zoom-in" }}
     >
+      {/* fixed ratio + object-cover ONLY for multi-image grids */}
       <div className="relative w-full" style={{ paddingTop: "56.25%" }}>
+        {!loaded ? <div className="absolute inset-0 bg-neutral-100" /> : null}
+
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={a.url}
@@ -182,7 +223,6 @@ function ImgTileCrop({
             "transition-opacity duration-150",
           ].join(" ")}
         />
-        {!loaded ? <div className="absolute inset-0 bg-neutral-100" /> : null}
 
         {overlayCount > 0 ? (
           <div className="absolute inset-0 flex items-center justify-center bg-black/55">
@@ -200,14 +240,28 @@ function ImgTileCrop({
 // - only one plays at a time (global)
 // - controls hidden until unmuted
 // - tap to unmute + show controls
+// - ✅ reserves space using width/height
 // --------------------
-function TwitterVideoCard({ url, token }: { url: string; token: string }) {
+function TwitterVideoCard({
+  url,
+  token,
+  width,
+  height,
+}: {
+  url: string;
+  token: string;
+  width?: number | null;
+  height?: number | null;
+}) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const [isVisible, setIsVisible] = useState(false);
-  const [hasUserUnmuted, setHasUserUnmuted] = useState(false); // once they unmute, we keep controls visible
+  const [hasUserUnmuted, setHasUserUnmuted] = useState(false);
   const [showControls, setShowControls] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+
+  // ✅ reserve space with real aspect ratio when available
+  const paddingTop = `${getAspectPct({ width, height }, 56.25)}%`;
 
   // Observe visibility
   useEffect(() => {
@@ -219,9 +273,7 @@ function TwitterVideoCard({ url, token }: { url: string; token: string }) {
         const v = entries[0]?.isIntersecting ?? false;
         setIsVisible(v);
       },
-      {
-        threshold: [0, 0.6, 1],
-      }
+      { threshold: [0, 0.6, 1] }
     );
 
     obs.observe(el);
@@ -231,13 +283,10 @@ function TwitterVideoCard({ url, token }: { url: string; token: string }) {
   // Subscribe: pause if someone else starts
   useEffect(() => {
     if (typeof window === "undefined") return;
-
     return subscribeNowPlaying((activeToken) => {
       const el = videoRef.current;
       if (!el) return;
-      if (activeToken !== token) {
-        el.pause();
-      }
+      if (activeToken !== token) el.pause();
     });
   }, [token]);
 
@@ -268,22 +317,17 @@ function TwitterVideoCard({ url, token }: { url: string; token: string }) {
       return;
     }
 
-    // If user unmuted, we still autoplay when visible, but keep their unmuted preference.
-    // If not unmuted, autoplay must be muted to succeed.
     if (!hasUserUnmuted) {
       el.muted = true;
       el.volume = 0;
       setShowControls(false);
     }
 
-    // Only one plays: claim "now playing" before play attempt
     announceNowPlaying(token);
 
     const p = el.play();
     if (p && typeof (p as any).catch === "function") {
-      (p as any).catch(() => {
-        // Autoplay might fail on some devices even muted; ignore.
-      });
+      (p as any).catch(() => {});
     }
   }, [isVisible, hasUserUnmuted, token]);
 
@@ -304,7 +348,6 @@ function TwitterVideoCard({ url, token }: { url: string; token: string }) {
     const el = videoRef.current;
     if (!el) return;
 
-    // First tap: unmute + show controls (Twitter vibe)
     if (!hasUserUnmuted) {
       setHasUserUnmuted(true);
       setShowControls(true);
@@ -318,13 +361,15 @@ function TwitterVideoCard({ url, token }: { url: string; token: string }) {
       return;
     }
 
-    // After unmuted: tap toggles play/pause
     togglePlayPause();
   }
 
   return (
     <div className="overflow-hidden rounded-lg border border-black bg-white">
-      <div className="relative w-full" style={{ paddingTop: "56.25%" }}>
+      <div className="relative w-full bg-black" style={{ paddingTop }}>
+        {/* placeholder while metadata/first frame loads */}
+        <div className="absolute inset-0 bg-neutral-900" />
+
         <video
           ref={videoRef}
           className="absolute inset-0 h-full w-full"
@@ -334,19 +379,16 @@ function TwitterVideoCard({ url, token }: { url: string; token: string }) {
           loop
           preload="metadata"
           controls={showControls}
-          // Twitter-y crop
           style={{ objectFit: "cover" }}
-          // If user uses native controls, still enforce single-playing
           onPlay={() => announceNowPlaying(token)}
         />
 
-        {/* Click layer (we don't want to rely on native controls until unmuted) */}
         <button
           type="button"
           onClick={onTapVideo}
           className="absolute inset-0 block w-full h-full"
           style={{
-            cursor: hasUserUnmuted ? "pointer" : "pointer",
+            cursor: "pointer",
             background: "transparent",
             border: 0,
             padding: 0,
@@ -354,7 +396,6 @@ function TwitterVideoCard({ url, token }: { url: string; token: string }) {
           aria-label={hasUserUnmuted ? "Play/Pause video" : "Unmute video"}
         />
 
-        {/* Overlay: muted badge (only before user unmute) */}
         {!hasUserUnmuted ? (
           <div className="absolute left-3 bottom-3 flex items-center gap-2 rounded-full bg-black/60 px-3 py-2">
             <MuteIcon />
@@ -362,7 +403,6 @@ function TwitterVideoCard({ url, token }: { url: string; token: string }) {
           </div>
         ) : null}
 
-        {/* Optional: play indicator when paused after unmute */}
         {hasUserUnmuted && !isPlaying ? (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="rounded-full bg-black/55 p-4">
@@ -378,18 +418,8 @@ function TwitterVideoCard({ url, token }: { url: string; token: string }) {
 function MuteIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M11 5L6 9H3v6h3l5 4V5z"
-        stroke="white"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M16 9l5 6M21 9l-5 6"
-        stroke="white"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
+      <path d="M11 5L6 9H3v6h3l5 4V5z" stroke="white" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M16 9l5 6M21 9l-5 6" stroke="white" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
 }
@@ -397,10 +427,7 @@ function MuteIcon() {
 function PlayIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M9 7l10 5-10 5V7z"
-        fill="white"
-      />
+      <path d="M9 7l10 5-10 5V7z" fill="white" />
     </svg>
   );
 }
