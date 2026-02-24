@@ -18,6 +18,8 @@ import { useProfileByUsername } from "@/lib/hooks/useProfileByUsername";
 import ProfileFollowsModal from "@/components/profile/ProfileFollowsModal";
 import ProfileTabsRow from "@/components/profile/ProfileTabsRow";
 
+import ProfilePhoneMain from "@/components/profile/phone/main/ProfilePhoneMain";
+
 const LAYOUT = {
   pageMaxWidth: "72rem",
   pagePaddingY: "2rem",
@@ -236,29 +238,16 @@ export default function UserProfilePage() {
               }
             >
               {isPhone ? (
-                <>
-                  <ProfileTabsRow
-                    username={profile.username}
-                    activeTab="posts"
-                    className="mb-4"
-                    variant="card"
-                    center
-                  />
-
-                  <ProfileAboutSection html={profile.about_html ?? ""} />
-                  <div className="mb-4"></div>
-
-                  <section>
-                    <ProfilePostsFeed
-                      profileId={profile.id}
-                      viewerUserId={currentUser?.id ?? null}
-                      displayName={displayName}
-                      avatarInitial={avatarInitial}
-                      canonicalHandle={canonicalHandle}
-                      avatarUrl={profile.avatar_url}
-                    />
-                  </section>
-                </>
+                <ProfilePhoneMain
+                  profileId={profile.id}
+                  username={profile.username}
+                  aboutHtml={profile.about_html ?? ""}
+                  viewerUserId={currentUser?.id ?? null}
+                  displayName={displayName}
+                  avatarInitial={avatarInitial}
+                  canonicalHandle={canonicalHandle}
+                  avatarUrl={profile.avatar_url}
+                />
               ) : (
                 <>
                   <ProfileTabsRow

@@ -405,7 +405,7 @@ export default function PostFeed({
       if (newIds.length > 0) {
         const { data: attRows, error: attErr } = await supabase
           .from("post_attachments")
-          .select("id, post_id, kind, url, meta, sort_order, created_at")
+          .select("id, post_id, kind, url, meta, sort_order, created_at, width, height")
           .in("post_id", newIds)
           .order("sort_order", { ascending: true });
 

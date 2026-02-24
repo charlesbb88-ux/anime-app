@@ -2,9 +2,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type PendingAttachment =
-  | { kind: "image"; file: File } // NOTE: images + gifs + videos will come through as file attachments
+  | { kind: "image"; file: File } // image/gif/video all come through here in your UI right now
   | { kind: "youtube"; youtubeId: string; url: string }
-  | { kind: "video"; file: File }; // ✅ NEW (explicit kind if you want to add via UI separately)
+  | { kind: "video"; file: File }; // optional if you ever add separate UI
 
 // -----------------------------
 // Limits / validation (safe defaults)
@@ -17,15 +17,10 @@ export const ATTACHMENT_LIMITS = {
   maxGifBytes: 15 * 1024 * 1024, // 15MB
 
   // Videos
-  maxVideoBytes: 50 * 1024 * 1024, // 50MB (tweak later if you want)
+  maxVideoBytes: 50 * 1024 * 1024, // 50MB
 
   // Allowed mime
-  allowedImageMimes: new Set([
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-    "image/gif",
-  ]),
+  allowedImageMimes: new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]),
   allowedVideoMimes: new Set(["video/mp4", "video/webm"]),
 };
 
@@ -37,9 +32,7 @@ export function parseYouTubeId(input: string): string | null {
 
     const u = new URL(s);
 
-    if (u.hostname.includes("youtu.be")) {
-      return u.pathname.replace("/", "") || null;
-    }
+    if (u.hostname.includes("youtu.be")) return u.pathname.replace("/", "") || null;
 
     const v = u.searchParams.get("v");
     if (v) return v;
@@ -120,6 +113,79 @@ function validateAttachments(attachments: PendingAttachment[]) {
   }
 }
 
+// -----------------------------
+// Metadata extraction
+// -----------------------------
+async function readImageDimensions(file: File): Promise<{ width: number | null; height: number | null }> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.decoding = "async";
+
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("Failed to read image dimensions."));
+      img.src = url;
+    });
+
+    const w = Number.isFinite(img.naturalWidth) ? img.naturalWidth : null;
+    const h = Number.isFinite(img.naturalHeight) ? img.naturalHeight : null;
+    return { width: w ?? null, height: h ?? null };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function readVideoMetadata(file: File): Promise<{
+  width: number | null;
+  height: number | null;
+  durationSeconds: number | null;
+}> {
+  const url = URL.createObjectURL(file);
+  try {
+    const v = document.createElement("video");
+    v.preload = "metadata";
+    v.muted = true; // just safety
+    v.playsInline = true;
+
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        v.onloadedmetadata = null;
+        v.onerror = null;
+      };
+
+      v.onloadedmetadata = () => {
+        cleanup();
+        resolve();
+      };
+
+      v.onerror = () => {
+        cleanup();
+        reject(new Error("Failed to read video metadata."));
+      };
+
+      v.src = url;
+    });
+
+    const width = Number.isFinite(v.videoWidth) ? v.videoWidth : null;
+    const height = Number.isFinite(v.videoHeight) ? v.videoHeight : null;
+
+    // duration sometimes Infinity if metadata fails; normalize to null
+    const dur = Number.isFinite(v.duration) && v.duration > 0 ? v.duration : null;
+
+    return {
+      width,
+      height,
+      durationSeconds: dur,
+    };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// -----------------------------
+// Insert attachments
+// -----------------------------
 export async function insertAttachments(params: {
   supabase: SupabaseClient;
   postId: string;
@@ -127,10 +193,9 @@ export async function insertAttachments(params: {
   attachments: PendingAttachment[];
 }) {
   const { supabase, postId, userId, attachments } = params;
-
   if (!attachments?.length) return;
 
-  // ✅ enforce safety limits on the client before any uploads
+  // enforce safety limits on the client before any uploads
   validateAttachments(attachments);
 
   const rows: any[] = [];
@@ -154,6 +219,27 @@ export async function insertAttachments(params: {
     // decide if this file should be stored as image vs gif vs video
     const { kind, ext } = classifyFile(file);
 
+    // ✅ read metadata BEFORE upload/insert
+    let width: number | null = null;
+    let height: number | null = null;
+    let durationSeconds: number | null = null;
+
+    try {
+      if (kind === "video") {
+        const meta = await readVideoMetadata(file);
+        width = meta.width;
+        height = meta.height;
+        durationSeconds = meta.durationSeconds;
+      } else {
+        const meta = await readImageDimensions(file);
+        width = meta.width;
+        height = meta.height;
+      }
+    } catch (e) {
+      // don’t block posting if metadata fails (we can still render)
+      console.warn("Attachment metadata read failed:", e);
+    }
+
     // storage path
     const path = `${userId}/${postId}/${crypto.randomUUID()}.${ext}`;
 
@@ -169,15 +255,21 @@ export async function insertAttachments(params: {
 
     const publicUrl = publicPostMediaUrl(path);
 
+    const baseMeta: any = { storage_path: path };
+    if (kind === "video" && durationSeconds != null) {
+      // store in jsonb so you don’t need a new column
+      baseMeta.duration_seconds = durationSeconds;
+    }
+
     rows.push({
       post_id: postId,
-      kind, // ✅ "image" | "gif" | "video"
+      kind, // "image" | "gif" | "video"
       url: publicUrl,
-      meta: { storage_path: path },
+      meta: baseMeta,
       sort_order: i,
       mime: file.type || null,
-      width: null,
-      height: null,
+      width,
+      height,
       size_bytes: file.size ?? null,
     });
   }
