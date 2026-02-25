@@ -90,6 +90,10 @@ export default function FeedComposer({
 
   const [active, setActive] = useState(false);
 
+  const [isDragging, setIsDragging] = useState(false);
+
+  const dragCounter = useRef(0);
+
   // ✅ Recommended safety refs (prevents collapse when interacting with toolbar)
   const composerRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<LexicalEditor | null>(null);
@@ -171,8 +175,12 @@ export default function FeedComposer({
         if (picked.length > 1) {
           window.alert("Only the first video was added (1 video max).");
         }
-
-        const next: PendingAttachment = { kind: "video" as const, file };
+        const next: PendingAttachment = {
+          kind: "video" as const,
+          file,
+          status: "queued" as const,
+          error: null,
+        };
         return [...prev, next];
       }
 
@@ -191,6 +199,8 @@ export default function FeedComposer({
           ({
             kind: "image" as const,
             file: f,
+            status: "queued" as const,
+            error: null,
           }) as PendingAttachment
       );
 
@@ -240,6 +250,8 @@ export default function FeedComposer({
           kind: "youtube" as const,
           url: url.trim(),
           youtubeId: id,
+          status: "queued" as const,
+          error: null,
         } as PendingAttachment,
       ];
     });
@@ -250,7 +262,7 @@ export default function FeedComposer({
     if (!ed) return;
     try {
       ed.focus();
-    } catch {}
+    } catch { }
   }
 
   function getInitialFromUser(userObj: any) {
@@ -276,12 +288,12 @@ export default function FeedComposer({
   const contextPlaceholder = animeEpisodeId
     ? "Talk about this episode…"
     : animeId
-    ? "Talk about this anime…"
-    : mangaChapterId
-    ? "Talk about this chapter…"
-    : mangaId
-    ? "Talk about this manga…"
-    : "What's happening?";
+      ? "Talk about this anime…"
+      : mangaChapterId
+        ? "Talk about this chapter…"
+        : mangaId
+          ? "Talk about this manga…"
+          : "What's happening?";
 
   const placeholder = isReply ? "Post your reply" : contextPlaceholder;
 
@@ -363,11 +375,39 @@ export default function FeedComposer({
   return (
     <div
       ref={composerRef}
+      onDragEnter={(e) => {
+        e.preventDefault();
+        dragCounter.current += 1;
+        setIsDragging(true);
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+      }}
+      onDragLeave={(e) => {
+        e.preventDefault();
+        dragCounter.current -= 1;
+
+        if (dragCounter.current === 0) {
+          setIsDragging(false);
+        }
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+
+        dragCounter.current = 0;
+        setIsDragging(false);
+
+        const files = e.dataTransfer?.files;
+        if (!files || files.length === 0) return;
+
+        addFiles(files);
+      }}
       style={{
         border: "1px solid #000",
         borderRadius: 0,
         background: "#ffffff",
         marginBottom: 0,
+        outline: isDragging ? "2px dashed #3b82f6" : "none",
       }}
     >
       <input

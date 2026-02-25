@@ -639,58 +639,95 @@ export default function PostFeed({
     const trimmed = postContent.trim();
     if (!trimmed && pendingAttachments.length === 0) return;
 
+    // block if already posting
+    if (posting) return;
+
+    // if anything is uploading, don’t allow another click
+    const hasUploading = pendingAttachments.some((a: any) => a?.status === "uploading");
+    if (hasUploading) return;
+
     setPosting(true);
 
-    const payload: any = {
-      user_id: user.id,
-      content_text: trimmed || null,
-      content_json: postContentJson,
-      content: trimmed || "", // keep legacy if you want
-    };
-
-    if (animeId) payload.anime_id = animeId;
-    if (animeEpisodeId) payload.anime_episode_id = animeEpisodeId;
-
-    if (mangaId) payload.manga_id = mangaId;
-    if (mangaChapterId) payload.manga_chapter_id = mangaChapterId;
-
-    const { data: created, error: insertErr } = await supabase
-      .from("posts")
-      .insert(payload)
-      .select("id")
-      .single();
-
-    if (insertErr) {
-      console.error("Error creating post:", insertErr);
-      setPosting(false);
-      return;
-    }
-
-    const postId = created.id as string;
-
-    // ✅ upload + insert post_attachments rows
     try {
-      await insertAttachments({
-        supabase,
-        postId,
-        userId: user.id,
-        attachments: pendingAttachments,   // ✅ correct key
-      });
+      const payload: any = {
+        user_id: user.id,
+        content_text: trimmed || null,
+        content_json: postContentJson,
+        content: trimmed || "",
+      };
 
+      if (animeId) payload.anime_id = animeId;
+      if (animeEpisodeId) payload.anime_episode_id = animeEpisodeId;
+      if (mangaId) payload.manga_id = mangaId;
+      if (mangaChapterId) payload.manga_chapter_id = mangaChapterId;
+
+      const { data: created, error: insertErr } = await supabase
+        .from("posts")
+        .insert(payload)
+        .select("id")
+        .single();
+
+      if (insertErr) throw insertErr;
+
+      const postId = created.id as string;
+
+      // ✅ upload + insert post_attachments rows
+      if (pendingAttachments.length > 0) {
+        // Mark all queued (clears stale error state when retrying)
+        setPendingAttachments((prev) =>
+          prev.map((a) => {
+            if (a.kind === "youtube") {
+              return {
+                ...a,
+                status: a.status === "uploading" ? "uploading" : "queued",
+                error: null,
+              };
+            }
+
+            // image
+            return {
+              ...a,
+              status: a.status === "uploading" ? "uploading" : "queued",
+              error: null,
+            };
+          })
+        );
+
+        await insertAttachments({
+          supabase,
+          postId,
+          userId: user.id,
+          attachments: pendingAttachments,
+
+          // ✅ status updates by index
+          onStatus: (index, patch) => {
+            setPendingAttachments((prev) =>
+              prev.map((a, i) => (i === index ? { ...a, ...patch } : a))
+            );
+          },
+        });
+      }
+
+      // ✅ success: clear composer
       setPendingAttachments([]);
-    } catch (e) {
-      console.error("Error inserting attachments:", e);
+      setPostContent("");
+      setPostContentJson(null);
+
+      await fetchFeed("initial");
+      if (user?.id) fetchLikedByMe(user.id);
+    } catch (e: any) {
+      console.error("Post failed:", e);
+
+      // Keep pending list for retry; failed items are marked "error"
+      window.alert(
+        e?.message
+          ? `Post failed: ${e.message}`
+          : "Post failed. Your attachments are still here — press Post again to retry."
+      );
+    } finally {
+      setPosting(false);
     }
-
-    setPostContent("");
-    setPostContentJson(null);
-
-    await fetchFeed("initial");
-    if (user?.id) fetchLikedByMe(user.id);
-
-    setPosting(false);
   }
-
   // ============================================================
   // LIKE / UNLIKE
   // ============================================================
