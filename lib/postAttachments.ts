@@ -2,9 +2,19 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type PendingAttachment =
-  | { kind: "image"; file: File } // image/gif/video all come through here in your UI right now
-  | { kind: "youtube"; youtubeId: string; url: string }
-  | { kind: "video"; file: File }; // optional if you ever add separate UI
+  | {
+      kind: "image" | "video"; // in your UI, files come in as image OR video explicitly now
+      file: File;
+      status?: "queued" | "uploading" | "error";
+      error?: string | null;
+    }
+  | {
+      kind: "youtube";
+      youtubeId: string;
+      url: string;
+      status?: "queued" | "uploading" | "error";
+      error?: string | null;
+    };
 
 // -----------------------------
 // Limits / validation (safe defaults)
@@ -186,13 +196,19 @@ async function readVideoMetadata(file: File): Promise<{
 // -----------------------------
 // Insert attachments
 // -----------------------------
+export type AttachmentStatusPatch = {
+  status?: "queued" | "uploading" | "error";
+  error?: string | null;
+};
+
 export async function insertAttachments(params: {
   supabase: SupabaseClient;
   postId: string;
   userId: string;
   attachments: PendingAttachment[];
+  onStatus?: (index: number, patch: AttachmentStatusPatch) => void;
 }) {
-  const { supabase, postId, userId, attachments } = params;
+  const { supabase, postId, userId, attachments, onStatus } = params;
   if (!attachments?.length) return;
 
   // enforce safety limits on the client before any uploads
@@ -203,81 +219,81 @@ export async function insertAttachments(params: {
   for (let i = 0; i < attachments.length; i++) {
     const a = attachments[i];
 
-    if (a.kind === "youtube") {
-      rows.push({
-        post_id: postId,
-        kind: "youtube",
-        url: a.url,
-        meta: { youtubeId: a.youtubeId },
-        sort_order: i,
-      });
-      continue;
-    }
-
-    const file = a.file;
-
-    // decide if this file should be stored as image vs gif vs video
-    const { kind, ext } = classifyFile(file);
-
-    // ✅ read metadata BEFORE upload/insert
-    let width: number | null = null;
-    let height: number | null = null;
-    let durationSeconds: number | null = null;
+    // ✅ mark uploading
+    onStatus?.(i, { status: "uploading", error: null });
 
     try {
-      if (kind === "video") {
-        const meta = await readVideoMetadata(file);
-        width = meta.width;
-        height = meta.height;
-        durationSeconds = meta.durationSeconds;
-      } else {
-        const meta = await readImageDimensions(file);
-        width = meta.width;
-        height = meta.height;
+      if (a.kind === "youtube") {
+        rows.push({
+          post_id: postId,
+          kind: "youtube",
+          url: a.url,
+          meta: { youtubeId: a.youtubeId },
+          sort_order: i,
+        });
+        continue;
       }
-    } catch (e) {
-      // don’t block posting if metadata fails (we can still render)
-      console.warn("Attachment metadata read failed:", e);
+
+      const file = a.file;
+
+      // decide if this file should be stored as image vs gif vs video
+      const { kind, ext } = classifyFile(file);
+
+      // ✅ read metadata BEFORE upload/insert (kept from your version)
+      let width: number | null = null;
+      let height: number | null = null;
+      let durationSeconds: number | null = null;
+
+      try {
+        if (kind === "video") {
+          const meta = await readVideoMetadata(file);
+          width = meta.width;
+          height = meta.height;
+          durationSeconds = meta.durationSeconds;
+        } else {
+          const meta = await readImageDimensions(file);
+          width = meta.width;
+          height = meta.height;
+        }
+      } catch (e) {
+        console.warn("Attachment metadata read failed:", e);
+      }
+
+      // storage path
+      const path = `${userId}/${postId}/${crypto.randomUUID()}.${ext}`;
+
+      const up = await supabase.storage.from("post_media").upload(path, file, {
+        contentType: file.type || undefined,
+        upsert: false,
+      });
+
+      if (up.error) throw up.error;
+
+      const publicUrl = publicPostMediaUrl(path);
+
+      const baseMeta: any = { storage_path: path };
+      if (kind === "video" && durationSeconds != null) {
+        baseMeta.duration_seconds = durationSeconds;
+      }
+
+      rows.push({
+        post_id: postId,
+        kind, // "image" | "gif" | "video"
+        url: publicUrl,
+        meta: baseMeta,
+        sort_order: i,
+        mime: file.type || null,
+        width,
+        height,
+        size_bytes: file.size ?? null,
+      });
+    } catch (e: any) {
+      // ✅ mark error for this attachment
+      onStatus?.(i, { status: "error", error: e?.message || "Upload failed" });
+      throw e; // ✅ stop the post so user can retry
     }
-
-    // storage path
-    const path = `${userId}/${postId}/${crypto.randomUUID()}.${ext}`;
-
-    const up = await supabase.storage.from("post_media").upload(path, file, {
-      contentType: file.type || undefined,
-      upsert: false,
-    });
-
-    if (up.error) {
-      console.error("Upload error:", up.error);
-      throw up.error;
-    }
-
-    const publicUrl = publicPostMediaUrl(path);
-
-    const baseMeta: any = { storage_path: path };
-    if (kind === "video" && durationSeconds != null) {
-      // store in jsonb so you don’t need a new column
-      baseMeta.duration_seconds = durationSeconds;
-    }
-
-    rows.push({
-      post_id: postId,
-      kind, // "image" | "gif" | "video"
-      url: publicUrl,
-      meta: baseMeta,
-      sort_order: i,
-      mime: file.type || null,
-      width,
-      height,
-      size_bytes: file.size ?? null,
-    });
   }
 
   const { error } = await supabase.from("post_attachments").insert(rows);
-
-  if (error) {
-    console.error("Insert attachment error:", error);
-    throw error;
-  }
+  if (error) throw error;
 }
