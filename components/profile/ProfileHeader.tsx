@@ -65,39 +65,39 @@ export default function ProfileHeader({
           </div>
         ) : null
       }
-rightPinned={
-  <div className="flex flex-col items-end gap-1">
-    {isOwner ? (
-      <Link
-        href="/settings"
-        className={[
-          "inline-flex items-center justify-center",
-          "h-[30px] px-2",
-          "rounded-md",
-          "bg-black/90 backdrop-blur-md",
-          "ring-1 ring-white/10",
-          "text-white text-sm font-semibold",
-          "transition-colors",
-          "hover:bg-black/80 active:bg-white/10",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-0",
-        ].join(" ")}
-      >
-        Edit profile
-      </Link>
-    ) : (
-      // ✅ spacer to keep stats row vertically aligned
-      <div className="h-[30px]" />
-    )}
+      rightPinned={
+        <div className="flex flex-col items-end gap-1.5 md:gap-1">
+          {isOwner ? (
+            <Link
+              href="/settings"
+              className={[
+                "inline-flex items-center justify-center",
+                "h-[24px] px-1.5 text-[10px] md:h-[30px] md:px-2 md:text-sm",
+                "rounded-md",
+                "bg-black/90 backdrop-blur-md",
+                "ring-1 ring-white/10",
+                "text-white font-semibold",
+                "transition-colors",
+                "hover:bg-black/80 active:bg-white/10",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-0",
+              ].join(" ")}
+            >
+              Edit profile
+            </Link>
+          ) : (
+            // ✅ spacer to keep stats row vertically aligned
+            <div className="h-[26px] md:h-[30px]" />
+          )}
 
-    <ProfileStatsBarConnected
-      profileId={profileId}
-      followersCount={followersCount}
-      followingCount={followingCount}
-      onFollowersClick={onFollowersClick}
-      onFollowingClick={onFollowingClick}
-    />
-  </div>
-}
+          <ProfileStatsBarConnected
+            profileId={profileId}
+            followersCount={followersCount}
+            followingCount={followingCount}
+            onFollowersClick={onFollowersClick}
+            onFollowingClick={onFollowingClick}
+          />
+        </div>
+      }
       reserveRightClassName="pr-[260px]"
       activeTab={activeTab}
     />

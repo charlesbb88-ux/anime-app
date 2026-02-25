@@ -31,13 +31,13 @@ type Props = {
   rightPinned?: React.ReactNode;
   reserveRightClassName?: string;
 
-  /** ✅ NEW: content rendered directly under the username (e.g. Follow button) */
+  /** content rendered directly under the username (e.g. Follow button) */
   belowUsername?: React.ReactNode;
 
   /** how many pixels at the bottom are “visually hidden” by your overlay fade */
   overlayHiddenBottomPx?: number;
 
-  /** ✅ allow tabs to be hidden so the page can render them in the center column */
+  /** allow tabs to be hidden so the page can render them in the center column */
   hideTabs?: boolean;
 };
 
@@ -45,6 +45,7 @@ function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
 }
 
+// phone-only breakpoint (iPads/tablets keep desktop behavior)
 const PHONE_MAX_WIDTH_PX = 767;
 
 function useIsPhone() {
@@ -92,6 +93,31 @@ export default function ProfileMediaHeaderLayout({
   const router = useRouter();
   const isPhone = useIsPhone();
 
+  // phone tuning
+  const phoneSidePadPx = 2; // left/right padding for the foreground content
+
+  // ✅ PHONE: avatar + username tuning
+  const phoneAvatarPx = 100;        // avatar size (try 56, 64, 72, 80)
+  const phoneRowTopPx = 100;       // moves the whole avatar+name block up/down (more negative = higher)
+  const phoneRowLeftPx = -100;        // extra left shift (in addition to phoneSidePadPx)
+
+  const phoneNameSizeClass = "text-[30px]"; // username font size on phone
+  const phoneNameTopPx = 40;       // move username up/down relative to avatar
+
+  const phoneGapPx = 12;           // space between avatar and username
+
+  const phoneBackdropHeightClassName = "h-[300px]";
+
+  const phoneAvatarRowTopPx = 65;      // ✅ moves ONLY avatar+username (down = bigger number)
+  const phoneRightPinnedTopPx = -40;     // ✅ moves ONLY stats/edit block (down = bigger number)
+
+  const phonePanYAdjustPx = -45; // try 20, 30, 40, 60 (positive = show more bottom)
+
+  const phoneLeftInsetPx = 6; // try 0, 4, 6, 8, 10
+
+  const phoneBelowUsernameGapPx = 30; // try 4, 6, 8, 10
+  const phoneBelowUsernameReservePx = 44;
+
   const showBackdropImage = typeof backdropUrl === "string" && backdropUrl.length > 0;
   const showOverlay = typeof overlaySrc === "string" && overlaySrc.length > 0;
 
@@ -130,7 +156,11 @@ export default function ProfileMediaHeaderLayout({
   const zoomRaw = Number.isFinite(backdropZoom as number) ? (backdropZoom as number) : 1;
   const zoom = clamp(zoomRaw, 1, 3);
 
-  const hideBottom = Math.max(0, Math.round(overlayHiddenBottomPx ?? 0));
+  // IMPORTANT:
+  // - Desktop: keep existing behavior (uses overlayHiddenBottomPx)
+  // - Phone: do NOT hide the bottom with a black mask
+  const hideBottomDesktop = Math.max(0, Math.round(overlayHiddenBottomPx ?? 0));
+  const hideBottom = isPhone ? 0 : hideBottomDesktop;
 
   // ------------------------------------------------------------
   // Measure the ACTUAL full backdrop window
@@ -181,8 +211,8 @@ export default function ProfileMediaHeaderLayout({
     };
   }, [showBackdropImage, backdropUrl]);
 
-  // base size at z=1 (cover)
-  const base = useMemo(() => {
+  // base size at z=1 (cover) - desktop/tablet behavior
+  const baseCover = useMemo(() => {
     if (!imgSize) return null;
     const { baseW, baseH } = computePanLimits({
       cw: backdropBox.w,
@@ -191,10 +221,38 @@ export default function ProfileMediaHeaderLayout({
       ih: imgSize.h,
       z: 1,
     });
-    return { baseW, baseH };
+    return { w: baseW, h: baseH };
   }, [imgSize, backdropBox.w, backdropBox.h]);
 
-  // percent -> pan px
+  // phone-only base size (contain) -> shows maximum left/right with NO side crop
+  const baseContain = useMemo(() => {
+    if (!imgSize) return null;
+
+    const cw = backdropBox.w;
+    const ch = backdropBox.h;
+
+    const s = Math.min(cw / imgSize.w, ch / imgSize.h);
+
+    return {
+      w: Math.max(1, Math.round(imgSize.w * s)),
+      h: Math.max(1, Math.round(imgSize.h * s)),
+    };
+  }, [imgSize, backdropBox.w, backdropBox.h]);
+
+  const phoneShouldForceFillWidth = useMemo(() => {
+    if (!imgSize) return false;
+    const cw = backdropBox.w;
+    const ch = backdropBox.h;
+
+    const sx = cw / imgSize.w;
+    const sy = ch / imgSize.h;
+
+    // If contain would be width-limited, the image is "too tall/narrow" and will show side gaps.
+    // In that case, force cover so it fills the phone width.
+    return sx > sy;
+  }, [imgSize, backdropBox.w, backdropBox.h]);
+
+  // percent -> pan px (desktop/tablet behavior)
   const panPx = useMemo(() => {
     if (!imgSize) return { x: 0, y: 0 };
 
@@ -225,23 +283,37 @@ export default function ProfileMediaHeaderLayout({
       {/* Backdrop */}
       <div
         ref={backdropBoxRef}
-        className={`relative w-full overflow-hidden ${backdropHeightClassName} -mt-10`}
+        className={`relative w-full overflow-hidden ${isPhone ? phoneBackdropHeightClassName : backdropHeightClassName
+          } -mt-10`}
       >
-        {showBackdropImage && imgSize && base ? (
+        {showBackdropImage && imgSize && baseCover ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={backdropUrl as string}
             alt=""
             draggable={false}
             className="absolute left-1/2 top-1/2"
-            style={{
-              width: `${base.baseW}px`,
-              height: `${base.baseH}px`,
-              transform: `translate(-50%, -50%) translate(${panPx.x}px, ${panPx.y}px) scale(${zoom})`,
-              transformOrigin: "center",
-              objectFit: "cover",
-              willChange: "transform",
-            }}
+            style={
+              isPhone
+                ? {
+                  // ✅ Phone: APPLY saved zoom + position (same behavior as PC)
+                  width: `${baseCover.w}px`,
+                  height: `${baseCover.h}px`,
+                  transform: `translate(-50%, -50%) translate(${panPx.x}px, ${panPx.y + phonePanYAdjustPx}px) scale(${zoom})`,
+                  transformOrigin: "center",
+                  objectFit: "cover",
+                  willChange: "transform",
+                }
+                : {
+                  // ✅ Desktop/tablet: COVER + PAN + ZOOM (original behavior)
+                  width: `${baseCover.w}px`,
+                  height: `${baseCover.h}px`,
+                  transform: `translate(-50%, -50%) translate(${panPx.x}px, ${panPx.y}px) scale(${zoom})`,
+                  transformOrigin: "center",
+                  objectFit: "cover",
+                  willChange: "transform",
+                }
+            }
           />
         ) : (
           <div className="absolute inset-0 bg-black" />
@@ -256,24 +328,58 @@ export default function ProfileMediaHeaderLayout({
           <img
             src={overlaySrc as string}
             alt=""
-            className="pointer-events-none absolute -top-12 left-0 h-[calc(100%+3rem)] w-full object-cover"
+            className={
+              isPhone
+                ? "pointer-events-none absolute -top-8 left-0 h-[calc(100%+2rem)] w-full object-cover"
+                : "pointer-events-none absolute -top-12 left-0 h-[calc(100%+3rem)] w-full object-cover"
+            }
           />
         ) : null}
       </div>
 
       {/* Foreground overlap */}
-      <div className="-mt-35 relative z-10 px-3">
+      <div
+        className={`-mt-35 relative z-10 ${isPhone ? "" : "px-3"}`} // ✅ KEEP desktop padding exactly like the original
+        style={isPhone ? { paddingLeft: phoneSidePadPx, paddingRight: phoneSidePadPx } : undefined}
+      >
         {title ? (
           <h1 className="mb-3 text-4xl font-bold leading-tight text-white drop-shadow">{title}</h1>
         ) : null}
 
         <div className="relative w-full">
-          {rightPinned ? <div className="absolute right-0 top-1">{rightPinned}</div> : null}
+          {rightPinned ? (
+            <div
+              className={`absolute ${isPhone ? "" : "right-0 top-1"}`}
+              style={isPhone ? { right: phoneSidePadPx, top: phoneRightPinnedTopPx } : undefined}
+            >
+              {rightPinned}
+            </div>
+          ) : null}
 
           <div className={`min-w-0 ${rightPinned ? reserveRightClassName : ""}`}>
             {/* Avatar + username */}
-            <div className="-mt-50 flex items-center gap-5 pl-2">
-              <div className="w-34 h-34 rounded-full bg-slate-200 overflow-hidden shrink-0 ring-3 ring-black">
+            <div
+              className={
+                isPhone
+                  ? "flex items-center"
+                  : "flex items-center -mt-50 gap-5 pl-2"
+              }
+              style={
+                isPhone
+                  ? {
+                    paddingLeft: phoneLeftInsetPx,
+                    paddingRight: phoneSidePadPx,
+                    marginTop: phoneAvatarRowTopPx, // ✅ phone-only overall vertical position
+                    columnGap: phoneGapPx,          // ✅ phone-only spacing between avatar + username
+                  }
+                  : undefined
+              }
+            >
+              <div
+                className={`rounded-full bg-slate-200 overflow-hidden shrink-0 ring-3 ring-black ${isPhone ? "" : "w-34 h-34"
+                  }`}
+                style={isPhone ? { width: phoneAvatarPx, height: phoneAvatarPx } : undefined}
+              >
                 {avatarUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={avatarUrl} alt={username} className="w-full h-full object-cover" />
@@ -284,10 +390,33 @@ export default function ProfileMediaHeaderLayout({
                 )}
               </div>
 
-              {/* ✅ Username + under-username slot */}
+              {/* Username + under-username slot */}
               <div className="min-w-0">
-                <div className="-mt-3 text-4xl font-bold text-slate-900">{username}</div>
-                {belowUsername ? <div className="mt-2">{belowUsername}</div> : null}
+                <div
+                  className={`${isPhone ? phoneNameSizeClass : "text-4xl"} font-bold text-black`}
+                  style={
+                    isPhone
+                      ? { transform: `translateY(${phoneNameTopPx}px)` } // ✅ phone-only vertical nudge
+                      : { marginTop: -12 }
+                  }
+                >
+                  {username}
+                </div>
+                {/* ✅ PHONE: reserve identical space whether FollowButton exists or not */}
+                {isPhone ? (
+                  <div
+                    style={{
+                      marginTop: phoneBelowUsernameGapPx,
+                      height: phoneBelowUsernameReservePx,
+                      display: "flex",
+                      alignItems: "center",
+                    }}
+                  >
+                    {belowUsername ?? null}
+                  </div>
+                ) : belowUsername ? (
+                  <div style={{ marginTop: 8 }}>{belowUsername}</div>
+                ) : null}
               </div>
             </div>
           </div>

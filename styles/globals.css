@@ -68,3 +68,9 @@ html, body, #__next {
 .about-spoiler > summary::-webkit-details-marker {
   display: none;
 }
+
+html, body {
+  overscroll-behavior-x: none;
+}
+
+/* test */

@@ -7,7 +7,7 @@ export default function ProfileAboutSection({ html }: { html: string }) {
   if (!html || html.trim().length === 0) return null;
 
   return (
-    <section className="rounded-md border-4 border-black bg-white p-4">
+    <section className="bg-white border-t-2 border-b-0 border-black md:border-4 md:border-black md:rounded-md px-2 py-2 md:p-4">
       <div className="text-sm text-black">
         <div
           className={[
