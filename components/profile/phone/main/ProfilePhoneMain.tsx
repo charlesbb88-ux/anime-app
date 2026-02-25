@@ -5,61 +5,66 @@ import ProfileTabsRow from "@/components/profile/ProfileTabsRow";
 import ProfileAboutSection from "@/components/profile/ProfileAboutSection";
 import ProfilePostsFeed from "@/components/profile/ProfilePostsFeed";
 
+const PHONE_SIDE_PX = 0; // change this: 0, 6, 8, 10, 12, 16
+const PHONE_TOP_GAP_PX = 28; // ✅ space under the header (phone only)
+
 type Props = {
-  profileId: string;
-  username: string;
+    profileId: string;
+    username: string;
 
-  aboutHtml: string;
+    aboutHtml: string;
 
-  viewerUserId: string | null;
+    viewerUserId: string | null;
 
-  displayName: string;
-  avatarInitial: string;
-  canonicalHandle?: string;
-  avatarUrl: string | null;
+    displayName: string;
+    avatarInitial: string;
+    canonicalHandle?: string;
+    avatarUrl: string | null;
 };
 
 export default function ProfilePhoneMain({
-  profileId,
-  username,
-  aboutHtml,
-  viewerUserId,
-  displayName,
-  avatarInitial,
-  canonicalHandle,
-  avatarUrl,
+    profileId,
+    username,
+    aboutHtml,
+    viewerUserId,
+    displayName,
+    avatarInitial,
+    canonicalHandle,
+    avatarUrl,
 }: Props) {
-  // This component’s only job: phone layout decisions.
-  // PC layout stays exactly as-is in the page file.
-  return (
-    <div
-      style={{
-        width: "100%",
-        maxWidth: "100%",
-        padding: "0 12px", // tweak phone padding here, without touching PC
-      }}
-    >
-      <ProfileTabsRow
-        username={username}
-        activeTab="posts"
-        className="mb-4"
-        variant="card"
-        center
-      />
+    return (
+        <div
+            style={{
+                width: "100%",
+                maxWidth: "100%",
+                paddingLeft: PHONE_SIDE_PX,
+                paddingRight: PHONE_SIDE_PX,
 
-      <ProfileAboutSection html={aboutHtml} />
-      <div className="mb-4" />
+                // ✅ space between media header and everything below
+                marginTop: PHONE_TOP_GAP_PX,
+            }}
+        >
+            <ProfileTabsRow
+                username={username}
+                activeTab="posts"
+                className="mb-0"
+                variant="card"
+                center
+            />
 
-      <section>
-        <ProfilePostsFeed
-          profileId={profileId}
-          viewerUserId={viewerUserId}
-          displayName={displayName}
-          avatarInitial={avatarInitial}
-          canonicalHandle={canonicalHandle}
-          avatarUrl={avatarUrl}
-        />
-      </section>
-    </div>
-  );
+            <ProfileAboutSection html={aboutHtml} />
+            <div className="mb-0" />
+
+            <section className="border-t border-black md:border-t-0">
+                <ProfilePostsFeed
+                    profileId={profileId}
+                    viewerUserId={viewerUserId}
+                    displayName={displayName}
+                    avatarInitial={avatarInitial}
+                    canonicalHandle={canonicalHandle}
+                    avatarUrl={avatarUrl}
+                />
+            </section>
+        </div>
+    );
 }

@@ -62,7 +62,9 @@ export default function ProfileTabsRow({
 
     const navClass = [
         // container
-        variant === "card" ? "rounded-sm bg-white border-3 border-black" : "",
+        variant === "card"
+            ? "bg-white border-t-2 border-b-0 border-black md:border-3 md:border-black md:rounded-sm"
+            : "",
         // padding
         variant === "card" ? "px-4" : "",
         // bottom divider ONLY for plain variant (card already has a full border)

@@ -40,7 +40,7 @@ type EngagementState =
   | { status: "ready"; reviewed: number; rated: number }
   | { status: "error" };
 
-/** ✅ ONE KNOB: change this and ALL 3 rings + wrappers + skeletons resize together */
+/** ONE KNOB: change this and ALL 3 rings + wrappers + skeletons resize together */
 const RING_PX = 215;
 
 /** ring thickness (kept proportional to size so it scales nicely) */
@@ -49,10 +49,10 @@ const RING_STROKE_PX = Math.round(RING_PX * 0.147);
 /** clickable center area on the main ring (scales with ring size) */
 const RING_CENTER_HIT_PX = Math.round(RING_PX * 0.56);
 
-/** ✅ Ring filled segment colors */
+/** Ring filled segment colors */
 const RING_FILLED_PROGRESS = "#0EA5E9"; // blue (watched/read)
 const RING_FILLED_REVIEWED = "#22C55E"; // green (review)
-const RING_FILLED_RATED = "#EF4444"; // red (rated)
+const RING_FILLED_RATED    = "#EF4444"; // red (rated)
 
 function safeNum(v: unknown) {
   const n = Number(v);
@@ -63,10 +63,7 @@ function safeString(v: unknown) {
   return typeof v === "string" ? v.trim() : "";
 }
 
-/**
- * Match what you just decided for the list:
- * English-first, then fallbacks.
- */
+/** English-first, then fallbacks */
 function displayTitle(it: CompletionDetails) {
   return (
     safeString(it.title_english) ||
@@ -133,15 +130,14 @@ function useViewport() {
 }
 
 export default function CompletionDetailsModal({ open, item, onClose, userId }: Props) {
-  // ✅ ALL hooks at the top, always
+  // ALL hooks at the top, always
   const vp = useViewport();
 
-  const [progress, setProgress] = useState<ProgressState>({ status: "idle" });
+  const [progress, setProgress]     = useState<ProgressState>({ status: "idle" });
   const [engagement, setEngagement] = useState<EngagementState>({ status: "idle" });
+  const [infoOpen, setInfoOpen]     = useState(false);
 
-  const [infoOpen, setInfoOpen] = useState(false);
-
-  const progressCacheRef = useRef<Map<string, { current: number; total: number }>>(new Map());
+  const progressCacheRef   = useRef<Map<string, { current: number; total: number }>>(new Map());
   const engagementCacheRef = useRef<Map<string, { reviewed: number; rated: number }>>(new Map());
 
   const cacheKey = useMemo(() => {
@@ -149,49 +145,73 @@ export default function CompletionDetailsModal({ open, item, onClose, userId }: 
     return `${userId}:${item.kind}:${item.id}`;
   }, [userId, item?.id, item?.kind]);
 
-  // escape + scroll lock
+  // Scroll lock — definitive iOS-safe version:
+  //   • Locks BOTH <html> and <body> (belt + suspenders for iOS Safari)
+  //   • Saves and restores previous style values exactly (not just empty string)
+  //   • Silently restores scroll position on close
   useEffect(() => {
     if (!open) return;
 
-    function onKeyDown(e: KeyboardEvent) {
+    const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
-    }
-
+    };
     document.addEventListener("keydown", onKeyDown);
 
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const html = document.documentElement;
+    const body = document.body;
+
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    const prevBodyPosition = body.style.position;
+    const prevBodyTop      = body.style.top;
+    const prevBodyLeft     = body.style.left;
+    const prevBodyRight    = body.style.right;
+    const prevBodyWidth    = body.style.width;
+
+    const scrollY = window.scrollY;
+
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.top      = `-${scrollY}px`;
+    body.style.left     = "0";
+    body.style.right    = "0";
+    body.style.width    = "100%";
 
     return () => {
       document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = prev;
+
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+      body.style.position = prevBodyPosition;
+      body.style.top      = prevBodyTop;
+      body.style.left     = prevBodyLeft;
+      body.style.right    = prevBodyRight;
+      body.style.width    = prevBodyWidth;
+
+      window.scrollTo(0, scrollY);
     };
   }, [open, onClose]);
 
-  // reset info popover when opening/changing item
+  // Reset info popover when opening or switching items
   useEffect(() => {
     if (open) setInfoOpen(false);
   }, [open, item?.id, item?.kind]);
 
-  /**
-   * Prevent placeholder flash:
-   * set loading BEFORE first paint unless cached.
-   */
+  // Set loading state BEFORE first paint to prevent skeleton flash
   useLayoutEffect(() => {
     if (!open || !item) return;
 
-    // progress
     const pc = progressCacheRef.current.get(cacheKey);
     if (pc) setProgress({ status: "ready", current: pc.current, total: pc.total });
     else setProgress({ status: "loading" });
 
-    // engagement
     const ec = engagementCacheRef.current.get(cacheKey);
     if (ec) setEngagement({ status: "ready", reviewed: ec.reviewed, rated: ec.rated });
     else setEngagement({ status: "loading" });
   }, [open, item?.id, item?.kind, cacheKey]);
 
-  // fetch progress on open / item change
+  // Fetch progress on open / item change
   useEffect(() => {
     if (!open || !item) return;
 
@@ -211,12 +231,10 @@ export default function CompletionDetailsModal({ open, item, onClose, userId }: 
         setProgress({ status: "error" });
       });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [open, item?.id, item?.kind, userId, cacheKey]);
 
-  // fetch engagement on open / item change
+  // Fetch engagement on open / item change
   useEffect(() => {
     if (!open || !item) return;
 
@@ -236,21 +254,17 @@ export default function CompletionDetailsModal({ open, item, onClose, userId }: 
         setEngagement({ status: "error" });
       });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [open, item?.id, item?.kind, userId, cacheKey]);
 
-  // ✅ Safe early return AFTER hooks
+  // Safe early return AFTER all hooks
   if (!open || !item) return null;
 
-  const it = item;
+  const it    = item;
   const title = displayTitle(it);
+  const unit  = it.kind === "manga" ? "chapter entries" : "episodes";
 
-  const unit = it.kind === "manga" ? "chapter entries" : "episodes";
-
-  const seriesHref = it.slug ? (it.kind === "manga" ? `/manga/${it.slug}` : `/anime/${it.slug}`) : null;
-
+  const seriesHref          = it.slug ? (it.kind === "manga" ? `/manga/${it.slug}` : `/anime/${it.slug}`) : null;
   const progressCenterLabel = it.kind === "manga" ? "Read" : "Watched";
 
   function retryProgress() {
@@ -278,25 +292,22 @@ export default function CompletionDetailsModal({ open, item, onClose, userId }: 
   }
 
   const showProgress = progress.status === "ready";
-  const current = showProgress ? progress.current : 0;
-  const total = showProgress ? progress.total : 0;
+  const current      = showProgress ? progress.current : 0;
+  const total        = showProgress ? progress.total   : 0;
 
   const showEngagement = engagement.status === "ready";
-  const reviewed = showEngagement ? engagement.reviewed : 0;
-  const rated = showEngagement ? engagement.rated : 0;
+  const reviewed       = showEngagement ? engagement.reviewed : 0;
+  const rated          = showEngagement ? engagement.rated    : 0;
 
-  // ===== Desktop “exact iPhone screen frame” sizing (no hooks) =====
-  const PHONE_W = 470;
-  const PHONE_H = 844;
+  // Desktop "exact iPhone screen frame" sizing
+  const PHONE_W        = 470;
+  const PHONE_H        = 844;
   const DESKTOP_MARGIN = 48;
 
   const availW = Math.max(0, (vp.w || PHONE_W + DESKTOP_MARGIN) - DESKTOP_MARGIN);
   const availH = Math.max(0, (vp.h || PHONE_H + DESKTOP_MARGIN) - DESKTOP_MARGIN);
 
-  const sW = availW / PHONE_W;
-  const sH = availH / PHONE_H;
-
-  const scale = Math.min(1, sW, sH);
+  const scale = Math.min(1, availW / PHONE_W, availH / PHONE_H);
 
   const frameStyle: React.CSSProperties = {
     width: PHONE_W,
@@ -305,45 +316,61 @@ export default function CompletionDetailsModal({ open, item, onClose, userId }: 
     transformOrigin: "center",
   };
 
+  const bodyProps = {
+    it, displayTitle: title, seriesHref,
+    progress, engagement, retryProgress, retryEngagement,
+    current, total, reviewed, rated,
+    unit, infoOpen, setInfoOpen, progressCenterLabel,
+  };
+
   return (
     <div className="fixed inset-0 z-[1000000]">
-      {/* backdrop */}
-      <button type="button" aria-label="Close modal" className="absolute inset-0 bg-black/60" onClick={onClose} />
+      {/*
+        Backdrop: fills the whole screen, closes modal on click.
+        touch-manipulation removes the 300ms tap delay on mobile.
+      */}
+      <button
+        type="button"
+        aria-label="Close modal"
+        className="absolute inset-0 bg-black/60 touch-manipulation"
+        onClick={onClose}
+      />
 
-      {/* CENTER */}
       <div className="absolute inset-0 grid place-items-center pointer-events-none">
-        {/* MOBILE */}
-        <div className="pointer-events-auto relative w-full h-[100dvh] bg-white overflow-hidden sm:hidden">
+
+        {/* ── MOBILE ── */}
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="pointer-events-auto relative w-full h-[100dvh] bg-white overflow-hidden sm:hidden"
+          // Prevent clicks/taps inside the modal from bubbling to the backdrop
+          // and accidentally closing the modal
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
           <Header
+            onClose={onClose}
             progress={progress}
             engagement={engagement}
             retryProgress={retryProgress}
             retryEngagement={retryEngagement}
-            onClose={onClose}
           />
-          <div className="h-[calc(100%-52px)] overflow-y-auto overflow-x-hidden scrollbar-none">
-            <ModalBody
-              it={it}
-              displayTitle={title}
-              seriesHref={seriesHref}
-              progress={progress}
-              engagement={engagement}
-              retryProgress={retryProgress}
-              retryEngagement={retryEngagement}
-              current={current}
-              total={total}
-              reviewed={reviewed}
-              rated={rated}
-              unit={unit}
-              infoOpen={infoOpen}
-              setInfoOpen={setInfoOpen}
-              progressCenterLabel={progressCenterLabel}
-            />
+          {/*
+            overflow-y-auto lives only here on the inner scroll div, not the outer wrapper.
+            overscroll-contain stops rubber-band bounce from leaking to the locked page behind.
+          */}
+          <div className="h-[calc(100%-52px)] overflow-y-auto overflow-x-hidden scrollbar-none overscroll-contain">
+            <ModalBody {...bodyProps} />
           </div>
         </div>
 
-        {/* DESKTOP: exact iPhone frame */}
-        <div className="hidden sm:block pointer-events-auto">
+        {/* ── DESKTOP: exact iPhone frame ── */}
+        <div
+          className="hidden sm:block pointer-events-auto"
+          // Same protection on desktop
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
           <div
             style={frameStyle}
             className="relative bg-white overflow-hidden rounded-2xl border border-black shadow-[0_20px_60px_rgba(0,0,0,0.35)]"
@@ -351,37 +378,26 @@ export default function CompletionDetailsModal({ open, item, onClose, userId }: 
             aria-modal="true"
           >
             <Header
+              onClose={onClose}
               progress={progress}
               engagement={engagement}
               retryProgress={retryProgress}
               retryEngagement={retryEngagement}
-              onClose={onClose}
             />
-            <div className="h-[calc(100%-52px)] overflow-y-auto overflow-x-hidden scrollbar-none">
-              <ModalBody
-                it={it}
-                displayTitle={title}
-                seriesHref={seriesHref}
-                progress={progress}
-                engagement={engagement}
-                retryProgress={retryProgress}
-                retryEngagement={retryEngagement}
-                current={current}
-                total={total}
-                reviewed={reviewed}
-                rated={rated}
-                unit={unit}
-                infoOpen={infoOpen}
-                setInfoOpen={setInfoOpen}
-                progressCenterLabel={progressCenterLabel}
-              />
+            <div className="h-[calc(100%-52px)] overflow-y-auto overflow-x-hidden scrollbar-none overscroll-contain">
+              <ModalBody {...bodyProps} />
             </div>
           </div>
         </div>
+
       </div>
     </div>
   );
 }
+
+// ─────────────────────────────────────────────
+// Header
+// ─────────────────────────────────────────────
 
 function Header({
   progress,
@@ -397,7 +413,7 @@ function Header({
   onClose: () => void;
 }) {
   const anyLoading = progress.status === "loading" || engagement.status === "loading";
-  const anyError = progress.status === "error" || engagement.status === "error";
+  const anyError   = progress.status === "error"   || engagement.status === "error";
 
   return (
     <div className="flex items-center justify-between px-4 py-2 border-b border-black/10">
@@ -408,23 +424,32 @@ function Header({
           <div className="text-xs text-slate-500">Loading…</div>
         ) : anyError ? (
           <div className="flex items-center gap-2">
-            {progress.status === "error" ? (
-              <button type="button" className="text-xs font-semibold text-red-600 hover:underline" onClick={retryProgress}>
+            {progress.status === "error" && (
+              <button
+                type="button"
+                className="text-xs font-semibold text-red-600 hover:underline touch-manipulation"
+                onClick={retryProgress}
+              >
                 Retry progress
               </button>
-            ) : null}
-            {engagement.status === "error" ? (
-              <button type="button" className="text-xs font-semibold text-red-600 hover:underline" onClick={retryEngagement}>
+            )}
+            {engagement.status === "error" && (
+              <button
+                type="button"
+                className="text-xs font-semibold text-red-600 hover:underline touch-manipulation"
+                onClick={retryEngagement}
+              >
                 Retry rings
               </button>
-            ) : null}
+            )}
           </div>
         ) : null}
 
+        {/* touch-manipulation removes the 300ms tap delay — close feels instant on mobile */}
         <button
           type="button"
           onClick={onClose}
-          className="rounded-md border border-black bg-white px-2 py-1 text-xs font-semibold text-slate-900 hover:bg-slate-50 active:translate-y-[1px]"
+          className="rounded-md border border-black bg-white px-2 py-1 text-xs font-semibold text-slate-900 hover:bg-slate-50 active:translate-y-[1px] touch-manipulation"
         >
           Close
         </button>
@@ -433,7 +458,10 @@ function Header({
   );
 }
 
-/** Shared body so mobile + desktop are literally identical inside */
+// ─────────────────────────────────────────────
+// ModalBody — shared between mobile + desktop
+// ─────────────────────────────────────────────
+
 function ModalBody({
   it,
   displayTitle,
@@ -467,17 +495,17 @@ function ModalBody({
   setInfoOpen: React.Dispatch<React.SetStateAction<boolean>>;
   progressCenterLabel: string;
 }) {
-  const ringsTotal = total; // denominator for all rings
-
   const ringBoxStyle: React.CSSProperties = { width: RING_PX, height: RING_PX };
   const ringColStyle: React.CSSProperties = { width: RING_PX };
 
   return (
     <>
       <div className="px-4 pt-4">
-        {/* TOP ROW: poster (left) + title + watch/read ring (right) */}
+
+        {/* TOP ROW: poster (left) + title + progress ring (right) */}
         <div className="grid grid-cols-[200px_1fr] gap-4">
-          {/* poster */}
+
+          {/* Poster */}
           <div className="w-full">
             <div className="relative aspect-[2/3] w-full overflow-hidden rounded-xl border border-black bg-slate-200">
               {it.image_url ? (
@@ -492,41 +520,47 @@ function ModalBody({
                     <div className="absolute inset-0 ring-0 ring-black/0 hover:ring-2 hover:ring-black/20" />
                   </Link>
                 ) : (
-                  <img src={it.image_url} alt={displayTitle} className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+                  <img
+                    src={it.image_url}
+                    alt={displayTitle}
+                    className="absolute inset-0 h-full w-full object-cover"
+                    draggable={false}
+                  />
                 )
               ) : null}
             </div>
           </div>
 
-          {/* right: title + (progress ring) */}
+          {/* Right col: title + progress ring */}
           <div className="min-w-0 flex flex-col gap-6">
             <div>
               <div className="text-base font-bold text-slate-900 leading-tight line-clamp-3">{displayTitle}</div>
 
-              {progress.status === "loading" ? (
+              {progress.status === "loading" && (
                 <div className="mt-1 text-xs text-slate-500">Loading progress…</div>
-              ) : progress.status === "error" ? (
+              )}
+              {progress.status === "error" && (
                 <div className="mt-1 text-xs text-red-600">
-                  Couldn’t load progress.{" "}
-                  <button type="button" className="font-semibold hover:underline" onClick={retryProgress}>
+                  Couldn't load progress.{" "}
+                  <button type="button" className="font-semibold hover:underline touch-manipulation" onClick={retryProgress}>
                     Retry
                   </button>
                 </div>
-              ) : null}
-
-              {engagement.status === "loading" ? (
+              )}
+              {engagement.status === "loading" && (
                 <div className="mt-1 text-xs text-slate-500">Loading rings…</div>
-              ) : engagement.status === "error" ? (
+              )}
+              {engagement.status === "error" && (
                 <div className="mt-1 text-xs text-red-600">
-                  Couldn’t load review/rating rings.{" "}
-                  <button type="button" className="font-semibold hover:underline" onClick={retryEngagement}>
+                  Couldn't load review/rating rings.{" "}
+                  <button type="button" className="font-semibold hover:underline touch-manipulation" onClick={retryEngagement}>
                     Retry
                   </button>
                 </div>
-              ) : null}
+              )}
             </div>
 
-            {/* watch/read ring */}
+            {/* Progress ring */}
             <div
               className="relative ml-2.5"
               style={ringBoxStyle}
@@ -554,7 +588,7 @@ function ModalBody({
                   <button
                     type="button"
                     aria-label="Progress details"
-                    className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-transparent"
+                    className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-transparent touch-manipulation"
                     style={{ width: RING_CENTER_HIT_PX, height: RING_CENTER_HIT_PX }}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -562,27 +596,28 @@ function ModalBody({
                     }}
                   />
 
-                  {infoOpen ? (
+                  {infoOpen && (
                     <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-2 z-10">
                       <div className="rounded-lg border border-black/20 bg-white px-3 py-2 text-[11px] text-slate-700 shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
                         <div className="font-semibold text-slate-900">
                           {current} / {total} {unit}
                         </div>
-                        {it.kind === "manga" ? (
+                        {it.kind === "manga" && (
                           <div className="mt-0.5 text-slate-500">Includes bonus/fractional chapters (e.g., 4.1, 4.2).</div>
-                        ) : null}
+                        )}
                       </div>
                     </div>
-                  ) : null}
+                  )}
                 </>
               )}
             </div>
           </div>
         </div>
 
-        {/* SECOND ROW: review + rating circles */}
+        {/* SECOND ROW: review + rating rings */}
         <div className="mt-5 flex justify-center gap-4">
-          {/* Review (LEFT) */}
+
+          {/* Review ring */}
           <div className="flex flex-col items-center" style={ringColStyle}>
             <div className="relative" style={ringBoxStyle}>
               {engagement.status === "loading" ? (
@@ -592,7 +627,7 @@ function ModalBody({
               ) : (
                 <ProgressRing
                   current={reviewed}
-                  total={ringsTotal}
+                  total={total}
                   size={RING_PX}
                   stroke={RING_STROKE_PX}
                   segmentCap={120}
@@ -605,7 +640,7 @@ function ModalBody({
             </div>
           </div>
 
-          {/* Rating (RIGHT) */}
+          {/* Rated ring */}
           <div className="flex flex-col items-center" style={ringColStyle}>
             <div className="relative" style={ringBoxStyle}>
               {engagement.status === "loading" ? (
@@ -615,7 +650,7 @@ function ModalBody({
               ) : (
                 <ProgressRing
                   current={rated}
-                  total={ringsTotal}
+                  total={total}
                   size={RING_PX}
                   stroke={RING_STROKE_PX}
                   segmentCap={120}
@@ -627,9 +662,10 @@ function ModalBody({
               )}
             </div>
           </div>
+
         </div>
 
-        {/* ✅ NEW: unit stepper (chapters/episodes) */}
+        {/* Unit stepper (chapters / episodes) */}
         <div className="mt-6">
           <div className="bg-transparent p-0">
             {progress.status === "loading" ? (
@@ -656,12 +692,12 @@ function ModalBody({
           </div>
         </div>
 
-        {/* If total is unknown (progress not ready), make that obvious */}
-        {progress.status !== "ready" ? (
+        {progress.status !== "ready" && (
           <div className="mt-3 text-[11px] text-slate-500 w-[240px]">
             These rings use the series total from progress. Once progress loads, the denominators will be correct.
           </div>
-        ) : null}
+        )}
+
       </div>
 
       <div className="h-6" />
