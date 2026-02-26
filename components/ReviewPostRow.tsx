@@ -450,14 +450,7 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
     >
       {/* bottom-right edit / delete menu */}
       {isOwner && onToggleMenu && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: "1rem",
-            right: ".9rem",
-            zIndex: 10,
-          }}
-        >
+        <div className="absolute bottom-[0.4rem] right-[0.4rem] z-10 md:bottom-[0.7rem] bottom-[-0.3rem]">
           <button
             onClick={(e) => {
               e.stopPropagation();
