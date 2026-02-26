@@ -5,6 +5,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { getAnimeBySlug } from "@/lib/anime";
+import { FALLBACK_BACKDROP_SRC } from "@/lib/fallbacks";
+import SmartBackdropImage from "@/components/SmartBackdropImage";
 
 type Props = {
   slug: string;
@@ -91,12 +93,13 @@ export default function EpisodeNavigatorMobile({
   // ---------------- totals (prop or derived) ----------------
   const propTotal =
     typeof totalEpisodes === "number" &&
-    Number.isFinite(totalEpisodes) &&
-    totalEpisodes > 0
+      Number.isFinite(totalEpisodes) &&
+      totalEpisodes > 0
       ? Math.floor(totalEpisodes)
       : null;
 
   const [animeId, setAnimeId] = useState<string | null>(null);
+  const [animePosterUrl, setAnimePosterUrl] = useState<string | null>(null);
   const [derivedTotalEpisodes, setDerivedTotalEpisodes] = useState<number | null>(
     null
   );
@@ -149,6 +152,36 @@ export default function EpisodeNavigatorMobile({
       cancelled = true;
     };
   }, [slug]);
+
+  // ---------------- series poster fallback (fetch once per animeId) ----------------
+  useEffect(() => {
+    let cancelled = false;
+
+    async function run() {
+      setAnimePosterUrl(null);
+      if (!animeId) return;
+
+      const { data, error } = await supabase
+        .from("anime")
+        .select("image_url")
+        .eq("id", animeId)
+        .maybeSingle();
+
+      if (cancelled) return;
+      if (error) {
+        console.error("EpisodeNavigatorMobile: anime poster fetch error:", error);
+        setAnimePosterUrl(null);
+        return;
+      }
+
+      setAnimePosterUrl(data?.image_url ?? null);
+    }
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [animeId]);
 
   // ---------------- derive total episodes (mobile only) ----------------
   useEffect(() => {
@@ -424,7 +457,10 @@ export default function EpisodeNavigatorMobile({
             {visibleEpisodeNumbers.map((n) => {
               const meta = metaByNumber[n];
               const title = meta?.title ?? `Episode ${n}`;
-              const imageUrl = meta?.imageUrl ?? null;
+
+              // undefined = meta not loaded yet (don't show fallback)
+              // null = loaded but missing (allow poster/final fallback)
+              const imageUrl = meta ? meta.imageUrl : undefined;
 
               const metaLine = `S${pad2(1)} · E${pad2(n)}`;
               const hasSelectedEpisode = typeof currentSafe === "number";
@@ -447,11 +483,11 @@ export default function EpisodeNavigatorMobile({
                     // active treatment
                     isActive
                       ? [
-                          "ring-2 ring-sky-400",
-                          "shadow-lg shadow-sky-500/20",
-                          "scale-[1.03]",
-                          "z-[2]",
-                        ].join(" ")
+                        "ring-2 ring-sky-400",
+                        "shadow-lg shadow-sky-500/20",
+                        "scale-[1.03]",
+                        "z-[2]",
+                      ].join(" ")
                       : "",
                   ].join(" ")}
                   style={{
@@ -461,16 +497,18 @@ export default function EpisodeNavigatorMobile({
                 >
                   <div className="flex h-full overflow-hidden rounded-xs">
                     <div className={[thumbSize, "bg-black/5"].join(" ")}>
-                      {imageUrl ? (
-                        <img
-                          src={imageUrl}
-                          alt=""
-                          className="h-full w-full object-cover"
-                          draggable={false}
-                          loading="lazy"
-                          decoding="async"
-                        />
-                      ) : null}
+                      <SmartBackdropImage
+                        src={imageUrl} // 1) episode still (undefined while loading)
+                        posterFallbackSrc={animePosterUrl} // 2) series poster
+                        finalFallbackSrc={FALLBACK_BACKDROP_SRC} // 3) hero fallback
+                        alt=""
+                        width={500}
+                        height={750}
+                        priority={false}
+                        sizes="120px"
+                        className="h-full w-full object-cover"
+                        placeholderClassName="h-full w-full"
+                      />
                     </div>
 
                     <div className="flex min-w-0 flex-1 flex-col justify-start px-3 py-3">
