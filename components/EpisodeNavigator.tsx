@@ -5,6 +5,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { getAnimeBySlug } from "@/lib/anime";
+import { FALLBACK_BACKDROP_SRC } from "@/lib/fallbacks";
+import SmartBackdropImage from "@/components/SmartBackdropImage";
 
 type Props = {
   slug: string;
@@ -110,6 +112,7 @@ export default function EpisodeNavigator({
 
   // ---------------- animeId cache ----------------
   const [animeId, setAnimeId] = useState<string | null>(null);
+  const [animePosterUrl, setAnimePosterUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,6 +133,36 @@ export default function EpisodeNavigator({
       cancelled = true;
     };
   }, [slug]);
+
+  // ---------------- series poster fallback (fetch once per animeId) ----------------
+  useEffect(() => {
+    let cancelled = false;
+
+    async function run() {
+      setAnimePosterUrl(null);
+      if (!animeId) return;
+
+      const { data, error } = await supabase
+        .from("anime")
+        .select("image_url")
+        .eq("id", animeId)
+        .maybeSingle();
+
+      if (cancelled) return;
+      if (error) {
+        console.error("EpisodeNavigator: anime poster fetch error:", error);
+        setAnimePosterUrl(null);
+        return;
+      }
+
+      setAnimePosterUrl(data?.image_url ?? null);
+    }
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [animeId]);
 
   // ---------------- meta cache (lazy, in-view only) ----------------
   const [metaByNumber, setMetaByNumber] = useState<Record<number, EpisodeMeta>>(
@@ -646,7 +679,11 @@ export default function EpisodeNavigator({
           {allNumbers.map((n, idx) => {
             const meta = metaByNumber[n];
             const title = meta?.title ?? `Episode ${n}`;
-            const imageUrl = meta?.imageUrl ?? null;
+
+            // IMPORTANT:
+            // undefined = still loading (don’t show fallback yet)
+            // null = loaded but no episode image (use poster/hero fallback)
+            const imageUrl = meta ? meta.imageUrl : undefined;
 
             const metaLine = `S${pad2(1)} · E${pad2(n)}`;
             const isActive = currentSafe === n;
@@ -695,16 +732,17 @@ export default function EpisodeNavigator({
                 >
                   <div className="flex h-full overflow-hidden rounded-xs">
                     <div className={[thumbSize, "bg-black/5"].join(" ")}>
-                      {imageUrl ? (
-                        <img
-                          src={imageUrl}
-                          alt=""
-                          className="h-full w-full object-cover"
-                          draggable={false}
-                          loading="lazy"
-                          decoding="async"
-                        />
-                      ) : null}
+                      <SmartBackdropImage
+                        src={imageUrl} // 1) episode still
+                        posterFallbackSrc={animePosterUrl} // 2) series poster
+                        finalFallbackSrc={FALLBACK_BACKDROP_SRC} // 3) hero fallback
+                        alt=""
+                        width={500}
+                        height={750}
+                        priority={false}
+                        sizes="120px"
+                        className="h-full w-full object-cover"
+                      />
                     </div>
 
                     <div className="flex min-w-0 flex-1 flex-col justify-start px-3 py-3">
