@@ -1,11 +1,10 @@
 "use client";
 
-import React from "react";
 import {
   Bold,
   Italic,
   Link2,
-  Image as ImageIcon,
+  ImagePlus,
   EyeOff,
   Code,
 } from "lucide-react";
@@ -204,8 +203,8 @@ export default function ComposerActionRow({
         <Link2 width={18} height={18} strokeWidth={2} />
       </ToolBtn>
 
-      <ToolBtn title="Insert image" onClick={actionImage} disabled={disabled}>
-        <ImageIcon width={18} height={18} strokeWidth={2} />
+      <ToolBtn title="🔥 TEST: THIS IS THE FILE BEING USED" onClick={actionImage} disabled={disabled}>
+        <span style={{ fontSize: 10, fontWeight: 700 }}>TEST</span>
       </ToolBtn>
 
       {showCode ? (
