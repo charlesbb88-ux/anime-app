@@ -446,13 +446,15 @@ function TwitterVideoCard({
                     onPlay={() => announceNowPlaying(token)}
                 />
 
-                <button
-                    type="button"
-                    onClick={onTapVideo}
-                    className="absolute inset-0 z-10 block w-full h-full"
-                    style={{ cursor: "pointer", background: "transparent", border: 0, padding: 0 }}
-                    aria-label={hasUserUnmuted ? "Play/Pause video" : "Unmute video"}
-                />
+                {!hasUserUnmuted ? (
+                    <button
+                        type="button"
+                        onClick={onTapVideo}
+                        className="absolute inset-0 z-10 block w-full h-full"
+                        style={{ cursor: "pointer", background: "transparent", border: 0, padding: 0 }}
+                        aria-label="Unmute video"
+                    />
+                ) : null}
 
                 {!hasUserUnmuted ? (
                     <button
@@ -470,14 +472,6 @@ function TwitterVideoCard({
                         <div className="text-white text-xs font-semibold">Tap to unmute</div>
                     </button>
                 ) : null}
-
-                {hasUserUnmuted && !isPlaying ? (
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="rounded-full bg-black/55 p-4">
-                            <PlayIcon />
-                        </div>
-                    </div>
-                ) : null}
             </div>
         </div>
     );
@@ -488,14 +482,6 @@ function MuteIcon() {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M11 5L6 9H3v6h3l5 4V5z" stroke="white" strokeWidth="2" strokeLinejoin="round" />
             <path d="M16 9l5 6M21 9l-5 6" stroke="white" strokeWidth="2" strokeLinecap="round" />
-        </svg>
-    );
-}
-
-function PlayIcon() {
-    return (
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M9 7l10 5-10 5V7z" fill="white" />
         </svg>
     );
 }
