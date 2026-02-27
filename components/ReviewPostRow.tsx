@@ -324,6 +324,16 @@ function PosterBox({
 
 export default function ReviewPostRow(props: ReviewPostRowProps) {
   const router = useRouter();
+  const [isMobile, setIsMobile] = React.useState(false);
+
+  React.useEffect(() => {
+    function check() {
+      setIsMobile(window.innerWidth <= 767);
+    }
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
   const [isHovered, setIsHovered] = React.useState(false);
 
   const {
@@ -537,8 +547,10 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
         style={{
           display: "flex",
           alignItems: "flex-start",
-          gap: "0.7rem",
-          padding: "0.8rem 0.8rem 0.4rem 0.8rem",
+          gap: isMobile ? "0.2rem" : "0.7rem",
+          padding: isMobile
+            ? "0.3rem 0.3rem 0.1rem 0.3rem"
+            : "0.8rem 0.8rem 0.4rem 0.8rem",
         }}
       >
         {/* Avatar */}
@@ -557,7 +569,13 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
         {/* Content column */}
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* Poster floats right */}
-          <div style={{ float: "right", marginLeft: POSTER_GAP, marginTop: 2 }}>
+          <div
+            style={{
+              float: "right",
+              marginLeft: isMobile ? 3 : POSTER_GAP,
+              marginTop: isMobile ? 0 : 2,
+            }}
+          >
             {originHref ? (
               <Link
                 href={originHref}

@@ -89,6 +89,17 @@ export default function CommentRow(props: CommentRowProps) {
   const router = useRouter();
   const [isHovered, setIsHovered] = React.useState(false);
 
+  const [isMobile, setIsMobile] = React.useState(false);
+
+  React.useEffect(() => {
+    function check() {
+      setIsMobile(window.innerWidth <= 767);
+    }
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
   const {
     id,
     createdAt,
@@ -207,8 +218,10 @@ export default function CommentRow(props: CommentRowProps) {
       style={{
         display: "flex",
         alignItems: "flex-start",
-        gap: "0.7rem",
-        padding: "0.8rem 0.8rem 0.4rem 0.8rem",
+        gap: isMobile ? "0.2rem" : "0.7rem",
+        padding: isMobile
+          ? "0.3rem 0.3rem 0.1rem 0.3rem"
+          : "0.8rem 0.8rem 0.4rem 0.8rem",
       }}
     >
       {/* Avatar: clickable to profile if we have a username */}
