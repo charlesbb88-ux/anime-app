@@ -336,6 +336,12 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
   }, []);
   const [isHovered, setIsHovered] = React.useState(false);
 
+  const COLLAPSED_LINES = 10;
+
+  const [isExpanded, setIsExpanded] = React.useState(false);
+  const [canExpand, setCanExpand] = React.useState(false);
+  const textWrapRef = React.useRef<HTMLDivElement | null>(null);
+
   const {
     postId,
     createdAt,
@@ -385,6 +391,20 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
 
     isMain = false,
   } = props;
+
+  React.useEffect(() => {
+    const el = textWrapRef.current;
+    if (!el) return;
+
+    const check = () => {
+      setCanExpand(el.scrollHeight > el.clientHeight + 1);
+    };
+
+    check();
+
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, [props.contentJson, props.contentText, props.content, isExpanded, isMobile]);
 
   const iconSize = isMain ? 22 : 20;
   const avatarSize = isMain ? 56 : 46;
@@ -727,13 +747,50 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
           </div>
 
           {/* Text */}
-          <RichPostRenderer
-            json={props.contentJson ?? null}
-            fallbackText={props.contentText ?? content}
-            fontSize={contentFontSize}
-            fontWeight={400}
-            lineHeight={1.5}
-          />
+          <div
+            ref={textWrapRef}
+            style={
+              isExpanded
+                ? { margin: 0 }
+                : {
+                  margin: 0,
+                  overflow: "hidden",
+                  display: "-webkit-box",
+                  WebkitBoxOrient: "vertical" as any,
+                  WebkitLineClamp: COLLAPSED_LINES as any,
+                }
+            }
+          >
+            <RichPostRenderer
+              json={props.contentJson ?? null}
+              fallbackText={props.contentText ?? content}
+              fontSize={contentFontSize}
+              fontWeight={400}
+              lineHeight={1.5}
+            />
+          </div>
+
+          {!isExpanded && canExpand ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsExpanded(true);
+              }}
+              style={{
+                marginTop: 6,
+                padding: 0,
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                color: "#1d9bf0",
+                fontWeight: 600,
+                fontSize: "0.95rem",
+              }}
+            >
+              Show more
+            </button>
+          ) : null}
           {(props.attachments?.length ?? 0) > 0 ? (
             <div style={{ marginTop: 10 }}>
               <PostAttachments items={props.attachments as any} />
