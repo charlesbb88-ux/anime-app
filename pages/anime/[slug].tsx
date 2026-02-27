@@ -257,7 +257,8 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
         return;
       }
 
-      setReviewSaveMsg(`Saved ✅ (review id: ${result.data?.id})`);
+      const reviewId = result.data?.review?.id ?? "unknown";
+      setReviewSaveMsg(`Saved ✅ (review id: ${reviewId})`);
 
       // ✅ Force PostFeed to refetch immediately (no manual refresh)
       setFeedNonce((n) => n + 1);
