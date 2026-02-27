@@ -31,7 +31,7 @@ export const ATTACHMENT_LIMITS = {
 
   // Allowed mime
   allowedImageMimes: new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]),
-  allowedVideoMimes: new Set(["video/mp4", "video/webm"]),
+allowedVideoMimes: new Set(["video/mp4", "video/webm", "video/quicktime"]),
 };
 
 export function parseYouTubeId(input: string): string | null {
@@ -64,6 +64,29 @@ export function publicPostMediaUrl(storagePath: string) {
   return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/post_media/${storagePath}`;
 }
 
+function safeRandomId() {
+  const c = globalThis.crypto as Crypto | undefined;
+
+  // Prefer native UUID when available
+  if (c?.randomUUID) return c.randomUUID();
+
+  // Fallback: uuid-ish v4 from random bytes
+  const bytes = new Uint8Array(16);
+
+  if (c?.getRandomValues) {
+    c.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+
+  // RFC4122 v4 bits
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 function inferExtFromMime(mime: string | null | undefined, fallback: string) {
   const m = (mime || "").toLowerCase();
   if (m === "image/jpeg") return "jpg";
@@ -72,6 +95,7 @@ function inferExtFromMime(mime: string | null | undefined, fallback: string) {
   if (m === "image/gif") return "gif";
   if (m === "video/mp4") return "mp4";
   if (m === "video/webm") return "webm";
+  if (m === "video/quicktime") return "mov";
   return fallback;
 }
 
@@ -103,7 +127,7 @@ function validateAttachments(attachments: PendingAttachment[]) {
 
     if (kind === "video") {
       if (!ATTACHMENT_LIMITS.allowedVideoMimes.has(mime)) {
-        throw new Error("Only MP4 and WebM videos are allowed.");
+throw new Error("Only MP4, WebM, and MOV (iPhone) videos are allowed.");
       }
       if (file.size > ATTACHMENT_LIMITS.maxVideoBytes) {
         throw new Error("Video is too large.");
@@ -235,6 +259,7 @@ export async function insertAttachments(params: {
       }
 
       const file = a.file;
+      const mime = (file.type || "").toLowerCase();
 
       // decide if this file should be stored as image vs gif vs video
       const { kind, ext } = classifyFile(file);
@@ -260,7 +285,7 @@ export async function insertAttachments(params: {
       }
 
       // storage path
-      const path = `${userId}/${postId}/${crypto.randomUUID()}.${ext}`;
+      const path = `${userId}/${postId}/${safeRandomId()}.${ext}`;
 
       const up = await supabase.storage.from("post_media").upload(path, file, {
         contentType: file.type || undefined,
@@ -271,7 +296,12 @@ export async function insertAttachments(params: {
 
       const publicUrl = publicPostMediaUrl(path);
 
-      const baseMeta: any = { storage_path: path };
+const baseMeta: any = { storage_path: path };
+
+if (mime === "video/quicktime") {
+  baseMeta.container = "mov";
+  baseMeta.may_not_play_everywhere = true;
+}
       if (kind === "video" && durationSeconds != null) {
         baseMeta.duration_seconds = durationSeconds;
       }
