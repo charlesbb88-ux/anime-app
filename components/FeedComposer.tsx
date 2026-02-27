@@ -92,6 +92,17 @@ export default function FeedComposer({
 
   const [active, setActive] = useState(false);
 
+  const [isMobile, setIsMobile] = useState(false);
+
+  React.useEffect(() => {
+    function check() {
+      setIsMobile(window.innerWidth <= 767);
+    }
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
   const [isDragging, setIsDragging] = useState(false);
 
   const dragCounter = useRef(0);
@@ -431,8 +442,10 @@ export default function FeedComposer({
         style={{
           display: "flex",
           alignItems: active ? "flex-start" : "center",
-          gap: "0.7rem",
-          padding: active ? "0.6rem 0.8rem 0.3rem 0.8rem" : "0.45rem 0.8rem",
+          gap: isMobile ? "0.45rem" : "0.7rem",
+          padding: active
+            ? (isMobile ? "0.3rem 0.6rem 0.25rem 0.3rem" : "0.6rem 0.8rem 0.3rem 0.8rem")
+            : (isMobile ? "0.5rem 0.3rem" : "0.45rem 0.8rem"),
         }}
       >
         {currentUserUsername ? (

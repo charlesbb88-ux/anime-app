@@ -165,30 +165,57 @@ function ImageGrid({ images, onOpen }: { images: Attachment[]; onOpen: (idx: num
 
     if (images.length === 1) {
         const a = images[0];
-        const paddingTop = `${getAspectPct(a, 56.25)}%`;
+        const isVertical = !!a.width && !!a.height && a.height > a.width;
 
         return (
             <button
                 type="button"
                 onClick={() => onOpen(0)}
-                className="block w-full overflow-hidden rounded-lg border border-black bg-white text-left p-0 leading-none"
+                className={[
+                    "block text-left p-0 leading-none",
+                    isVertical
+                        ? "bg-transparent w-fit mx-auto"
+                        : "w-full overflow-hidden rounded-lg border border-black bg-white",
+                ].join(" ")}
                 style={{ cursor: "zoom-in" }}
             >
-                <div className="relative w-full bg-white" style={{ paddingTop }}>
-                    <div className="absolute inset-0 bg-neutral-100" />
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                        src={a.url}
-                        alt=""
-                        loading="lazy"
-                        className="absolute inset-0 block w-full h-full"
-                        style={{ objectFit: "contain", maxHeight: "70vh" }}
-                    />
-                </div>
+                {isVertical ? (
+                    <div className="bg-transparent text-center">
+                        <div className="inline-flex justify-center">
+                            <div
+                                className="relative bg-white h-[40vh] max-h-[520px] w-auto overflow-hidden rounded-lg border border-black"
+                                style={{
+                                    aspectRatio: a.width && a.height ? `${a.width}/${a.height}` : undefined,
+                                }}
+                            >
+                                <div className="absolute inset-0 bg-neutral-100" />
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                    src={a.url}
+                                    alt=""
+                                    loading="lazy"
+                                    className="absolute inset-0 h-full w-full"
+                                    style={{ objectFit: "contain" }}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="relative w-full bg-white" style={{ paddingTop: `${getAspectPct(a, 56.25)}%` }}>
+                        <div className="absolute inset-0 bg-neutral-100" />
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                            src={a.url}
+                            alt=""
+                            loading="lazy"
+                            className="absolute inset-0 block w-full h-full"
+                            style={{ objectFit: "contain" }}
+                        />
+                    </div>
+                )}
             </button>
         );
     }
-
     const layout = n === 2 ? "two" : n === 3 ? "three" : "four";
 
     return (
