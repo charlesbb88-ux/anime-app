@@ -4,7 +4,9 @@ import React, { useMemo, useRef, useState } from "react";
 import type { LexicalEditor } from "lexical";
 import Link from "next/link";
 import ComposerRichEditor from "@/components/composer/ComposerRichEditor";
-import ComposerActionRowLexical from "@/components/composer/ComposerActionRowLexical";
+import ComposerActionRowLexical, {
+  ComposerActionRowLexicalExternal,
+} from "@/components/composer/ComposerActionRowLexical";
 import ComposerPendingAttachments from "@/components/composer/ComposerPendingAttachments";
 import { parseYouTubeId, type PendingAttachment } from "@/lib/postAttachments";
 
@@ -98,6 +100,7 @@ export default function FeedComposer({
   const composerRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<LexicalEditor | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [lexicalEditor, setLexicalEditor] = useState<LexicalEditor | null>(null);
 
   // ✅ Helper counters
   function countPendingImages(pending: PendingAttachment[]) {
@@ -460,21 +463,14 @@ export default function FeedComposer({
             typoBase={typoBase}
             onEditorReady={(ed) => {
               editorRef.current = ed;
+              setLexicalEditor(ed);
             }}
-            toolbar={
-              !isCollapsed ? (
-                <div>
-                  <ComposerActionRowLexical
-                    disabled={posting || hasUploading}
-                    onPickImages={onPickImages}
-                    onAddYouTube={onAddYouTube}
-                  />
-
-                  <ComposerPendingAttachments items={pendingAttachments} onRemove={removeAttachmentAt} />
-                </div>
-              ) : undefined
-            }
           />
+          {!isCollapsed ? (
+            <div style={{ padding: "0 0.8rem 0.6rem 0.8rem" }}>
+              <ComposerPendingAttachments items={pendingAttachments} onRemove={removeAttachmentAt} />
+            </div>
+          ) : null}
         </div>
 
         {isCollapsed && (
@@ -496,15 +492,25 @@ export default function FeedComposer({
           </button>
         )}
       </div>
-
       {!isCollapsed ? (
         <div
           style={{
             padding: "0 0.8rem 0.5rem 0.8rem",
             display: "flex",
-            justifyContent: "flex-end",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "0.6rem",
           }}
         >
+          {/* LEFT: toolbar buttons */}
+          <ComposerActionRowLexicalExternal
+            editor={lexicalEditor}
+            disabled={posting || hasUploading}
+            onPickImages={onPickImages}
+            onAddYouTube={onAddYouTube}
+          />
+
+          {/* RIGHT: Post button */}
           <button
             onClick={onPost}
             disabled={disabled}
@@ -517,6 +523,7 @@ export default function FeedComposer({
               cursor: disabled ? "default" : "pointer",
               fontSize: typoSmall,
               fontWeight: 500,
+              flexShrink: 0,
             }}
           >
             {posting ? actioningLabel : actionLabel}

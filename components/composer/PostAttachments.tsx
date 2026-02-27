@@ -138,6 +138,7 @@ export default function PostAttachments({ items }: { items: Attachment[] }) {
                     token={a.id ?? `vid-${idx}-${a.url}`}
                     width={a.width ?? null}
                     height={a.height ?? null}
+                    meta={a.meta}
                 />
             ))}
 
@@ -273,11 +274,13 @@ function TwitterVideoCard({
     token,
     width,
     height,
+    meta,
 }: {
     url: string;
     token: string;
     width?: number | null;
     height?: number | null;
+    meta?: any;
 }) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const hasPlayedOnceRef = useRef(false);
@@ -286,7 +289,10 @@ function TwitterVideoCard({
     const [showControls, setShowControls] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
 
-    const paddingTop = `${getAspectPct({ width, height }, 56.25)}%`;
+    const [failedToPlay, setFailedToPlay] = useState(false);
+
+    const isVertical = !!width && !!height && height > width;
+    const paddingTop = isVertical ? undefined : `${getAspectPct({ width, height }, 56.25)}%`;
 
     // Observe visibility + report distance to viewport center
     useEffect(() => {
@@ -426,53 +432,151 @@ function TwitterVideoCard({
     }
 
     return (
-        <div className="overflow-hidden rounded-lg border border-black bg-white">
-            <div className="relative w-full bg-black" style={{ paddingTop }}>
-                {/* Always rendered unconditionally behind the video. The video
-                    paints over it naturally once it has a frame. Never hide this
-                    conditionally — that's what caused the black screen. */}
-                <div className="absolute inset-0 bg-neutral-900" />
+        <div
+            className={[
+                "rounded-lg",
+                isVertical ? "border-0 bg-transparent w-fit mx-auto" : "overflow-hidden border border-black bg-white",
+            ].join(" ")}
+        >
+            {isVertical ? (
+                <div className="bg-transparent text-center">
+                    <div className="inline-flex justify-center">
+                        <div className="relative bg-black h-[60vh] max-h-[520px] aspect-[9/16] w-auto overflow-hidden rounded-lg border border-black">
+                            {/* Always rendered unconditionally behind the video. */}
+                            <div className="absolute inset-0 bg-neutral-900" />
 
-                <video
-                    ref={videoRef}
-                    className="absolute inset-0 h-full w-full"
-                    src={url}
-                    playsInline
-                    muted
-                    loop
-                    preload="auto"
-                    controls={showControls}
-                    style={{ objectFit: "cover" }}
-                    onPlay={() => announceNowPlaying(token)}
-                />
+                            <video
+                                ref={videoRef}
+                                className="absolute inset-0 h-full w-full"
+                                src={url}
+                                playsInline
+                                muted
+                                loop
+                                preload="auto"
+                                controls={showControls}
+                                style={{ objectFit: "contain" }}
+                                onPlay={() => announceNowPlaying(token)}
+                                onError={() => setFailedToPlay(true)}
+                            />
 
-                {!hasUserUnmuted ? (
-                    <button
-                        type="button"
-                        onClick={onTapVideo}
-                        className="absolute inset-0 z-10 block w-full h-full"
-                        style={{ cursor: "pointer", background: "transparent", border: 0, padding: 0 }}
-                        aria-label="Unmute video"
+                            {failedToPlay ? (
+                                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 bg-black/75 px-4 text-center">
+                                    <div className="text-white text-sm font-semibold">Video can’t play on this device</div>
+
+                                    {meta?.container === "mov" || meta?.may_not_play_everywhere ? (
+                                        <div className="text-white/80 text-xs">
+                                            This was uploaded as MOV and may not be supported in some browsers.
+                                        </div>
+                                    ) : null}
+
+                                    <a
+                                        href={url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="rounded-full bg-white/90 px-3 py-2 text-xs font-semibold text-black"
+                                    >
+                                        Open video
+                                    </a>
+                                </div>
+                            ) : null}
+
+                            {!failedToPlay && !hasUserUnmuted ? (
+                                <button
+                                    type="button"
+                                    onClick={onTapVideo}
+                                    className="absolute inset-0 z-10 block w-full h-full"
+                                    style={{ cursor: "pointer", background: "transparent", border: 0, padding: 0 }}
+                                    aria-label="Unmute video"
+                                />
+                            ) : null}
+
+                            {!failedToPlay && !hasUserUnmuted ? (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        onTapVideo();
+                                    }}
+                                    className="absolute left-3 bottom-3 z-20 flex items-center gap-2 rounded-full bg-black/60 px-3 py-2"
+                                    style={{ cursor: "pointer" }}
+                                    aria-label="Tap to unmute"
+                                >
+                                    <MuteIcon />
+                                    <div className="text-white text-xs font-semibold">Tap to unmute</div>
+                                </button>
+                            ) : null}
+                        </div>
+                    </div>
+                </div>
+            ) : (
+                <div className="relative w-full bg-black" style={{ paddingTop: paddingTop as any, overflow: "hidden" }}>
+                    {/* Always rendered unconditionally behind the video. */}
+                    <div className="absolute inset-0 bg-neutral-900" />
+
+                    <video
+                        ref={videoRef}
+                        className="absolute inset-0 h-full w-full"
+                        src={url}
+                        playsInline
+                        muted
+                        loop
+                        preload="auto"
+                        controls={showControls}
+                        style={{ objectFit: "cover" }}
+                        onPlay={() => announceNowPlaying(token)}
+                        onError={() => setFailedToPlay(true)}
                     />
-                ) : null}
 
-                {!hasUserUnmuted ? (
-                    <button
-                        type="button"
-                        onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            onTapVideo();
-                        }}
-                        className="absolute left-3 bottom-3 z-20 flex items-center gap-2 rounded-full bg-black/60 px-3 py-2"
-                        style={{ cursor: "pointer" }}
-                        aria-label="Tap to unmute"
-                    >
-                        <MuteIcon />
-                        <div className="text-white text-xs font-semibold">Tap to unmute</div>
-                    </button>
-                ) : null}
-            </div>
+                    {failedToPlay ? (
+                        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 bg-black/75 px-4 text-center">
+                            <div className="text-white text-sm font-semibold">Video can’t play on this device</div>
+
+                            {meta?.container === "mov" || meta?.may_not_play_everywhere ? (
+                                <div className="text-white/80 text-xs">
+                                    This was uploaded as MOV and may not be supported in some browsers.
+                                </div>
+                            ) : null}
+
+                            <a
+                                href={url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rounded-full bg-white/90 px-3 py-2 text-xs font-semibold text-black"
+                            >
+                                Open video
+                            </a>
+                        </div>
+                    ) : null}
+
+                    {!failedToPlay && !hasUserUnmuted ? (
+                        <button
+                            type="button"
+                            onClick={onTapVideo}
+                            className="absolute inset-0 z-10 block w-full h-full"
+                            style={{ cursor: "pointer", background: "transparent", border: 0, padding: 0 }}
+                            aria-label="Unmute video"
+                        />
+                    ) : null}
+
+                    {!failedToPlay && !hasUserUnmuted ? (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onTapVideo();
+                            }}
+                            className="absolute left-3 bottom-3 z-20 flex items-center gap-2 rounded-full bg-black/60 px-3 py-2"
+                            style={{ cursor: "pointer" }}
+                            aria-label="Tap to unmute"
+                        >
+                            <MuteIcon />
+                            <div className="text-white text-xs font-semibold">Tap to unmute</div>
+                        </button>
+                    ) : null}
+                </div>
+            )}
         </div>
     );
 }
