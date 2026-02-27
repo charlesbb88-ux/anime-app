@@ -3,6 +3,8 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import GlobalLogModalPhone from "@/components/reviews/GlobalLogModalPhone";
+import ComposerPendingAttachments from "@/components/composer/ComposerPendingAttachments";
+import type { PendingAttachment } from "@/lib/postAttachments";
 
 import {
   createAnimeEpisodeLog,
@@ -233,6 +235,9 @@ export default function GlobalLogModal({
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
 
+  // ✅ NEW: attachments for the review post
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+
   const target = useMemo(() => {
     if (animeEpisodeId) return "animeEpisode";
     if (animeId) return "animeSeries";
@@ -281,6 +286,8 @@ export default function GlobalLogModal({
     setHalfStars(null);
     setLikeChoice(null);
 
+    setPendingAttachments([]);
+
     setSaving(false);
     setError("");
   }, [open, isEpisodeLikeTarget]);
@@ -304,6 +311,51 @@ export default function GlobalLogModal({
     });
   }
 
+  // ✅ NEW: media picker (images/gifs/videos)
+  const fileInputId = "global-log-review-media";
+
+  function onPickFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+
+    const next: PendingAttachment[] = Array.from(files).map((f) => {
+      const isVideo = f.type.startsWith("video/");
+      const isImage = f.type.startsWith("image/");
+
+      // choose kind (treat gif as "image" so it matches your PendingAttachment type + UI)
+      const kind: any = isVideo ? "video" : isImage ? "image" : "image";
+
+      return {
+        kind,
+        file: f,
+        status: "queued",
+        error: null,
+      } as any;
+    });
+
+    setPendingAttachments((prev) => {
+      // basic caps (match your FeedComposer defaults)
+      const existingVideos = prev.filter((a: any) => a.kind === "video").length;
+      const incomingVideos = next.filter((a: any) => a.kind === "video").length;
+
+      // 1 video max
+      if (existingVideos + incomingVideos > 1) {
+        window.alert("Only 1 video allowed.");
+        return prev;
+      }
+
+      // 4 images/gifs max
+      const existingMedia = prev.filter((a: any) => a.kind === "image").length;
+      const incomingMedia = next.filter((a: any) => a.kind === "image").length;
+
+      if (existingMedia + incomingMedia > 4) {
+        window.alert("Only 4 images/GIFs allowed.");
+        return prev;
+      }
+
+      return [...prev, ...next];
+    });
+  }
+
   if (!open) return null;
 
   async function handleSubmit(e: React.FormEvent) {
@@ -315,6 +367,9 @@ export default function GlobalLogModal({
 
     try {
       const trimmed = content.trim();
+      if (!trimmed && pendingAttachments.length > 0) {
+        throw new Error("Write at least a short review to attach media.");
+      }
       const reviewRating = halfStarsTo100(halfStars);
 
       // Like is only TRUE if explicitly set true. If untouched (null), treat as false for payload fields.
@@ -341,9 +396,12 @@ export default function GlobalLogModal({
             content: trimmed,
             contains_spoilers: containsSpoilers,
             author_liked: snapshotLiked,
+
+            // ✅ NEW
+            attachments: pendingAttachments,
           });
           if (result.error) throw result.error;
-          reviewId = result.data?.id ?? null;
+          reviewId = result.data?.review?.id ?? null;
         }
 
         // Marks (episode-scoped): watched always, liked/rating only if touched
@@ -382,6 +440,7 @@ export default function GlobalLogModal({
           if (error) throw error;
         }
 
+        setPendingAttachments([]);
         onClose();
         onSuccess?.();
         return;
@@ -420,9 +479,12 @@ export default function GlobalLogModal({
             content: trimmed,
             contains_spoilers: containsSpoilers,
             author_liked: snapshotLiked,
+
+            // ✅ NEW
+            attachments: pendingAttachments,
           });
           if (result.error) throw result.error;
-          reviewId = result.data?.id ?? null;
+          reviewId = result.data?.review?.id ?? null;
         }
 
         // log optional (checkbox)
@@ -443,6 +505,7 @@ export default function GlobalLogModal({
           if (error) throw error;
         }
 
+        setPendingAttachments([]);
         onClose();
         onSuccess?.();
         return;
@@ -464,9 +527,12 @@ export default function GlobalLogModal({
             content: trimmed,
             contains_spoilers: containsSpoilers,
             author_liked: snapshotLiked,
+
+            // ✅ NEW
+            attachments: pendingAttachments,
           });
           if (result.error) throw result.error;
-          reviewId = result.data?.id ?? null;
+          reviewId = result.data?.review?.id ?? null;
         }
 
         // Marks (chapter-scoped): watched always, liked/rating only if touched
@@ -505,6 +571,7 @@ export default function GlobalLogModal({
           if (error) throw error;
         }
 
+        setPendingAttachments([]);
         onClose();
         onSuccess?.();
         return;
@@ -543,9 +610,12 @@ export default function GlobalLogModal({
             content: trimmed,
             contains_spoilers: containsSpoilers,
             author_liked: snapshotLiked,
+
+            // ✅ NEW
+            attachments: pendingAttachments,
           });
           if (result.error) throw result.error;
-          reviewId = result.data?.id ?? null;
+          reviewId = result.data?.review?.id ?? null;
         }
 
         // log optional (checkbox)
@@ -566,6 +636,7 @@ export default function GlobalLogModal({
           if (error) throw error;
         }
 
+        setPendingAttachments([]);
         onClose();
         onSuccess?.();
         return;
@@ -668,6 +739,53 @@ export default function GlobalLogModal({
                 saving ? "opacity-60" : "",
               ].join(" ")}
             />
+          </div>
+
+          {/* ✅ Attachments (media) */}
+          <div className="mt-2">
+            <div className="flex items-center gap-2">
+              <input
+                id={fileInputId}
+                type="file"
+                accept="image/*,video/*"
+                multiple
+                className="hidden"
+                disabled={saving}
+                onChange={(e) => {
+                  onPickFiles(e.target.files);
+                  // allow picking same file again later
+                  e.currentTarget.value = "";
+                }}
+              />
+
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => {
+                  const el = document.getElementById(fileInputId) as HTMLInputElement | null;
+                  el?.click();
+                }}
+                className={[
+                  "rounded-md border border-zinc-700 px-3 py-2 text-sm text-zinc-200",
+                  saving ? "opacity-60 cursor-not-allowed" : "hover:bg-zinc-800",
+                ].join(" ")}
+              >
+                Add media
+              </button>
+
+              <div className="text-xs text-zinc-400">Up to 4 images/GIFs, or 1 video</div>
+            </div>
+
+            {pendingAttachments.length > 0 ? (
+              <div className="mt-3">
+                <ComposerPendingAttachments
+                  items={pendingAttachments}
+                  onRemove={(index) => {
+                    setPendingAttachments((prev) => prev.filter((_, i) => i !== index));
+                  }}
+                />
+              </div>
+            ) : null}
           </div>
 
           {/* Like (heart) */}
@@ -815,6 +933,8 @@ export default function GlobalLogModal({
       StarVisual={StarVisual}
       canSubmit={canSubmit}
       onClose={onClose}
+      pendingAttachments={pendingAttachments}
+      setPendingAttachments={setPendingAttachments}
       handleSubmit={handleSubmit}
     />
   );

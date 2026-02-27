@@ -2,6 +2,7 @@
 "use client";
 
 import { supabase } from "@/lib/supabaseClient";
+import { insertAttachments, type PendingAttachment } from "@/lib/postAttachments";
 
 export type ReviewRow = {
   id: string;
@@ -23,6 +24,11 @@ export type ReviewRow = {
 
   created_at: string;
   updated_at: string | null;
+};
+
+export type CreateReviewResult = {
+  review: ReviewRow;
+  postId: string;
 };
 
 export type CreateAnimeSeriesReviewInput = {
@@ -73,8 +79,10 @@ export type CreateMangaChapterReviewInput = {
 // ANIME: Series Review
 // ------------------------------------------------------------
 export async function createAnimeSeriesReview(
-  input: CreateAnimeSeriesReviewInput
-): Promise<{ data: ReviewRow | null; error: any }> {
+  input: CreateAnimeSeriesReviewInput & {
+    attachments?: PendingAttachment[];
+  }
+): Promise<{ data: CreateReviewResult | null; error: any }> {
   const {
     data: { user },
     error: userError,
@@ -83,6 +91,7 @@ export async function createAnimeSeriesReview(
   if (userError) return { data: null, error: userError };
   if (!user) return { data: null, error: new Error("Not authenticated") };
 
+  // 1) create review
   const { data: review, error: reviewError } = await supabase
     .from("reviews")
     .insert({
@@ -91,15 +100,12 @@ export async function createAnimeSeriesReview(
       anime_id: input.anime_id,
       anime_episode_id: null,
 
-      // ✅ keep manga fields null for anime reviews
       manga_id: null,
       manga_chapter_id: null,
 
       rating: input.rating,
       content: input.content,
       contains_spoilers: input.contains_spoilers ?? false,
-
-      // ✅ NEW
       author_liked: input.author_liked ?? false,
     })
     .select("*")
@@ -107,30 +113,55 @@ export async function createAnimeSeriesReview(
 
   if (reviewError || !review) return { data: null, error: reviewError };
 
-  const { error: postError } = await supabase.from("posts").insert({
-    user_id: user.id,
-    anime_id: input.anime_id,
-    anime_episode_id: null,
+  // 2) create post AND RETURN ITS ID
+  const { data: post, error: postError } = await supabase
+    .from("posts")
+    .insert({
+      user_id: user.id,
 
-    // ✅ keep manga fields null for anime posts
-    manga_id: null,
-    manga_chapter_id: null,
+      anime_id: input.anime_id,
+      anime_episode_id: null,
 
-    content: input.content,
-    review_id: review.id,
-  });
+      manga_id: null,
+      manga_chapter_id: null,
 
-  if (postError) return { data: null, error: postError };
+      content: input.content,
+      review_id: review.id,
+    })
+    .select("id")
+    .single();
 
-  return { data: review as ReviewRow, error: null };
+  if (postError || !post?.id) {
+    await supabase.from("reviews").delete().eq("id", review.id);
+    return { data: null, error: postError ?? new Error("Failed to create post") };
+  }
+
+  // 3) optional attachments -> post_attachments
+  try {
+    if (input.attachments?.length) {
+      await insertAttachments({
+        supabase,
+        postId: post.id,
+        userId: user.id,
+        attachments: input.attachments,
+      });
+    }
+  } catch (e: any) {
+    await supabase.from("posts").delete().eq("id", post.id);
+    await supabase.from("reviews").delete().eq("id", review.id);
+    return { data: null, error: e };
+  }
+
+  return { data: { review: review as ReviewRow, postId: post.id }, error: null };
 }
-
 // ------------------------------------------------------------
 // ANIME: Episode Review
 // ------------------------------------------------------------
 export async function createAnimeEpisodeReview(
-  input: CreateAnimeEpisodeReviewInput
-): Promise<{ data: ReviewRow | null; error: any }> {
+  input: CreateAnimeEpisodeReviewInput & {
+    attachments?: PendingAttachment[];
+  }
+): Promise<{ data: CreateReviewResult | null; error: any }> {
   const {
     data: { user },
     error: userError,
@@ -139,6 +170,7 @@ export async function createAnimeEpisodeReview(
   if (userError) return { data: null, error: userError };
   if (!user) return { data: null, error: new Error("Not authenticated") };
 
+  // 1) create review
   const { data: review, error: reviewError } = await supabase
     .from("reviews")
     .insert({
@@ -147,15 +179,12 @@ export async function createAnimeEpisodeReview(
       anime_id: input.anime_id,
       anime_episode_id: input.anime_episode_id,
 
-      // ✅ keep manga fields null for anime reviews
       manga_id: null,
       manga_chapter_id: null,
 
       rating: input.rating,
       content: input.content,
       contains_spoilers: input.contains_spoilers ?? false,
-
-      // ✅ NEW
       author_liked: input.author_liked ?? false,
     })
     .select("*")
@@ -163,31 +192,58 @@ export async function createAnimeEpisodeReview(
 
   if (reviewError || !review) return { data: null, error: reviewError };
 
-  const { error: postError } = await supabase.from("posts").insert({
-    user_id: user.id,
+  // 2) create post AND RETURN ITS ID
+  const { data: post, error: postError } = await supabase
+    .from("posts")
+    .insert({
+      user_id: user.id,
 
-    anime_id: input.anime_id,
-    anime_episode_id: input.anime_episode_id,
+      anime_id: input.anime_id,
+      anime_episode_id: input.anime_episode_id,
 
-    // ✅ keep manga fields null for anime posts
-    manga_id: null,
-    manga_chapter_id: null,
+      manga_id: null,
+      manga_chapter_id: null,
 
-    content: input.content,
-    review_id: review.id,
-  });
+      content: input.content,
+      review_id: review.id,
+    })
+    .select("id")
+    .single();
 
-  if (postError) return { data: null, error: postError };
+  if (postError || !post?.id) {
+    // rollback review if post failed
+    await supabase.from("reviews").delete().eq("id", review.id);
+    return { data: null, error: postError ?? new Error("Failed to create post") };
+  }
 
-  return { data: review as ReviewRow, error: null };
+  // 3) optional attachments -> post_attachments
+  try {
+    if (input.attachments?.length) {
+      await insertAttachments({
+        supabase,
+        postId: post.id,
+        userId: user.id,
+        attachments: input.attachments,
+      });
+    }
+  } catch (e: any) {
+    // rollback if attachments failed
+    await supabase.from("posts").delete().eq("id", post.id);
+    await supabase.from("reviews").delete().eq("id", review.id);
+    return { data: null, error: e };
+  }
+
+  return { data: { review: review as ReviewRow, postId: post.id }, error: null };
 }
 
 // ------------------------------------------------------------
 // MANGA: Series Review
 // ------------------------------------------------------------
 export async function createMangaSeriesReview(
-  input: CreateMangaSeriesReviewInput
-): Promise<{ data: ReviewRow | null; error: any }> {
+  input: CreateMangaSeriesReviewInput & {
+    attachments?: PendingAttachment[];
+  }
+): Promise<{ data: CreateReviewResult | null; error: any }> {
   const {
     data: { user },
     error: userError,
@@ -196,24 +252,21 @@ export async function createMangaSeriesReview(
   if (userError) return { data: null, error: userError };
   if (!user) return { data: null, error: new Error("Not authenticated") };
 
+  // 1) create review
   const { data: review, error: reviewError } = await supabase
     .from("reviews")
     .insert({
       user_id: user.id,
 
-      // ✅ manga fields
       manga_id: input.manga_id,
       manga_chapter_id: null,
 
-      // ✅ keep anime fields null for manga reviews
       anime_id: null,
       anime_episode_id: null,
 
       rating: input.rating,
       content: input.content,
       contains_spoilers: input.contains_spoilers ?? false,
-
-      // ✅ NEW
       author_liked: input.author_liked ?? false,
     })
     .select("*")
@@ -221,32 +274,55 @@ export async function createMangaSeriesReview(
 
   if (reviewError || !review) return { data: null, error: reviewError };
 
-  const { error: postError } = await supabase.from("posts").insert({
-    user_id: user.id,
+  // 2) create post AND RETURN ITS ID
+  const { data: post, error: postError } = await supabase
+    .from("posts")
+    .insert({
+      user_id: user.id,
 
-    // ✅ manga context for feeds
-    manga_id: input.manga_id,
-    manga_chapter_id: null,
+      manga_id: input.manga_id,
+      manga_chapter_id: null,
 
-    // ✅ keep anime fields null for manga posts
-    anime_id: null,
-    anime_episode_id: null,
+      anime_id: null,
+      anime_episode_id: null,
 
-    content: input.content,
-    review_id: review.id,
-  });
+      content: input.content,
+      review_id: review.id,
+    })
+    .select("id")
+    .single();
 
-  if (postError) return { data: null, error: postError };
+  if (postError || !post?.id) {
+    await supabase.from("reviews").delete().eq("id", review.id);
+    return { data: null, error: postError ?? new Error("Failed to create post") };
+  }
 
-  return { data: review as ReviewRow, error: null };
+  // 3) optional attachments -> post_attachments
+  try {
+    if (input.attachments?.length) {
+      await insertAttachments({
+        supabase,
+        postId: post.id,
+        userId: user.id,
+        attachments: input.attachments,
+      });
+    }
+  } catch (e: any) {
+    await supabase.from("posts").delete().eq("id", post.id);
+    await supabase.from("reviews").delete().eq("id", review.id);
+    return { data: null, error: e };
+  }
+
+  return { data: { review: review as ReviewRow, postId: post.id }, error: null };
 }
-
 // ------------------------------------------------------------
 // MANGA: Chapter Review
 // ------------------------------------------------------------
 export async function createMangaChapterReview(
-  input: CreateMangaChapterReviewInput
-): Promise<{ data: ReviewRow | null; error: any }> {
+  input: CreateMangaChapterReviewInput & {
+    attachments?: PendingAttachment[];
+  }
+): Promise<{ data: CreateReviewResult | null; error: any }> {
   const {
     data: { user },
     error: userError,
@@ -255,6 +331,7 @@ export async function createMangaChapterReview(
   if (userError) return { data: null, error: userError };
   if (!user) return { data: null, error: new Error("Not authenticated") };
 
+  // 1) create review
   const { data: review, error: reviewError } = await supabase
     .from("reviews")
     .insert({
@@ -263,15 +340,12 @@ export async function createMangaChapterReview(
       manga_id: input.manga_id,
       manga_chapter_id: input.manga_chapter_id,
 
-      // ✅ keep anime fields null for manga reviews
       anime_id: null,
       anime_episode_id: null,
 
       rating: input.rating,
       content: input.content,
       contains_spoilers: input.contains_spoilers ?? false,
-
-      // ✅ NEW
       author_liked: input.author_liked ?? false,
     })
     .select("*")
@@ -279,21 +353,44 @@ export async function createMangaChapterReview(
 
   if (reviewError || !review) return { data: null, error: reviewError };
 
-  const { error: postError } = await supabase.from("posts").insert({
-    user_id: user.id,
+  // 2) create post AND RETURN ITS ID
+  const { data: post, error: postError } = await supabase
+    .from("posts")
+    .insert({
+      user_id: user.id,
 
-    manga_id: input.manga_id,
-    manga_chapter_id: input.manga_chapter_id,
+      manga_id: input.manga_id,
+      manga_chapter_id: input.manga_chapter_id,
 
-    // ✅ keep anime fields null for manga posts
-    anime_id: null,
-    anime_episode_id: null,
+      anime_id: null,
+      anime_episode_id: null,
 
-    content: input.content,
-    review_id: review.id,
-  });
+      content: input.content,
+      review_id: review.id,
+    })
+    .select("id")
+    .single();
 
-  if (postError) return { data: null, error: postError };
+  if (postError || !post?.id) {
+    await supabase.from("reviews").delete().eq("id", review.id);
+    return { data: null, error: postError ?? new Error("Failed to create post") };
+  }
 
-  return { data: review as ReviewRow, error: null };
+  // 3) optional attachments -> post_attachments
+  try {
+    if (input.attachments?.length) {
+      await insertAttachments({
+        supabase,
+        postId: post.id,
+        userId: user.id,
+        attachments: input.attachments,
+      });
+    }
+  } catch (e: any) {
+    await supabase.from("posts").delete().eq("id", post.id);
+    await supabase.from("reviews").delete().eq("id", review.id);
+    return { data: null, error: e };
+  }
+
+  return { data: { review: review as ReviewRow, postId: post.id }, error: null };
 }

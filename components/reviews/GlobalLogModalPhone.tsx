@@ -3,6 +3,8 @@
 import React from "react";
 import { Heart } from "lucide-react";
 import LogDatePicker from "@/components/ui/LogDatePicker";
+import ComposerPendingAttachments from "@/components/composer/ComposerPendingAttachments";
+import type { PendingAttachment } from "@/lib/postAttachments";
 
 export type GlobalLogModalPhoneProps = {
   title?: string | null;
@@ -34,6 +36,9 @@ export type GlobalLogModalPhoneProps = {
 
   saving: boolean;
   error: string;
+  // ✅ NEW: attachments
+  pendingAttachments: PendingAttachment[];
+  setPendingAttachments: React.Dispatch<React.SetStateAction<PendingAttachment[]>>;
 
   // stars
   shownHalfStars: number;
@@ -82,6 +87,8 @@ export default function GlobalLogModalPhone(props: GlobalLogModalPhoneProps) {
 
     saving,
     error,
+    pendingAttachments,
+    setPendingAttachments,
 
     shownHalfStars,
     setHoverHalfStars,
@@ -93,6 +100,48 @@ export default function GlobalLogModalPhone(props: GlobalLogModalPhoneProps) {
     onClose,
     handleSubmit,
   } = props;
+
+  // ✅ NEW: media picker (images/videos)
+  const fileInputId = "global-log-review-media-phone";
+
+  function onPickFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+
+    const next: PendingAttachment[] = Array.from(files).map((f) => {
+      const isVideo = f.type.startsWith("video/");
+      const isImage = f.type.startsWith("image/");
+
+      // treat gif as "image"
+      const kind: any = isVideo ? "video" : isImage ? "image" : "image";
+
+      return {
+        kind,
+        file: f,
+        status: "queued",
+        error: null,
+      } as any;
+    });
+
+    setPendingAttachments((prev) => {
+      const existingVideos = prev.filter((a: any) => a.kind === "video").length;
+      const incomingVideos = next.filter((a: any) => a.kind === "video").length;
+
+      if (existingVideos + incomingVideos > 1) {
+        window.alert("Only 1 video allowed.");
+        return prev;
+      }
+
+      const existingMedia = prev.filter((a: any) => a.kind === "image").length;
+      const incomingMedia = next.filter((a: any) => a.kind === "image").length;
+
+      if (existingMedia + incomingMedia > 4) {
+        window.alert("Only 4 images/GIFs allowed.");
+        return prev;
+      }
+
+      return [...prev, ...next];
+    });
+  }
 
   return (
     <div className="fixed inset-0 z-[9999] bg-zinc-950" aria-modal="true" role="dialog">
@@ -176,6 +225,52 @@ export default function GlobalLogModalPhone(props: GlobalLogModalPhoneProps) {
           />
         </div>
 
+        {/* ✅ Attachments (media) */}
+        <div className="mt-3">
+          <div className="flex items-center gap-2">
+            <input
+              id={fileInputId}
+              type="file"
+              accept="image/*,video/*"
+              multiple
+              className="hidden"
+              disabled={saving}
+              onChange={(e) => {
+                onPickFiles(e.target.files);
+                e.currentTarget.value = "";
+              }}
+            />
+
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => {
+                const el = document.getElementById(fileInputId) as HTMLInputElement | null;
+                el?.click();
+              }}
+              className={[
+                "rounded-md border border-zinc-800 px-3 py-2 text-sm text-zinc-200",
+                saving ? "opacity-60 cursor-not-allowed" : "hover:bg-zinc-900",
+              ].join(" ")}
+            >
+              Add media
+            </button>
+
+            <div className="text-xs text-zinc-500">Up to 4 images/GIFs, or 1 video</div>
+          </div>
+
+          {pendingAttachments.length > 0 ? (
+            <div className="mt-3">
+              <ComposerPendingAttachments
+                items={pendingAttachments}
+                onRemove={(index) => {
+                  setPendingAttachments((prev) => prev.filter((_, i) => i !== index));
+                }}
+              />
+            </div>
+          ) : null}
+        </div>
+
         <div className="mt-4 flex items-center gap-2 text-sm text-zinc-200">
           <input
             type="checkbox"
@@ -207,8 +302,8 @@ export default function GlobalLogModalPhone(props: GlobalLogModalPhoneProps) {
                   likeChoice === null
                     ? "Like"
                     : likeChoice
-                    ? "Will like on save"
-                    : "Will remove like on save"
+                      ? "Will like on save"
+                      : "Will remove like on save"
                 }
               >
                 <Heart className={["h-8 w-8", heartColor, heartFill].join(" ")} />
