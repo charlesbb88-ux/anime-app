@@ -15,6 +15,11 @@ import FeedShell from "@/components/FeedShell";
 type Post = {
   id: string;
   content: string;
+
+  // ✅ NEW (rich content fields)
+  content_text?: string | null;
+  content_json?: any | null;
+
   created_at: string;
   user_id: string;
 
@@ -98,6 +103,7 @@ export default function PostPage() {
   const [user, setUser] = useState<any>(null);
   const [post, setPost] = useState<Post | null>(null);
   const [loadingPost, setLoadingPost] = useState(true);
+  const [postAttachments, setPostAttachments] = useState<any[]>([]);
 
   // review visuals (only for review posts)
   const [reviewRow, setReviewRow] = useState<ReviewRow | null>(null);
@@ -234,7 +240,7 @@ export default function PostPage() {
     const { data, error } = await supabase
       .from("posts")
       .select(
-        "id, content, created_at, user_id, anime_id, anime_episode_id, manga_id, manga_chapter_id, review_id"
+        "id, content, content_text, content_json, created_at, user_id, anime_id, anime_episode_id, manga_id, manga_chapter_id, review_id"
       )
       .eq("id", postId)
       .single();
@@ -245,12 +251,32 @@ export default function PostPage() {
       setReviewRow(null);
       setReviewAnime(null);
       setReviewManga(null);
+      setPostAttachments([]);
+      setLoadingPost(false);
+      return;
+    }
+
+    if (!data) {
+      setPost(null);
+      setReviewRow(null);
+      setReviewAnime(null);
+      setReviewManga(null);
+      setPostAttachments([]);
       setLoadingPost(false);
       return;
     }
 
     const p = data as Post;
     setPost(p);
+    // ✅ NEW: load attachments for the main post
+    const { data: att, error: attErr } = await supabase
+      .from("post_attachments")
+      .select("id, kind, url, meta, sort_order, width, height")
+      .eq("post_id", postId)
+      .order("sort_order", { ascending: true });
+
+    if (attErr) console.error("Error fetching post attachments:", attErr);
+    setPostAttachments(att ?? []);
     setEpisodeNum(null);
     setChapterNum(null);
 
@@ -953,6 +979,9 @@ export default function PostPage() {
                       userId={post.user_id}
                       createdAt={post.created_at}
                       content={post.content}
+                      contentText={post.content_text ?? null}
+                      contentJson={post.content_json ?? null}
+                      attachments={postAttachments}
                       rating={reviewRow?.rating ?? null}
                       containsSpoilers={!!reviewRow?.contains_spoilers}
                       authorLiked={!!reviewRow?.author_liked}
@@ -991,6 +1020,9 @@ export default function PostPage() {
                       userId={post.user_id}
                       createdAt={post.created_at}
                       content={post.content}
+                      contentText={post.content_text ?? null}
+                      contentJson={post.content_json ?? null}
+                      attachments={postAttachments}
                       displayName={postAuthorName}
                       initial={postAuthorInitial}
                       username={postAuthorHandle ?? undefined}
