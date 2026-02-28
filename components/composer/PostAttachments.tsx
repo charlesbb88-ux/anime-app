@@ -121,14 +121,9 @@ export default function PostAttachments({ items }: { items: Attachment[] }) {
         e.preventDefault();
         e.stopPropagation();
     }
+
     return (
-        <div
-            className="mt-2 space-y-2"
-            onClick={stop}
-            onMouseDown={stop}
-            onTouchStart={stop}
-            onPointerDown={stop}
-        >
+        <div className="mt-2 space-y-2">
             {images.length > 0 ? <ImageGrid images={images} onOpen={openLightboxAt} /> : null}
 
             {videos.map((a, idx) => (
@@ -170,7 +165,11 @@ function ImageGrid({ images, onOpen }: { images: Attachment[]; onOpen: (idx: num
         return (
             <button
                 type="button"
-                onClick={() => onOpen(0)}
+                onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onOpen(0);
+                }}
                 className={[
                     "block text-left p-0 leading-none",
                     isVertical
@@ -265,7 +264,11 @@ function ImgTileCrop({
     return (
         <button
             type="button"
-            onClick={onClick}
+            onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onClick();
+            }}
             className="relative w-full bg-white text-left block p-0 leading-none border-0"
             style={{ cursor: "zoom-in" }}
         >
@@ -468,7 +471,13 @@ function TwitterVideoCard({
             {isVertical ? (
                 <div className="bg-transparent text-center">
                     <div className="inline-flex justify-center">
-                        <div className="relative bg-black h-[60vh] max-h-[520px] aspect-[9/16] w-auto overflow-hidden rounded-lg border border-black">
+                        <div
+                            className="relative bg-black h-[60vh] max-h-[520px] aspect-[9/16] w-auto overflow-hidden rounded-lg border border-black"
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onTouchStart={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
+                        >
                             {/* Always rendered unconditionally behind the video. */}
                             <div className="absolute inset-0 bg-neutral-900" />
 
@@ -510,7 +519,11 @@ function TwitterVideoCard({
                             {!failedToPlay && !hasUserUnmuted ? (
                                 <button
                                     type="button"
-                                    onClick={onTapVideo}
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        onTapVideo();
+                                    }}
                                     className="absolute inset-0 z-10 block w-full h-full"
                                     style={{ cursor: "pointer", background: "transparent", border: 0, padding: 0 }}
                                     aria-label="Unmute video"
@@ -537,7 +550,14 @@ function TwitterVideoCard({
                     </div>
                 </div>
             ) : (
-                <div className="relative w-full bg-black" style={{ paddingTop: paddingTop as any, overflow: "hidden" }}>
+                <div
+                    className="relative w-full bg-black"
+                    style={{ paddingTop: paddingTop as any, overflow: "hidden" }}
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                >
                     {/* Always rendered unconditionally behind the video. */}
                     <div className="absolute inset-0 bg-neutral-900" />
 
@@ -579,7 +599,11 @@ function TwitterVideoCard({
                     {!failedToPlay && !hasUserUnmuted ? (
                         <button
                             type="button"
-                            onClick={onTapVideo}
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onTapVideo();
+                            }}
                             className="absolute inset-0 z-10 block w-full h-full"
                             style={{ cursor: "pointer", background: "transparent", border: 0, padding: 0 }}
                             aria-label="Unmute video"
@@ -626,7 +650,13 @@ function YouTubeCard({ url }: { url: string }) {
     if (!youtubeId) return null;
 
     return (
-        <div className="overflow-hidden rounded-lg border border-black bg-white">
+        <div
+            className="overflow-hidden rounded-lg border border-black bg-white"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+        >
             <div className="relative w-full" style={{ paddingTop: "56.25%" }}>
                 <iframe
                     className="absolute inset-0 h-full w-full"
