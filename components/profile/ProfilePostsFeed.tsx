@@ -37,6 +37,8 @@ type Props = {
   avatarInitial: string;
   canonicalHandle?: string;
   avatarUrl: string | null;
+
+  pinnedPostId?: string | null;
 };
 
 export default function ProfilePostsFeed({
@@ -46,12 +48,23 @@ export default function ProfilePostsFeed({
   avatarInitial,
   canonicalHandle,
   avatarUrl,
+  pinnedPostId,
 }: Props) {
   const router = useRouter();
+
+  const [localPinnedPostId, setLocalPinnedPostId] = useState<string | null>(pinnedPostId ?? null);
+
+  useEffect(() => {
+    setLocalPinnedPostId(pinnedPostId ?? null);
+  }, [pinnedPostId]);
 
   const [openMenuPostId, setOpenMenuPostId] = useState<string | null>(null);
 
   const [attachmentsByPostId, setAttachmentsByPostId] = useState<AttachmentsByPostId>({});
+
+  const [pinnedPost, setPinnedPost] = useState<any | null>(null);
+  const [pinnedReview, setPinnedReview] = useState<any | null>(null);
+  const [pinnedAttachments, setPinnedAttachments] = useState<PostAttachmentRow[]>([]);
 
   // ✅ infinite scroll state
   const [hasMore, setHasMore] = useState(true);
@@ -82,6 +95,9 @@ export default function ProfilePostsFeed({
     setCursorCreatedAt(null);
     setCursorId(null);
     setAttachmentsByPostId({});
+    setPinnedPost(null);
+    setPinnedReview(null);
+    setPinnedAttachments([]);
   }, [profileId]);
 
   // update cursor after initial load / changes
@@ -160,6 +176,37 @@ export default function ProfilePostsFeed({
     e.stopPropagation();
     setOpenMenuPostId((prev) => (prev === postId ? null : postId));
   }
+  async function togglePin(postId: string, e?: any): Promise<void> {
+    if (e) e.stopPropagation();
+
+    // must be logged in
+    if (!viewerUserId) {
+      openAuthModal();
+      return;
+    }
+
+    // must be on your own profile page
+    if (viewerUserId !== profileId) return;
+
+    const prevPinned = localPinnedPostId;
+    const nextPinned = prevPinned === postId ? null : postId;
+
+    // ✅ optimistic UI (instant)
+    setLocalPinnedPostId(nextPinned);
+    setOpenMenuPostId(null);
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({ pinned_post_id: nextPinned })
+      .eq("id", profileId);
+
+    if (error) {
+      console.error("Pin update error:", error);
+      // revert optimistic change if DB failed
+      setLocalPinnedPostId(prevPinned);
+      return;
+    }
+  }
 
   async function handleEditPost(post: FeedPost, e: any) {
     e.stopPropagation();
@@ -225,6 +272,76 @@ export default function ProfilePostsFeed({
     });
   }
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPinned() {
+      // reset if none
+      if (!localPinnedPostId) {
+        setPinnedPost(null);
+        setPinnedReview(null);
+        setPinnedAttachments([]);
+        return;
+      }
+
+      // If the pinned post is already in the feed list, you could rely on that,
+      // but fetching it directly is simplest and always correct.
+      const { data: p, error } = await supabase
+        .from("posts")
+        .select(
+          "id, content, content_text, content_json, created_at, user_id, anime_id, anime_episode_id, manga_id, manga_chapter_id, review_id"
+        )
+        .eq("id", localPinnedPostId)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      if (error || !p) {
+        setPinnedPost(null);
+        setPinnedReview(null);
+        setPinnedAttachments([]);
+        return;
+      }
+
+      setPinnedPost(p);
+      // ✅ Ensure pinned post participates in meta hydration
+      setPosts((prev) => {
+        if (prev.some((x) => x.id === p.id)) return prev;
+        return [p, ...prev];
+      });
+
+      // attachments
+      const { data: attRows } = await supabase
+        .from("post_attachments")
+        .select("id, post_id, kind, url, meta, sort_order, created_at, width, height")
+        .eq("post_id", p.id)
+        .order("sort_order", { ascending: true });
+
+      if (cancelled) return;
+      setPinnedAttachments((attRows || []) as any[]);
+
+      // review (only if it’s a review post)
+      if (p.review_id) {
+        const { data: r } = await supabase
+          .from("reviews")
+          .select("id, rating, content, content_text, content_json, contains_spoilers, created_at, author_liked")
+          .eq("id", p.review_id)
+          .maybeSingle();
+
+        if (cancelled) return;
+        setPinnedReview(r ?? null);
+      } else {
+        setPinnedReview(null);
+      }
+    }
+
+    loadPinned();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [localPinnedPostId]);
+
   // ✅ Load more (keyset pagination) — does NOT change PostFeed.tsx
   async function fetchMore() {
     if (loadingMore) return;
@@ -282,111 +399,225 @@ export default function ProfilePostsFeed({
 
   return (
     <div>
-      {posts.map((p) => {
-        const rowIsOwner = !!viewerUserId && viewerUserId === p.user_id;
-        const isMenuOpen = openMenuPostId === p.id;
+      {pinnedPost ? (
+        <div className="mb-3">
+          <div className="px-3 py-2 text-xs font-semibold text-slate-600">
+            Pinned
+          </div>
 
-        const likeCount = likeCounts[p.id] || 0;
-        const replyCount = replyCounts[p.id] || 0;
-        const liked = !!likedByMe[p.id];
+          {(() => {
+            const p = pinnedPost;
+            const atts = pinnedAttachments || [];
 
-        const { originLabel, originHref, episodeLabel, episodeHref, posterUrl } = derivePostOrigin({
-          post: p as FeedPost,
-          animeMetaById,
-          episodeMetaById,
-          mangaMetaById,
-          chapterMetaById,
-        });
+            const { originLabel, originHref, episodeLabel, episodeHref, posterUrl } = derivePostOrigin({
+              post: p as FeedPost,
+              animeMetaById,
+              episodeMetaById,
+              mangaMetaById,
+              chapterMetaById,
+            });
 
-        const review = reviewsByPostId[p.id];
+            const review = (reviewsByPostId[p.id] ?? pinnedReview) as any;
 
-        const atts = attachmentsByPostId[p.id] || [];
+            return review ? (
+              <ReviewPostRow
+                key={p.id}
+                postId={p.id}
+                reviewId={review.id}
+                userId={p.user_id}
+                createdAt={p.created_at}
+                content={(review.content ?? p.content) as string}
+                contentText={p.content_text ?? null}
+                contentJson={p.content_json ?? null}
+                attachments={atts}
+                rating={review.rating}
+                containsSpoilers={!!review.contains_spoilers}
+                authorLiked={!!review.author_liked}
+                displayName={displayName}
+                initial={avatarInitial}
+                username={canonicalHandle}
+                avatarUrl={avatarUrl}
+                originLabel={originLabel}
+                originHref={originHref}
+                episodeLabel={episodeLabel}
+                episodeHref={episodeHref}
+                posterUrl={posterUrl ?? null}
+                href={`/posts/${p.id}`}
+                isOwner={!!viewerUserId && viewerUserId === p.user_id}
+                replyCount={replyCounts[p.id] || 0}
+                likeCount={likeCounts[p.id] || 0}
+                likedByMe={!!likedByMe[p.id]}
+                onRowClick={openPostFromIcon}
+                onReplyClick={openPostFromIcon}
+                onToggleLike={toggleLike}
+                onEdit={(id, e) => {
+                  const post = findPostById(id);
+                  if (post) handleEditPost(post as FeedPost, e);
+                }}
+                onDelete={(id, e) => {
+                  const post = findPostById(id);
+                  if (post) handleDeletePost(post as FeedPost, e);
+                }}
+                isMenuOpen={openMenuPostId === p.id}
+                onToggleMenu={toggleMenu}
+                pinnedPostId={localPinnedPostId}
+                onTogglePin={togglePin}
+              />
+            ) : (
+              <CommentRow
+                key={p.id}
+                id={p.id}
+                userId={p.user_id}
+                createdAt={p.created_at}
+                content={p.content}
+                contentText={p.content_text ?? null}
+                contentJson={p.content_json ?? null}
+                attachments={atts}
+                displayName={displayName}
+                initial={avatarInitial}
+                username={canonicalHandle}
+                avatarUrl={avatarUrl}
+                isOwner={!!viewerUserId && viewerUserId === p.user_id}
+                href={`/posts/${p.id}`}
+                replyCount={replyCounts[p.id] || 0}
+                likeCount={likeCounts[p.id] || 0}
+                likedByMe={!!likedByMe[p.id]}
+                onRowClick={openPostFromIcon}
+                onReplyClick={openPostFromIcon}
+                onToggleLike={toggleLike}
+                onEdit={(id, e) => {
+                  const post = findPostById(id);
+                  if (post) handleEditPost(post as FeedPost, e);
+                }}
+                onDelete={(id, e) => {
+                  const post = findPostById(id);
+                  if (post) handleDeletePost(post as FeedPost, e);
+                }}
+                isMenuOpen={openMenuPostId === p.id}
+                onToggleMenu={toggleMenu}
+                originLabel={originLabel}
+                originHref={originHref}
+                episodeLabel={episodeLabel}
+                episodeHref={episodeHref}
+                pinnedPostId={localPinnedPostId}
+                onTogglePin={togglePin}
+              />
+            );
+          })()}
+        </div>
+      ) : null}
 
-        return review ? (
-          <ReviewPostRow
-            key={p.id}
-            postId={p.id}
-            reviewId={review.id}
-            userId={p.user_id}
-            createdAt={p.created_at}
-            content={(review.content ?? p.content) as string}
+      {posts
+        .filter((p) => !localPinnedPostId || p.id !== localPinnedPostId)
+        .map((p) => {
+          const rowIsOwner = !!viewerUserId && viewerUserId === p.user_id;
+          const isMenuOpen = openMenuPostId === p.id;
 
-            contentText={p.content_text ?? null}
-            contentJson={p.content_json ?? null}
-            attachments={atts}
+          const likeCount = likeCounts[p.id] || 0;
+          const replyCount = replyCounts[p.id] || 0;
+          const liked = !!likedByMe[p.id];
 
-            rating={review.rating}
-            containsSpoilers={!!review.contains_spoilers}
-            authorLiked={!!review.author_liked}
-            displayName={displayName}
-            initial={avatarInitial}
-            username={canonicalHandle}
-            avatarUrl={avatarUrl}
-            originLabel={originLabel}
-            originHref={originHref}
-            episodeLabel={episodeLabel}
-            episodeHref={episodeHref}
-            posterUrl={posterUrl ?? null}
-            href={`/posts/${p.id}`}
-            isOwner={rowIsOwner}
-            replyCount={replyCount}
-            likeCount={likeCount}
-            likedByMe={liked}
-            onRowClick={openPostFromIcon}
-            onReplyClick={openPostFromIcon}
-            onToggleLike={toggleLike}
-            onEdit={(id, e) => {
-              const post = findPostById(id);
-              if (post) handleEditPost(post as FeedPost, e);
-            }}
-            onDelete={(id, e) => {
-              const post = findPostById(id);
-              if (post) handleDeletePost(post as FeedPost, e);
-            }}
-            isMenuOpen={isMenuOpen}
-            onToggleMenu={toggleMenu}
-          />
-        ) : (
-          <CommentRow
-            key={p.id}
-            id={p.id}
-            userId={p.user_id}
-            createdAt={p.created_at}
-            content={p.content}
+          const { originLabel, originHref, episodeLabel, episodeHref, posterUrl } = derivePostOrigin({
+            post: p as FeedPost,
+            animeMetaById,
+            episodeMetaById,
+            mangaMetaById,
+            chapterMetaById,
+          });
 
-            contentText={(p as any).content_text ?? null}
-            contentJson={(p as any).content_json ?? null}
-            attachments={atts}
+          const review = reviewsByPostId[p.id];
 
-            displayName={displayName}
-            initial={avatarInitial}
-            username={canonicalHandle}
-            avatarUrl={avatarUrl}
-            isOwner={rowIsOwner}
-            href={`/posts/${p.id}`}
-            replyCount={replyCount}
-            likeCount={likeCount}
-            likedByMe={liked}
-            onRowClick={openPostFromIcon}
-            onReplyClick={openPostFromIcon}
-            onToggleLike={toggleLike}
-            onEdit={(id, e) => {
-              const post = findPostById(id);
-              if (post) handleEditPost(post as FeedPost, e);
-            }}
-            onDelete={(id, e) => {
-              const post = findPostById(id);
-              if (post) handleDeletePost(post as FeedPost, e);
-            }}
-            isMenuOpen={isMenuOpen}
-            onToggleMenu={toggleMenu}
-            originLabel={originLabel}
-            originHref={originHref}
-            episodeLabel={episodeLabel}
-            episodeHref={episodeHref}
-          />
-        );
-      })}
+          const atts = attachmentsByPostId[p.id] || [];
+
+          return review ? (
+            <ReviewPostRow
+              key={p.id}
+              postId={p.id}
+              reviewId={review.id}
+              userId={p.user_id}
+              createdAt={p.created_at}
+              content={(review.content ?? p.content) as string}
+
+              contentText={p.content_text ?? null}
+              contentJson={p.content_json ?? null}
+              attachments={atts}
+
+              rating={review.rating}
+              containsSpoilers={!!review.contains_spoilers}
+              authorLiked={!!review.author_liked}
+              displayName={displayName}
+              initial={avatarInitial}
+              username={canonicalHandle}
+              avatarUrl={avatarUrl}
+              originLabel={originLabel}
+              originHref={originHref}
+              episodeLabel={episodeLabel}
+              episodeHref={episodeHref}
+              posterUrl={posterUrl ?? null}
+              href={`/posts/${p.id}`}
+              isOwner={rowIsOwner}
+              replyCount={replyCount}
+              likeCount={likeCount}
+              likedByMe={liked}
+              onRowClick={openPostFromIcon}
+              onReplyClick={openPostFromIcon}
+              onToggleLike={toggleLike}
+              onEdit={(id, e) => {
+                const post = findPostById(id);
+                if (post) handleEditPost(post as FeedPost, e);
+              }}
+              onDelete={(id, e) => {
+                const post = findPostById(id);
+                if (post) handleDeletePost(post as FeedPost, e);
+              }}
+              isMenuOpen={isMenuOpen}
+              onToggleMenu={toggleMenu}
+              pinnedPostId={localPinnedPostId}
+              onTogglePin={togglePin}
+            />
+          ) : (
+            <CommentRow
+              key={p.id}
+              id={p.id}
+              userId={p.user_id}
+              createdAt={p.created_at}
+              content={p.content}
+
+              contentText={(p as any).content_text ?? null}
+              contentJson={(p as any).content_json ?? null}
+              attachments={atts}
+
+              displayName={displayName}
+              initial={avatarInitial}
+              username={canonicalHandle}
+              avatarUrl={avatarUrl}
+              isOwner={rowIsOwner}
+              href={`/posts/${p.id}`}
+              replyCount={replyCount}
+              likeCount={likeCount}
+              likedByMe={liked}
+              onRowClick={openPostFromIcon}
+              onReplyClick={openPostFromIcon}
+              onToggleLike={toggleLike}
+              onEdit={(id, e) => {
+                const post = findPostById(id);
+                if (post) handleEditPost(post as FeedPost, e);
+              }}
+              onDelete={(id, e) => {
+                const post = findPostById(id);
+                if (post) handleDeletePost(post as FeedPost, e);
+              }}
+              isMenuOpen={isMenuOpen}
+              onToggleMenu={toggleMenu}
+              originLabel={originLabel}
+              originHref={originHref}
+              episodeLabel={episodeLabel}
+              episodeHref={episodeHref}
+              pinnedPostId={localPinnedPostId}
+              onTogglePin={togglePin}
+            />
+          );
+        })}
 
       <InfiniteSentinel disabled={isLoadingPosts || loadingMore || !hasMore} onVisible={fetchMore} />
 

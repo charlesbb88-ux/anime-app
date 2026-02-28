@@ -20,6 +20,8 @@ type Props = {
     avatarInitial: string;
     canonicalHandle?: string;
     avatarUrl: string | null;
+
+    pinnedPostId?: string | null;
 };
 
 export default function ProfilePhoneMain({
@@ -31,6 +33,7 @@ export default function ProfilePhoneMain({
     avatarInitial,
     canonicalHandle,
     avatarUrl,
+    pinnedPostId, // ✅ add this line
 }: Props) {
     return (
         <div
@@ -63,6 +66,7 @@ export default function ProfilePhoneMain({
                     avatarInitial={avatarInitial}
                     canonicalHandle={canonicalHandle}
                     avatarUrl={avatarUrl}
+                    pinnedPostId={pinnedPostId ?? null} // ✅ add this line
                 />
             </section>
         </div>

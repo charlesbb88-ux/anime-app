@@ -59,6 +59,10 @@ export type CommentRowProps = {
   // secondary pill for episode
   episodeLabel?: string;
   episodeHref?: string;
+
+  // ✅ pin / unpin (profile)
+  pinnedPostId?: string | null;
+  onTogglePin?: (postId: string, e: any) => void;
 };
 
 function formatRelativeTime(dateString: string) {
@@ -135,6 +139,8 @@ export default function CommentRow(props: CommentRowProps) {
     originHref,
     episodeLabel,
     episodeHref,
+    pinnedPostId,
+    onTogglePin,
   } = props;
 
   React.useEffect(() => {
@@ -561,6 +567,27 @@ export default function CommentRow(props: CommentRowProps) {
               }}
               onClick={(e) => e.stopPropagation()}
             >
+              {onTogglePin && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTogglePin(id, e);
+                  }}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "0.45rem 0.7rem",
+                    border: "none",
+                    background: "transparent",
+                    cursor: "pointer",
+                    fontSize: "0.9rem",
+                    color: "#333",
+                  }}
+                >
+                  {pinnedPostId === id ? "Unpin" : "Pin"}
+                </button>
+              )}
               {onEdit && (
                 <button
                   onClick={(e) => {

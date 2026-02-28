@@ -247,6 +247,7 @@ export default function UserProfilePage() {
                   avatarInitial={avatarInitial}
                   canonicalHandle={canonicalHandle}
                   avatarUrl={profile.avatar_url}
+                  pinnedPostId={profile.pinned_post_id ?? null}
                 />
               ) : (
                 <>
@@ -270,6 +271,7 @@ export default function UserProfilePage() {
                         avatarInitial={avatarInitial}
                         canonicalHandle={canonicalHandle}
                         avatarUrl={profile.avatar_url}
+                        pinnedPostId={profile.pinned_post_id ?? null}
                       />
                     </section>
                   </FeedShell>
