@@ -20,6 +20,8 @@ export type Profile = {
 
     followers_count: number;
     following_count: number;
+
+        pinned_post_id: string | null;
 };
 
 export function useProfileByUsername(unameLower: string) {
@@ -36,15 +38,13 @@ export function useProfileByUsername(unameLower: string) {
             setLoadingProfile(true);
             setNotFound(false);
 
-            const { data: rows, error } = await supabase
-                .from("profiles")
-                .select(
-                    "id, username, avatar_url, created_at, backdrop_url, backdrop_pos_x, backdrop_pos_y, backdrop_zoom, about_markdown, about_html, followers_count, following_count"
-                )
-                .eq("username", unameLower)
-                .limit(1);
-
-            const row = rows?.[0] ?? null;
+const { data: row, error } = await supabase
+    .from("profiles")
+    .select(
+        "id, username, avatar_url, created_at, backdrop_url, backdrop_pos_x, backdrop_pos_y, backdrop_zoom, about_markdown, about_html, followers_count, following_count, pinned_post_id"
+    )
+    .eq("username", unameLower)
+    .maybeSingle();
 
             if (cancelled) return;
 
