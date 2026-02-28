@@ -12,6 +12,10 @@ import { openAuthModal } from "../../lib/openAuthModal";
 import PostContextHeaderLayout from "@/components/PostContextHeaderLayout";
 import FeedShell from "@/components/FeedShell";
 
+import FeedComposer from "@/components/FeedComposer";
+import type { PendingAttachment } from "@/lib/postAttachments";
+import { insertCommentAttachments } from "@/lib/commentAttachments";
+
 type Post = {
   id: string;
   content: string;
@@ -65,9 +69,16 @@ type Comment = {
   id: string;
   post_id: string;
   user_id: string;
+
   content: string;
+  content_text?: string | null;
+  content_json?: any | null;
+
   created_at: string;
   parent_comment_id: string | null;
+
+  // ✅ NEW: hydrated at load time
+  attachments?: any[];
 };
 
 type CommentLike = {
@@ -121,10 +132,15 @@ export default function PostPage() {
   const [commentsLoading, setCommentsLoading] = useState(true);
 
   // reply composer (root comment)
-  const [rootCommentInput, setRootCommentInput] = useState("");
   const [addingRootComment, setAddingRootComment] = useState(false);
-  const [replyActive, setReplyActive] = useState(false);
-  const replyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // ✅ NEW: rich reply composer state
+  const [rootReplyText, setRootReplyText] = useState("");
+  const [rootReplyJson, setRootReplyJson] = useState<any | null>(null);
+  const [rootReplyPending, setRootReplyPending] = useState<PendingAttachment[]>([]);
+
+  // ✅ NEW: lets "Reply" scroll to the real composer
+  const rootComposerRef = useRef<HTMLDivElement | null>(null);
 
   // menus
   const [openMenuPost, setOpenMenuPost] = useState<boolean>(false);
@@ -423,7 +439,7 @@ export default function PostPage() {
 
     const { data, error } = await supabase
       .from("comments")
-      .select("*")
+      .select("id, post_id, user_id, content, content_text, content_json, created_at, parent_comment_id")
       .eq("post_id", postId)
       .order("created_at", { ascending: true });
 
@@ -437,7 +453,35 @@ export default function PostPage() {
     const all = (data || []) as Comment[];
 
     const roots = all.filter((c) => c.parent_comment_id === null);
-    setComments(roots);
+
+    // ✅ NEW: fetch + hydrate root comment attachments
+    const rootIds = roots.map((c) => c.id);
+
+    let hydratedRoots = roots;
+
+    if (rootIds.length > 0) {
+      const { data: attRows, error: attErr } = await supabase
+        .from("comment_attachments")
+        .select("id, comment_id, kind, url, meta, sort_order, width, height")
+        .in("comment_id", rootIds)
+        .order("sort_order", { ascending: true });
+
+      if (attErr) console.error("Error fetching comment attachments:", attErr);
+
+      const attByComment: Record<string, any[]> = {};
+      (attRows ?? []).forEach((a: any) => {
+        const k = a.comment_id;
+        if (!attByComment[k]) attByComment[k] = [];
+        attByComment[k].push(a);
+      });
+
+      hydratedRoots = roots.map((c) => ({
+        ...c,
+        attachments: attByComment[c.id] ?? [],
+      }));
+    }
+
+    setComments(hydratedRoots as any);
 
     // reply counts
     const replyMap: Record<string, number> = {};
@@ -449,7 +493,6 @@ export default function PostPage() {
     });
     setCommentReplyCounts(replyMap);
 
-    const rootIds = roots.map((c) => c.id);
     if (rootIds.length === 0) {
       setCommentLikeCounts({});
       setCommentLikedByMe({});
@@ -536,16 +579,6 @@ export default function PostPage() {
 
     loadProfiles();
   }, [post, comments]);
-
-  // ---------- textarea auto grow ----------
-  function autoGrow(el: HTMLTextAreaElement) {
-    el.style.height = "auto";
-    const maxHeight = 20 * 24; // ~20 lines
-    const newHeight = Math.min(el.scrollHeight, maxHeight);
-    el.style.height = `${newHeight}px`;
-
-    el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
-  }
 
   // ---------- POST LIKE ----------
   async function handleTogglePostLike(id: string, e: any) {
@@ -635,40 +668,69 @@ export default function PostPage() {
     }
   }
 
-  // ---------- ADD ROOT COMMENT ----------
-  async function handleAddRootComment() {
+  async function handleAddRootCommentRich() {
     if (!user || !post) return;
 
-    const text = rootCommentInput.trim();
-    if (!text) return;
+    const text = rootReplyText.trim();
+    const hasMedia = rootReplyPending.length > 0;
+
+    if (!text && !hasMedia) return;
 
     setAddingRootComment(true);
 
-    const { error } = await supabase.from("comments").insert({
-      post_id: post.id,
-      user_id: user.id,
-      content: text,
-      parent_comment_id: null,
-    });
+    const { data: inserted, error } = await supabase
+      .from("comments")
+      .insert({
+        post_id: post.id,
+        user_id: user.id,
+        parent_comment_id: null,
 
-    setAddingRootComment(false);
+        content: text,
+        content_text: text,
+        content_json: rootReplyJson,
+      })
+      .select("id")
+      .single();
 
-    if (error) {
+    if (error || !inserted?.id) {
       console.error("Error adding comment:", error);
+      setAddingRootComment(false);
       return;
     }
 
-    setRootCommentInput("");
-    setReplyActive(false);
+    const commentId = inserted.id as string;
 
-    if (replyTextareaRef.current) {
-      replyTextareaRef.current.style.height = "24px";
-      replyTextareaRef.current.style.overflowY = "hidden";
+    // ✅ KEY FIX: only clear pending attachments if upload succeeded
+    let attachmentsOk = true;
+
+    if (rootReplyPending.length > 0) {
+      try {
+        await insertCommentAttachments({
+          supabase,
+          commentId,
+          userId: user.id,
+          attachments: rootReplyPending,
+        });
+      } catch (e) {
+        attachmentsOk = false;
+        console.error("Error uploading comment attachments:", e);
+        window.alert("Your reply posted, but the media failed to upload. Try again.");
+      }
     }
+
+    // Always clear the text (comment definitely exists)
+    setRootReplyText("");
+    setRootReplyJson(null);
+
+    // Only clear media if it uploaded
+    if (attachmentsOk) {
+      setRootReplyPending([]);
+    }
+
+    setAddingRootComment(false);
 
     loadComments(post.id);
   }
-
   // ---------- POST EDIT + DELETE ----------
   async function handleEditPostRow(id: string, e: any) {
     e.stopPropagation();
@@ -794,14 +856,11 @@ export default function PostPage() {
   // main post "Reply" → focus composer
   function handlePostReplyClick(_id: string, e: any) {
     e.stopPropagation();
-    setReplyActive(true);
-    if (replyTextareaRef.current) {
-      replyTextareaRef.current.focus();
-      replyTextareaRef.current.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-    }
+
+    rootComposerRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
   }
 
   // ---------- display helpers ----------
@@ -844,9 +903,6 @@ export default function PostPage() {
   const rootReplyCount = comments.length;
   const currentUserInitial = getInitialFromUser(user);
 
-  const replyDisabled = addingRootComment || !rootCommentInput.trim();
-  const isCollapsed = !replyActive && !rootCommentInput.trim();
-
   const originTitle = reviewAnime?.title ?? reviewManga?.title ?? "";
   const originPoster = reviewAnime?.image_url ?? reviewManga?.image_url ?? null;
 
@@ -870,21 +926,6 @@ export default function PostPage() {
     reviewManga?.slug && chapterNum != null
       ? `/manga/${reviewManga.slug}/chapter/${chapterNum}`
       : undefined;
-  function handleRootInputChange(e: any) {
-    setRootCommentInput(e.target.value);
-    if (replyTextareaRef.current) autoGrow(replyTextareaRef.current);
-  }
-
-  function handleReplyBlur() {
-    if (!rootCommentInput.trim()) {
-      setReplyActive(false);
-      if (replyTextareaRef.current) {
-        replyTextareaRef.current.style.height = "24px";
-        replyTextareaRef.current.style.overflowY = "hidden";
-      }
-    }
-  }
-
   const composerAvatarNode = (
     <div
       style={{
@@ -1048,112 +1089,26 @@ export default function PostPage() {
               <div style={{ marginTop: "0.75rem" }}></div>
               <FeedShell>
                 {user ? (
-                  <div>
-                    <div
-                      style={{
-                        border: "1px solid #000000",
-                        borderRadius: 0,
-                        background: "#ffffff",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: replyActive ? "flex-start" : "center",
-                          gap: "0.6rem",
-                          padding: replyActive
-                            ? "0.5rem 0.75rem 0.3rem 0.75rem"
-                            : "0.35rem 0.75rem",
-                        }}
-                      >
-                        {currentUserUsername ? (
-                          <Link
-                            href={`/${currentUserUsername}`}
-                            style={{
-                              display: "inline-block",
-                              textDecoration: "none",
-                            }}
-                          >
-                            {composerAvatarNode}
-                          </Link>
-                        ) : (
-                          composerAvatarNode
-                        )}
-
-                        <div style={{ flex: 1 }}>
-                          <textarea
-                            id="root-reply-input"
-                            ref={replyTextareaRef}
-                            value={rootCommentInput}
-                            onChange={handleRootInputChange}
-                            onFocus={() => setReplyActive(true)}
-                            onBlur={handleReplyBlur}
-                            placeholder={!replyActive ? "Post your reply" : ""}
-                            rows={1}
-                            style={{
-                              width: "100%",
-                              border: "none",
-                              outline: "none",
-                              resize: "none",
-                              background: "transparent",
-                              padding: isCollapsed ? "0" : "0.6rem 0",
-                              height: isCollapsed ? "26px" : "auto",
-                              minHeight: isCollapsed ? "26px" : "36px",
-                              fontSize: "1rem",
-                              fontFamily: "inherit",
-                              lineHeight: isCollapsed ? "30px" : 1.5,
-                              overflowY: "hidden",
-                            }}
-                          />
-                        </div>
-
-                        {isCollapsed && (
-                          <button
-                            onClick={handleAddRootComment}
-                            disabled={replyDisabled}
-                            style={{
-                              padding: "0.4rem 0.95rem",
-                              borderRadius: "999px",
-                              border: "none",
-                              background: replyDisabled ? "#a0a0a0" : "#000",
-                              color: "#fff",
-                              cursor: replyDisabled ? "default" : "pointer",
-                              fontSize: "0.9rem",
-                              fontWeight: 500,
-                            }}
-                          >
-                            Reply
-                          </button>
-                        )}
-                      </div>
-
-                      {!isCollapsed && (
-                        <div
-                          style={{
-                            padding: "0 0.75rem 0.45rem 0.75rem",
-                            display: "flex",
-                            justifyContent: "flex-end",
-                          }}
-                        >
-                          <button
-                            onClick={handleAddRootComment}
-                            disabled={replyDisabled}
-                            style={{
-                              padding: "0.4rem 0.95rem",
-                              borderRadius: "999px",
-                              border: "none",
-                              background: replyDisabled ? "#a0a0a0" : "#000",
-                              color: "#fff",
-                              cursor: replyDisabled ? "default" : "pointer",
-                              fontSize: "0.9rem",
-                              fontWeight: 500,
-                            }}
-                          >
-                            {addingRootComment ? "Replying…" : "Reply"}
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                  <div ref={rootComposerRef}>
+                    <FeedComposer
+                      user={user}
+                      mode="reply"
+                      postContent={rootReplyText}
+                      setPostContent={setRootReplyText}
+                      setPostContentJson={setRootReplyJson}
+                      pendingAttachments={rootReplyPending}
+                      setPendingAttachments={setRootReplyPending}
+                      posting={addingRootComment}
+                      onPost={handleAddRootCommentRich}
+                      animeId={post?.anime_id ?? undefined}
+                      animeEpisodeId={post?.anime_episode_id ?? undefined}
+                      mangaId={post?.manga_id ?? undefined}
+                      mangaChapterId={post?.manga_chapter_id ?? undefined}
+                      currentUserAvatarUrl={currentUserAvatarUrl}
+                      currentUserUsername={currentUserUsername}
+                      typoBase={TYPO.base}
+                      typoSmall={TYPO.small}
+                    />
                   </div>
                 ) : (
                   <p
@@ -1161,15 +1116,13 @@ export default function PostPage() {
                       color: "#666",
                       background: "#fff",
                       border: "1px solid #000000",
-                      borderTop: "2px solid #000000", // overrides just the top
+                      borderTop: "2px solid #000000",
+                      padding: "0.75rem",
                     }}
                   >
                     Log in to reply.
                   </p>
-
                 )}
-
-                {/* REPLIES LIST */}
                 {/* REPLIES LIST */}
                 <section className="mobileRepliesBottomBorder" style={{ marginTop: 0 }}>
                   {commentsLoading ? (
@@ -1206,6 +1159,9 @@ export default function PostPage() {
                             userId={c.user_id}
                             createdAt={c.created_at}
                             content={c.content}
+                            contentText={c.content_text ?? null}
+                            contentJson={c.content_json ?? null}
+                            attachments={c.attachments ?? []}
                             displayName={name}
                             initial={initial}
                             username={handle ?? undefined}
@@ -1247,7 +1203,7 @@ export default function PostPage() {
           <RightSidebar />
         </aside>
       </div>
-    </div>
+    </div >
   );
 
   return (
