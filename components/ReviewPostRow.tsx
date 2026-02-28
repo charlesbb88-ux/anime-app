@@ -72,6 +72,10 @@ export type ReviewPostRowProps = {
   onRowClick?: (id: string, e: any) => void;
   disableHoverHighlight?: boolean;
 
+  // ✅ pin / unpin (profile)
+  pinnedPostId?: string | null;
+  onTogglePin?: (postId: string, e: any) => void;
+
   isMain?: boolean;
 };
 
@@ -386,6 +390,9 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
     isMenuOpen,
     onToggleMenu,
 
+    pinnedPostId,
+    onTogglePin,
+
     onRowClick,
     disableHoverHighlight = false,
 
@@ -515,6 +522,27 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
               }}
               onClick={(e) => e.stopPropagation()}
             >
+              {onTogglePin && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTogglePin(postId, e);
+                  }}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "0.45rem 0.7rem",
+                    border: "none",
+                    background: "transparent",
+                    cursor: "pointer",
+                    fontSize: "0.9rem",
+                    color: "#333",
+                  }}
+                >
+                  {pinnedPostId === postId ? "Unpin" : "Pin"}
+                </button>
+              )}
               {onEdit && (
                 <button
                   onClick={(e) => {

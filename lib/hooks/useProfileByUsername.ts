@@ -21,7 +21,7 @@ export type Profile = {
     followers_count: number;
     following_count: number;
 
-        pinned_post_id: string | null;
+    pinned_post_id: string | null;
 };
 
 export function useProfileByUsername(unameLower: string) {
