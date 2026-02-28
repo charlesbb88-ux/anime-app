@@ -6,6 +6,9 @@ import { supabase } from "@/lib/supabaseClient";
 type Post = {
   id: string;
   content: string;
+  content_text?: string | null;
+  content_json?: any | null;
+
   created_at: string;
   user_id: string;
 
@@ -80,12 +83,12 @@ export function useUserPosts(profileId: string | null, currentUserId: string | n
       setIsLoadingPosts(true);
 
       try {
-        const { data: postRows, error: postsError } = await supabase
-          .from("posts")
-          .select(
-            "id, content, created_at, user_id, anime_id, anime_episode_id, manga_id, manga_chapter_id, review_id"
-          )
-          .eq("user_id", profileId)
+const { data: postRows, error: postsError } = await supabase
+  .from("posts")
+  .select(
+    "id, content, content_text, content_json, created_at, user_id, anime_id, anime_episode_id, manga_id, manga_chapter_id, review_id"
+  )
+  .eq("user_id", profileId)
           .order("created_at", { ascending: false })
           .limit(50);
 
@@ -172,23 +175,23 @@ export function useUserPosts(profileId: string | null, currentUserId: string | n
         } else {
           const uniqueReviewIds = Array.from(new Set(pairs.map((x) => x.reviewId)));
 
-          const { data: reviewRows } = await supabase
-            .from("reviews")
-            .select("id, rating, content, contains_spoilers, created_at, author_liked")
-            .in("id", uniqueReviewIds);
+const { data: reviewRows } = await supabase
+  .from("reviews")
+  .select("id, rating, content, contains_spoilers, created_at, author_liked")
+  .in("id", uniqueReviewIds);
 
           if (!cancelled) {
             const byId: Record<string, ReviewRow> = {};
             (reviewRows || []).forEach((r: any) => {
               if (!r?.id) return;
-              byId[r.id] = {
-                id: r.id,
-                rating: r.rating ?? null,
-                content: r.content ?? null,
-                contains_spoilers: r.contains_spoilers ?? null,
-                created_at: r.created_at ?? null,
-                author_liked: r.author_liked ?? null,
-              };
+byId[r.id] = {
+  id: r.id,
+  rating: r.rating ?? null,
+  content: r.content ?? null,
+  contains_spoilers: r.contains_spoilers ?? null,
+  created_at: r.created_at ?? null,
+  author_liked: r.author_liked ?? null,
+};
             });
 
             const byPost: Record<string, ReviewRow> = {};

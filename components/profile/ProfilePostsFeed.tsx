@@ -15,6 +15,20 @@ import { derivePostOrigin, type Post as FeedPost } from "@/lib/posts/derivePostO
 
 const PAGE_SIZE = 20;
 
+type PostAttachmentRow = {
+  id: string;
+  post_id: string;
+  kind: "image" | "gif" | "youtube" | "video";
+  url: string;
+  meta: any;
+  sort_order: number;
+  created_at: string;
+  width?: number | null;
+  height?: number | null;
+};
+
+type AttachmentsByPostId = Record<string, PostAttachmentRow[]>;
+
 type Props = {
   profileId: string;
   viewerUserId: string | null;
@@ -36,6 +50,8 @@ export default function ProfilePostsFeed({
   const router = useRouter();
 
   const [openMenuPostId, setOpenMenuPostId] = useState<string | null>(null);
+
+  const [attachmentsByPostId, setAttachmentsByPostId] = useState<AttachmentsByPostId>({});
 
   // ✅ infinite scroll state
   const [hasMore, setHasMore] = useState(true);
@@ -65,6 +81,7 @@ export default function ProfilePostsFeed({
     setLoadingMore(false);
     setCursorCreatedAt(null);
     setCursorId(null);
+    setAttachmentsByPostId({});
   }, [profileId]);
 
   // update cursor after initial load / changes
@@ -77,6 +94,20 @@ export default function ProfilePostsFeed({
     const last = posts[posts.length - 1] as any;
     setCursorCreatedAt(last?.created_at ?? null);
     setCursorId(last?.id ?? null);
+  }, [posts]);
+
+  useEffect(() => {
+    if (!posts || posts.length === 0) return;
+
+    // only fetch attachments for posts we haven't loaded yet
+    const missing = posts
+      .map((p) => p.id)
+      .filter((id) => !attachmentsByPostId[id]);
+
+    if (missing.length === 0) return;
+
+    loadAttachmentsForPostIds(missing);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [posts]);
 
   useEffect(() => {
@@ -166,6 +197,34 @@ export default function ProfilePostsFeed({
     return (id: string) => map.get(id) || null;
   }, [posts]);
 
+  async function loadAttachmentsForPostIds(postIds: string[]) {
+    if (!postIds || postIds.length === 0) return;
+
+    const { data: attRows, error: attErr } = await supabase
+      .from("post_attachments")
+      .select("id, post_id, kind, url, meta, sort_order, created_at, width, height")
+      .in("post_id", postIds)
+      .order("sort_order", { ascending: true });
+
+    if (attErr) {
+      console.error("Error loading attachments:", attErr);
+      return;
+    }
+
+    setAttachmentsByPostId((prev) => {
+      const next = { ...prev };
+
+      (attRows || []).forEach((r: any) => {
+        const list = next[r.post_id] ? [...next[r.post_id]] : [];
+        list.push(r);
+        list.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+        next[r.post_id] = list;
+      });
+
+      return next;
+    });
+  }
+
   // ✅ Load more (keyset pagination) — does NOT change PostFeed.tsx
   async function fetchMore() {
     if (loadingMore) return;
@@ -177,7 +236,7 @@ export default function ProfilePostsFeed({
     try {
       let query = supabase
         .from("posts")
-        .select("id, content, created_at, user_id, anime_id, anime_episode_id, manga_id, manga_chapter_id, review_id")
+        .select("id, content, content_text, content_json, created_at, user_id, anime_id, anime_episode_id, manga_id, manga_chapter_id, review_id")
         .eq("user_id", profileId)
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
@@ -191,6 +250,9 @@ export default function ProfilePostsFeed({
       }
 
       const newPosts = (data || []) as any[];
+
+      const newIds = newPosts.map((p) => p.id).filter(Boolean);
+      await loadAttachmentsForPostIds(newIds);
 
       if (newPosts.length === 0) {
         setHasMore(false);
@@ -238,6 +300,8 @@ export default function ProfilePostsFeed({
 
         const review = reviewsByPostId[p.id];
 
+        const atts = attachmentsByPostId[p.id] || [];
+
         return review ? (
           <ReviewPostRow
             key={p.id}
@@ -246,6 +310,11 @@ export default function ProfilePostsFeed({
             userId={p.user_id}
             createdAt={p.created_at}
             content={(review.content ?? p.content) as string}
+
+            contentText={p.content_text ?? null}
+            contentJson={p.content_json ?? null}
+            attachments={atts}
+
             rating={review.rating}
             containsSpoilers={!!review.contains_spoilers}
             authorLiked={!!review.author_liked}
@@ -284,6 +353,11 @@ export default function ProfilePostsFeed({
             userId={p.user_id}
             createdAt={p.created_at}
             content={p.content}
+
+            contentText={(p as any).content_text ?? null}
+            contentJson={(p as any).content_json ?? null}
+            attachments={atts}
+
             displayName={displayName}
             initial={avatarInitial}
             username={canonicalHandle}
