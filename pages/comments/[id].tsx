@@ -13,12 +13,18 @@ import RightSidebar from "../../components/RightSidebar";
 import { openAuthModal } from "../../lib/openAuthModal";
 import PostContextHeaderLayout from "@/components/PostContextHeaderLayout";
 import FeedShell from "@/components/FeedShell";
+import RichPostRenderer from "@/components/composer/RichPostRenderer";
+import PostAttachments from "@/components/composer/PostAttachments";
 
 /* ---------------------- types ---------------------- */
 
 type Post = {
   id: string;
   content: string;
+
+  content_text?: string | null;
+  content_json?: any | null;
+
   created_at: string;
   user_id: string;
 
@@ -61,6 +67,12 @@ type Comment = {
   post_id: string;
   user_id: string;
   content: string;
+
+  content_text?: string | null;
+  content_json?: any | null;
+
+  attachments?: any[];
+
   created_at: string;
   parent_comment_id: string | null;
 };
@@ -131,6 +143,10 @@ type ThreadRowProps = {
   createdAt: string;
   content: string;
 
+  contentText?: string | null;
+  contentJson?: any | null;
+  attachments?: any[];
+
   displayName: string; // already includes @ when handle exists
   initial: string;
   username?: string; // canonical handle without @
@@ -165,6 +181,9 @@ function ThreadRow(props: ThreadRowProps) {
     id,
     createdAt,
     content,
+    contentText = null,
+    contentJson = null,
+    attachments = [],
     displayName,
     initial,
     username,
@@ -350,18 +369,26 @@ function ThreadRow(props: ThreadRowProps) {
           </span>
         </div>
 
-        <p
+        <div
           style={{
             margin: 0,
             fontSize: contentFontSize,
             fontWeight: 400,
             lineHeight: 1.5,
-            whiteSpace: "pre-wrap",
             wordBreak: "break-word",
           }}
         >
-          {content}
-        </p>
+          <RichPostRenderer
+            json={contentJson}
+            fallbackText={contentText ?? content}
+          />
+
+          {!!attachments?.length && (
+            <div style={{ marginTop: "0.5rem" }}>
+              <PostAttachments items={attachments as any} />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -506,6 +533,8 @@ export default function CommentPage() {
   const [post, setPost] = useState<Post | null>(null);
   const [reviewRow, setReviewRow] = useState<ReviewRow | null>(null);
 
+  const [postAttachments, setPostAttachments] = useState<any[]>([]);
+
   // ✅ extra bits so the root review post looks like PostPage
   const [reviewAnime, setReviewAnime] = useState<AnimeRow | null>(null);
   const [reviewManga, setReviewManga] = useState<MangaRow | null>(null);
@@ -638,7 +667,7 @@ export default function CommentPage() {
     // main comment
     const { data: commentData, error: commentError } = await supabase
       .from("comments")
-      .select("id, post_id, user_id, content, created_at, parent_comment_id")
+      .select("id, post_id, user_id, content, content_text, content_json, created_at, parent_comment_id")
       .eq("id", commentId)
       .single();
 
@@ -670,6 +699,16 @@ export default function CommentPage() {
 
     const postRecord = postData as Post;
     setPost(postRecord);
+
+    // ✅ root post attachments (top portion)
+    const { data: pAtt, error: pAttErr } = await supabase
+      .from("post_attachments")
+      .select("id, kind, url, meta, sort_order, width, height")
+      .eq("post_id", postRecord.id)
+      .order("sort_order", { ascending: true });
+
+    if (pAttErr) console.error("Error loading post attachments:", pAttErr);
+    setPostAttachments(pAtt ?? []);
 
     // review row + origin media + ep/ch labels (only if post is a review post)
     if (postRecord.review_id) {
@@ -808,7 +847,7 @@ export default function CommentPage() {
     while (currentParentId) {
       const { data: parentData, error: parentError } = await supabase
         .from("comments")
-        .select("id, post_id, user_id, content, created_at, parent_comment_id")
+        .select("id, post_id, user_id, content, content_text, content_json, created_at, parent_comment_id")
         .eq("id", currentParentId)
         .single();
 
@@ -824,6 +863,36 @@ export default function CommentPage() {
 
     chain.reverse();
     setAncestors(chain);
+
+    // ✅ attachments for ancestor chain + main comment (top portion)
+    {
+      const threadIds = [main.id, ...chain.map((c) => c.id)];
+
+      if (threadIds.length > 0) {
+        const { data: attRows, error: attErr } = await supabase
+          .from("comment_attachments")
+          .select("id, comment_id, kind, url, meta, sort_order, width, height")
+          .in("comment_id", threadIds)
+          .order("sort_order", { ascending: true });
+
+        if (attErr) console.error("Error loading thread comment attachments:", attErr);
+
+        const attByComment: Record<string, any[]> = {};
+        (attRows ?? []).forEach((a: any) => {
+          const k = a.comment_id;
+          if (!attByComment[k]) attByComment[k] = [];
+          attByComment[k].push(a);
+        });
+
+        setMainComment((prev) =>
+          prev ? { ...prev, attachments: attByComment[prev.id] ?? [] } : prev
+        );
+
+        setAncestors((prev) =>
+          (prev ?? []).map((c) => ({ ...c, attachments: attByComment[c.id] ?? [] }))
+        );
+      }
+    }
 
     // replies to main comment
     const replyList = await loadReplies(main.id);
@@ -926,7 +995,7 @@ export default function CommentPage() {
 
     const { data, error } = await supabase
       .from("comments")
-      .select("id, post_id, user_id, content, created_at, parent_comment_id")
+      .select("id, post_id, user_id, content, content_text, content_json, created_at, parent_comment_id")
       .eq("parent_comment_id", commentId)
       .order("created_at", { ascending: true });
 
@@ -1413,6 +1482,9 @@ export default function CommentPage() {
                               userId={p.user_id}
                               createdAt={p.created_at}
                               content={p.content}
+                              contentText={p.content_text ?? null}
+                              contentJson={p.content_json ?? null}
+                              attachments={postAttachments}
                               rating={reviewRow?.rating ?? null}
                               containsSpoilers={!!reviewRow?.contains_spoilers}
                               authorLiked={!!reviewRow?.author_liked}
@@ -1513,6 +1585,9 @@ export default function CommentPage() {
                           userId={p.user_id}
                           createdAt={p.created_at}
                           content={p.content}
+                          contentText={p.content_text ?? null}
+                          contentJson={p.content_json ?? null}
+                          attachments={postAttachments}
                           displayName={getDisplayName(p.user_id)}
                           initial={getInitial(p.user_id)}
                           username={handle ?? undefined}
@@ -1542,6 +1617,9 @@ export default function CommentPage() {
                         userId={c.user_id}
                         createdAt={c.created_at}
                         content={c.content}
+                        contentText={c.content_text ?? null}
+                        contentJson={c.content_json ?? null}
+                        attachments={c.attachments ?? []}
                         displayName={getDisplayName(c.user_id)}
                         initial={getInitial(c.user_id)}
                         username={handle ?? undefined}
@@ -1729,6 +1807,9 @@ export default function CommentPage() {
                             userId={c.user_id}
                             createdAt={c.created_at}
                             content={c.content}
+                            contentText={c.content_text ?? null}
+                            contentJson={c.content_json ?? null}
+                            attachments={c.attachments ?? []}
                             displayName={getDisplayName(c.user_id)}
                             initial={getInitial(c.user_id)}
                             username={handle ?? undefined}
