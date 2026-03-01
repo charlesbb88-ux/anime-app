@@ -10,6 +10,9 @@ export type GlobalLogModalPhoneProps = {
   title?: string | null;
   posterUrl?: string | null;
 
+  animeEpisodeNumber?: number | null;
+  mangaChapterNumber?: number | null;
+
   // form + state
   content: string;
   setContent: (v: string) => void;
@@ -62,6 +65,8 @@ export default function GlobalLogModalPhone(props: GlobalLogModalPhoneProps) {
   const {
     title,
     posterUrl,
+    animeEpisodeNumber,
+    mangaChapterNumber,
 
     content,
     setContent,
@@ -100,6 +105,12 @@ export default function GlobalLogModalPhone(props: GlobalLogModalPhoneProps) {
     onClose,
     handleSubmit,
   } = props;
+
+  const loggingLabel = animeEpisodeNumber
+    ? `Logging Episode ${animeEpisodeNumber}`
+    : mangaChapterNumber
+      ? `Logging Chapter ${mangaChapterNumber}`
+      : "Log Entry";
 
   // ✅ NEW: media picker (images/videos)
   const fileInputId = "global-log-review-media-phone";
@@ -161,6 +172,10 @@ export default function GlobalLogModalPhone(props: GlobalLogModalPhoneProps) {
             </div>
 
             <div className="min-w-0 flex-1">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                {loggingLabel}
+              </div>
+
               {/* ✅ no truncate — allow wrapping */}
               <div className="whitespace-normal break-words text-[16px] font-semibold leading-snug text-white">
                 {title ?? "Log"}

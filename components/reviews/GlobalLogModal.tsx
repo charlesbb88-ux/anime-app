@@ -44,6 +44,9 @@ type Props = {
   mangaChapterId?: string | null;
   mangaId?: string | null;
 
+  animeEpisodeNumber?: number | null;
+  mangaChapterNumber?: number | null;
+
   visibility?: Visibility | null;
   onSuccess?: () => void;
 };
@@ -209,6 +212,9 @@ export default function GlobalLogModal({
   mangaChapterId = null,
   mangaId = null,
 
+  animeEpisodeNumber = null,
+  mangaChapterNumber = null,
+
   visibility = null,
   onSuccess,
 }: Props) {
@@ -247,6 +253,17 @@ export default function GlobalLogModal({
   }, [animeEpisodeId, animeId, mangaChapterId, mangaId]);
 
   const isEpisodeLikeTarget = target === "animeEpisode" || target === "mangaChapter";
+
+  // ✅ label shown in header so users know what they're logging
+  const loggingLabel = animeEpisodeNumber
+    ? `Logging Episode ${animeEpisodeNumber}`
+    : mangaChapterNumber
+      ? `Logging Chapter ${mangaChapterNumber}`
+      : animeId
+        ? "Logging Anime Series"
+        : mangaId
+          ? "Logging Manga Series"
+          : "Log Entry";
 
   const canSubmit = useMemo(() => {
     if (saving) return false;
@@ -666,7 +683,9 @@ export default function GlobalLogModal({
     >
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <div className="text-sm text-zinc-400">Log / Review</div>
+          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+            {loggingLabel}
+          </div>
           <div className="text-lg font-semibold text-white">{title ?? "Log"}</div>
         </div>
 
@@ -906,6 +925,8 @@ export default function GlobalLogModal({
     <GlobalLogModalPhone
       title={title}
       posterUrl={posterUrl}
+      animeEpisodeNumber={animeEpisodeNumber}
+      mangaChapterNumber={mangaChapterNumber}
       content={content}
       setContent={setContent}
       containsSpoilers={containsSpoilers}

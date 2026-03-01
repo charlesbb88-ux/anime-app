@@ -652,6 +652,7 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
         posterUrl={anime?.image_url ?? null}
         animeId={anime?.id ?? null}
         animeEpisodeId={episode?.id ?? null}
+        animeEpisodeNumber={episodeNum}
         onSuccess={async () => {
           if (!episode?.id) return;
 

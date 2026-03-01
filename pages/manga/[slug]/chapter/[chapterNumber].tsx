@@ -886,6 +886,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
         posterUrl={(manga as any)?.image_url ?? null}
         mangaId={manga?.id ?? null}
         mangaChapterId={chapter?.id ?? null}
+        mangaChapterNumber={chapterNum}
         onSuccess={async () => {
           setFeedNonce((n) => n + 1);
           setActionBoxNonce((n) => n + 1);
