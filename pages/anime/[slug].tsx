@@ -119,6 +119,8 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
   // ✅ which episode is being logged (for modal)
   const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(null);
 
+  const [selectedEpisodeNumber, setSelectedEpisodeNumber] = useState<number | null>(null);
+
   // ✅ force AnimeQuickLogBox to refresh its counts after a successful log
   const [episodeLogsNonce, setEpisodeLogsNonce] = useState(0);
 
@@ -563,8 +565,11 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                     animeId={anime.id}
                     totalEpisodes={anime.total_episodes}
                     refreshToken={episodeLogsNonce}
-                    onOpenLog={(episodeId) => {
+                    onOpenLog={(episodeId, episodeNumber) => {
                       setSelectedEpisodeId(episodeId ?? null);
+                      setSelectedEpisodeNumber(
+                        typeof episodeNumber === "number" ? episodeNumber : null
+                      );
                       setLogOpen(true);
                     }}
                   />
@@ -624,8 +629,11 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
       episodeLogsNonce={episodeLogsNonce}
       onOpenLog={() => setLogOpen(true)}
       onShowActivity={() => router.push(`/anime/${anime.slug}/activity`)}
-      onOpenLogForEpisode={(episodeId) => {
-        setSelectedEpisodeId(episodeId);
+      onOpenLogForEpisode={(episodeId, episodeNumber) => {
+        setSelectedEpisodeId(episodeId ?? null);
+        setSelectedEpisodeNumber(
+          typeof episodeNumber === "number" ? episodeNumber : null
+        );
         setLogOpen(true);
       }}
       feedNonce={feedNonce}
@@ -642,11 +650,17 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
         onClose={() => {
           setLogOpen(false);
           setSelectedEpisodeId(null);
+          setSelectedEpisodeNumber(null);
         }}
-        title={anime.title}
+        title={
+          selectedEpisodeNumber
+            ? `${anime.title} — Episode ${selectedEpisodeNumber}`
+            : anime.title
+        }
         posterUrl={anime.image_url}
         animeId={anime.id}
         animeEpisodeId={selectedEpisodeId}
+        animeEpisodeNumber={selectedEpisodeNumber}
         onSuccess={async () => {
           if (selectedEpisodeId) {
             setEpisodeLogsNonce((n) => n + 1);

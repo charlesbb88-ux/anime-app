@@ -71,7 +71,7 @@ export default function MangaPhoneLayout(props: {
 
     onOpenLog: () => void;
     onShowActivity: () => void;
-    onOpenLogForChapter: (chapterId: string | null) => void;
+    onOpenLogForChapter: (chapterId: string | null, chapterNumber?: number | null) => void;
 
     feedNonce: number;
     reviewSaveMsg: string | null;
@@ -331,7 +331,9 @@ export default function MangaPhoneLayout(props: {
                                 mangaId={manga.id}
                                 totalChapters={manga.total_chapters}
                                 refreshToken={chapterLogsNonce}
-                                onOpenLog={(chapterId) => onOpenLogForChapter(chapterId ?? null)}
+                                onOpenLog={(chapterId, chapterNumber) =>
+                                    onOpenLogForChapter(chapterId ?? null, chapterNumber ?? null)
+                                }
                             />
 
 

@@ -120,6 +120,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
   // ✅ open/close the log modal
   const [logOpen, setLogOpen] = useState(false);
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
+  const [selectedChapterNumber, setSelectedChapterNumber] = useState<number | null>(null);
   const [chapterLogsNonce, setChapterLogsNonce] = useState(0);
 
   // ✅ my manga series log count
@@ -292,7 +293,8 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
         return;
       }
 
-      setReviewSaveMsg(`Saved ✅ (review id: ${result.data?.id})`);
+      const newId = result.data?.review?.id ?? null;
+      setReviewSaveMsg(newId ? `Saved ✅ (review id: ${newId})` : "Saved ✅");
       setFeedNonce((n) => n + 1);
     } finally {
       setSavingReview(false);
@@ -569,7 +571,11 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                   <MangaActionBox
                     key={actionBoxNonce}
                     mangaId={manga.id}
-                    onOpenLog={() => setLogOpen(true)}
+                    onOpenLog={() => {
+                      setSelectedChapterId(null);
+                      setSelectedChapterNumber(null);
+                      setLogOpen(true);
+                    }}
                     onShowActivity={() => router.push(`/manga/${manga.slug}/activity`)}
                   />
 
@@ -577,8 +583,11 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                     mangaId={manga.id}
                     totalChapters={manga.total_chapters}
                     refreshToken={chapterLogsNonce}
-                    onOpenLog={(chapterId) => {
+                    onOpenLog={(chapterId, chapterNumber) => {
                       setSelectedChapterId(chapterId ?? null);
+                      setSelectedChapterNumber(
+                        typeof chapterNumber === "number" && Number.isFinite(chapterNumber) ? chapterNumber : null
+                      );
                       setLogOpen(true);
                     }}
                   />
@@ -648,17 +657,25 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
       cleanSynopsis={cleanSynopsis}
       actionBoxNonce={actionBoxNonce}
       chapterLogsNonce={chapterLogsNonce}
-      onOpenLog={() => setLogOpen(true)}
+      onOpenLog={() => {
+        setSelectedChapterId(null);
+        setSelectedChapterNumber(null);
+        setLogOpen(true);
+      }}
       onShowActivity={() => router.push(`/manga/${manga.slug}/activity`)}
-      onOpenLogForChapter={(chapterId) => {
-        setSelectedChapterId(chapterId);
+      onOpenLogForChapter={(chapterId, chapterNumber) => {
+        setSelectedChapterId(chapterId ?? null);
+        setSelectedChapterNumber(
+          typeof chapterNumber === "number" && Number.isFinite(chapterNumber)
+            ? chapterNumber
+            : null
+        );
         setLogOpen(true);
       }}
       feedNonce={feedNonce}
       reviewSaveMsg={reviewSaveMsg}
     />
   );
-
   return (
     <>
       <ResponsiveSwitch desktop={desktopView} phone={phoneView} />
@@ -669,11 +686,13 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
         onClose={() => {
           setLogOpen(false);
           setSelectedChapterId(null);
+          setSelectedChapterNumber(null);
         }}
         title={displayPrimaryTitle}
         posterUrl={manga.image_url}
         mangaId={manga.id}
         mangaChapterId={selectedChapterId}
+        mangaChapterNumber={selectedChapterNumber}
         onSuccess={async () => {
           if (selectedChapterId) {
             setChapterLogsNonce((n) => n + 1);

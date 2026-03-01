@@ -76,7 +76,7 @@ export default function AnimePhoneLayout(props: {
 
   onOpenLog: () => void;
   onShowActivity: () => void;
-  onOpenLogForEpisode: (episodeId: string | null) => void;
+  onOpenLogForEpisode: (episodeId: string | null, episodeNumber?: number | null) => void;
 
   feedNonce: number;
   reviewSaveMsg: string | null;
@@ -360,7 +360,9 @@ export default function AnimePhoneLayout(props: {
                 animeId={anime.id}
                 totalEpisodes={anime.total_episodes ?? null}
                 refreshToken={episodeLogsNonce}
-                onOpenLog={(episodeId) => onOpenLogForEpisode(episodeId ?? null)}
+                onOpenLog={(episodeId, episodeNumber) =>
+                  onOpenLogForEpisode(episodeId ?? null, episodeNumber ?? null)
+                }
               />
             </div>
           </div>

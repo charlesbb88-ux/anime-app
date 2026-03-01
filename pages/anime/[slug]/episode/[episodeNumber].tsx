@@ -107,6 +107,10 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
   // ✅ open/close the global log modal
   const [logOpen, setLogOpen] = useState(false);
 
+  // ✅ which episode is being logged (from QuickLogBox row clicks)
+  const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(null);
+  const [selectedEpisodeNumber, setSelectedEpisodeNumber] = useState<number | null>(null);
+
   // ✅ tags (same as series page)
   const [tags, setTags] = useState<AnimeTag[]>([]);
   const [tagsLoading, setTagsLoading] = useState(false);
@@ -190,6 +194,10 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
       } else {
         setEpisode(data);
         setEpisodeError(null);
+
+        // ✅ default modal target to THIS page episode
+        setSelectedEpisodeId(data.id);
+        setSelectedEpisodeNumber(data.episode_number ?? episodeNum);
       }
 
       setIsEpisodeLoading(false);
@@ -529,7 +537,13 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                         animeId={anime.id}
                         totalEpisodes={anime.total_episodes}
                         refreshToken={episodeLogsNonce}
-                        onOpenLog={() => setLogOpen(true)}
+                        onOpenLog={(episodeId, episodeNumber) => {
+                          setSelectedEpisodeId(episodeId ?? episode?.id ?? null);
+                          setSelectedEpisodeNumber(
+                            typeof episodeNumber === "number" ? episodeNumber : (episode?.episode_number ?? episodeNum)
+                          );
+                          setLogOpen(true);
+                        }}
                       />
                     </>
                   ) : null}
@@ -627,7 +641,15 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
       onShowActivity={() =>
         router.push(`/anime/${slugString}/episode/${episodeNum}/activity`)
       }
-      onOpenLogForEpisode={() => setLogOpen(true)}
+      onOpenLogForEpisode={(episodeId, episodeNumber) => {
+        setSelectedEpisodeId(episodeId ?? episode?.id ?? null);
+        setSelectedEpisodeNumber(
+          typeof episodeNumber === "number"
+            ? episodeNumber
+            : (episode as any)?.episode_number ?? episodeNum
+        );
+        setLogOpen(true);
+      }}
       feedNonce={feedNonce}
       seriesDisplayTitle={seriesDisplayTitle}
       isAnimeLoading={isAnimeLoading}
@@ -643,20 +665,24 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
 
       <GlobalLogModal
         open={logOpen}
-        onClose={() => setLogOpen(false)}
+        onClose={() => {
+          setLogOpen(false);
+          setSelectedEpisodeId(episode?.id ?? null);
+          setSelectedEpisodeNumber(episode?.episode_number ?? episodeNum);
+        }}
         title={
           anime
-            ? `${seriesDisplayTitle} — Episode ${episodeNum}`
-            : `Episode ${episodeNum}`
+            ? `${seriesDisplayTitle} — Episode ${selectedEpisodeNumber ?? episodeNum}`
+            : `Episode ${selectedEpisodeNumber ?? episodeNum}`
         }
         posterUrl={anime?.image_url ?? null}
         animeId={anime?.id ?? null}
-        animeEpisodeId={episode?.id ?? null}
-        animeEpisodeNumber={episodeNum}
+        animeEpisodeId={selectedEpisodeId} // ✅ CRITICAL
+        animeEpisodeNumber={selectedEpisodeNumber ?? episodeNum}
         onSuccess={async () => {
-          if (!episode?.id) return;
+          if (!selectedEpisodeId) return;
 
-          const { count, error } = await getMyAnimeEpisodeLogCount(episode.id);
+          const { count, error } = await getMyAnimeEpisodeLogCount(selectedEpisodeId);
           if (!error) setMyLogCount(count);
 
           setFeedNonce((n) => n + 1);
