@@ -32,7 +32,7 @@ type SeasonMapRow = {
 type Props = {
   animeId: string;
   totalEpisodes?: number | null;
-  onOpenLog: (episodeId?: string) => void;
+  onOpenLog: (episodeId?: string | null, episodeNumber?: number | null) => void;
   widthClassName?: string;
 
   // bump this from the page when an episode log/review is created via the modal
@@ -879,7 +879,7 @@ export default function AnimeQuickLogBox({
                                                 disabled={!canInteract || rowBusy}
                                                 onClick={() => {
                                                   if (innerDrag.drag.current.moved) return;
-                                                  onOpenLog(ep.id);
+                                                  onOpenLog(ep.id, ep.episode_number ?? null);
                                                   setReviewBump((n) => n + 1);
                                                 }}
                                                 className={[

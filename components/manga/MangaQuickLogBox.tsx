@@ -32,7 +32,7 @@ type VolumeMapRow = {
 type Props = {
   mangaId: string;
   totalChapters?: number | null;
-  onOpenLog: (chapterId?: string) => void;
+  onOpenLog: (chapterId?: string | null, chapterNumber?: number | null) => void;
   widthClassName?: string;
 
   // bump this from the page when a chapter log/review is created via the modal
@@ -875,7 +875,7 @@ export default function MangaQuickLogBox({
                                                 disabled={!canInteract || rowBusy}
                                                 onClick={() => {
                                                   if (innerDrag.drag.current.moved) return;
-                                                  onOpenLog(ch.id);
+                                                  onOpenLog(ch.id, ch.chapter_number);
                                                   setReviewBump((n) => n + 1);
                                                 }}
                                                 className={[

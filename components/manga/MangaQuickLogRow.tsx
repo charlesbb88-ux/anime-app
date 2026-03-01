@@ -20,7 +20,7 @@ type Props = {
     chapters: ChapterRow[];
     canInteract: boolean;
     refreshToken?: number;
-    onOpenLog: (chapterId?: string) => void;
+    onOpenLog: (chapterId?: string | null, chapterNumber?: number | null) => void;
     onMessage?: (msg: string | null) => void;
     onLogCreated?: () => void;
 };
@@ -493,7 +493,7 @@ export default function MangaQuickLogRow({
                                         disabled={isDisabled}
                                         onClick={() => {
                                             startReviewPoll(nextChapter);
-                                            onOpenLog(nextChapter.id);
+                                            onOpenLog(nextChapter.id, nextChapter.chapter_number);
                                         }}
                                         className={[
                                             "relative rounded-md border px-3 py-1.5 text-[11px] font-semibold",

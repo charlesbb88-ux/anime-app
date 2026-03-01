@@ -33,7 +33,7 @@ type VolumeMapRow = {
 type Props = {
   mangaId: string;
   totalChapters?: number | null;
-  onOpenLog: (chapterId?: string) => void;
+  onOpenLog: (chapterId?: string, chapterNumber?: number) => void;
 
   // ✅ mobile default is full width, but allow overrides if you want
   widthClassName?: string;
@@ -871,7 +871,7 @@ export default function MangaQuickLogBoxMobile({
                                                 disabled={!canInteract || rowBusy}
                                                 onClick={() => {
                                                   if (innerDrag.drag.current.moved) return;
-                                                  onOpenLog(ch.id);
+                                                  onOpenLog(ch.id, ch.chapter_number);
                                                   setReviewBump((n) => n + 1);
                                                 }}
                                                 className={[

@@ -165,6 +165,10 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
   // ✅ open/close the log modal
   const [logOpen, setLogOpen] = useState(false);
 
+  // ✅ which chapter is being logged (defaults to THIS page chapter)
+  const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
+  const [selectedChapterNumber, setSelectedChapterNumber] = useState<number | null>(null);
+
   // ✅ Force PostFeed refresh after saving review/log (no PostFeed changes)
   const [feedNonce, setFeedNonce] = useState(0);
 
@@ -482,6 +486,12 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
     };
   }, [manga, chapterNum, isValidChapterNumber]);
 
+  // ✅ default modal target to THIS page chapter
+  useEffect(() => {
+    setSelectedChapterId(chapter?.id ?? null);
+    setSelectedChapterNumber(Number.isFinite(chapterNum) ? chapterNum : null);
+  }, [chapter?.id, chapterNum]);
+
   if (!router.isReady) {
     return (
       <div className="mx-auto max-w-5xl px-4 py-8">
@@ -565,7 +575,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
   const spoilerTags = tags.filter((t) => t.is_general_spoiler === true || t.is_media_spoiler === true);
   const spoilerCount = spoilerTags.length;
 
-    const desktopView = (
+  const desktopView = (
     <>
       <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
         {/* Backdrop (same as manga page) */}
@@ -668,9 +678,8 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                               )}
 
                               <span
-                                className={`relative ${
-                                  isSpoiler ? "text-red-400" : "text-gray-100"
-                                }`}
+                                className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"
+                                  }`}
                               >
                                 {tag.name}
                               </span>
@@ -755,7 +764,11 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                     key={actionBoxNonce}
                     mangaId={manga?.id ?? null}
                     mangaChapterId={chapter?.id ?? null}
-                    onOpenLog={() => setLogOpen(true)}
+                    onOpenLog={() => {
+                      setSelectedChapterId(chapter?.id ?? null);
+                      setSelectedChapterNumber(Number.isFinite(chapterNum) ? chapterNum : null);
+                      setLogOpen(true);
+                    }}
                     onShowActivity={() =>
                       router.push(`/manga/${slugString}/chapter/${chapterNum}/activity`)
                     }
@@ -764,7 +777,15 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                   <MangaQuickLogBox
                     mangaId={manga?.id ?? ""}
                     totalChapters={(manga as any)?.total_chapters ?? null}
-                    onOpenLog={() => {
+                    onOpenLog={(chapterId, chapterNumber) => {
+                      setSelectedChapterId(chapterId ?? null);
+
+                      const n =
+                        typeof chapterNumber === "number" && Number.isFinite(chapterNumber)
+                          ? chapterNumber
+                          : null;
+
+                      setSelectedChapterNumber(n);
                       setLogOpen(true);
                     }}
                   />
@@ -866,7 +887,13 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
       chapterLogsNonce={0}
       onOpenLog={() => setLogOpen(true)}
       onShowActivity={() => router.push(`/manga/${slugString}/chapter/${chapterNum}/activity`)}
-      onOpenLogForChapter={() => setLogOpen(true)}
+      onOpenLogForChapter={(chapterId, chapterNumber) => {
+        setSelectedChapterId(chapterId ?? null);
+        setSelectedChapterNumber(
+          typeof chapterNumber === "number" && Number.isFinite(chapterNumber) ? chapterNumber : null
+        );
+        setLogOpen(true);
+      }}
       feedNonce={feedNonce}
       communityTopSummary={communityTopSummary}
       setCommunityTopSummary={setCommunityTopSummary}
@@ -878,15 +905,22 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
   return (
     <>
       <ResponsiveSwitch desktop={desktopView} phone={phoneView} />
-
       <GlobalLogModal
         open={logOpen}
-        onClose={() => setLogOpen(false)}
-        title={displayPrimaryTitle}
+        onClose={() => {
+          setLogOpen(false);
+          setSelectedChapterId(null);
+          setSelectedChapterNumber(null);
+        }}
+        title={
+          selectedChapterNumber
+            ? `${displayPrimaryTitle} — Chapter ${selectedChapterNumber}`
+            : displayPrimaryTitle
+        }
         posterUrl={(manga as any)?.image_url ?? null}
         mangaId={manga?.id ?? null}
-        mangaChapterId={chapter?.id ?? null}
-        mangaChapterNumber={chapterNum}
+        mangaChapterId={selectedChapterId ?? chapter?.id ?? null}
+        mangaChapterNumber={selectedChapterNumber ?? chapterNum}
         onSuccess={async () => {
           setFeedNonce((n) => n + 1);
           setActionBoxNonce((n) => n + 1);
