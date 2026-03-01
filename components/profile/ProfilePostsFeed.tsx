@@ -400,11 +400,7 @@ export default function ProfilePostsFeed({
   return (
     <div>
       {pinnedPost ? (
-        <div className="mb-3">
-          <div className="px-3 py-2 text-xs font-semibold text-slate-600">
-            Pinned
-          </div>
-
+        <div>
           {(() => {
             const p = pinnedPost;
             const atts = pinnedAttachments || [];
@@ -424,6 +420,7 @@ export default function ProfilePostsFeed({
                 key={p.id}
                 postId={p.id}
                 reviewId={review.id}
+                isPinned
                 userId={p.user_id}
                 createdAt={p.created_at}
                 content={(review.content ?? p.content) as string}
@@ -467,6 +464,7 @@ export default function ProfilePostsFeed({
               <CommentRow
                 key={p.id}
                 id={p.id}
+                isPinned
                 userId={p.user_id}
                 createdAt={p.created_at}
                 content={p.content}
