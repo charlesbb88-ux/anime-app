@@ -419,7 +419,7 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
 
   const iconSize = isMain ? 22 : 20;
   const avatarSize = isMain ? 56 : 46;
-  const nameFontSize = isMain ? "1.05rem" : "0.95rem";
+  const nameFontSize = isMain ? "1.05rem" : "1.05rem";
   const contentFontSize = isMain ? "1.1rem" : "1rem";
 
   const title = originLabel ?? "";
