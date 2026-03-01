@@ -6,9 +6,11 @@ import { useRouter } from "next/router";
 import ActionRow from "./ActionRow";
 import RichPostRenderer from "@/components/composer/RichPostRenderer";
 import PostAttachments from "@/components/composer/PostAttachments";
+import { Pin } from "lucide-react";
 
 export type CommentRowProps = {
   id: string;
+  isPinned?: boolean;
   userId: string;
   createdAt: string;
   content: string;
@@ -112,6 +114,7 @@ export default function CommentRow(props: CommentRowProps) {
 
   const {
     id,
+    isPinned = false,
     createdAt,
     content,
     attachments,
@@ -246,8 +249,8 @@ export default function CommentRow(props: CommentRowProps) {
         alignItems: "flex-start",
         gap: isMobile ? "0.2rem" : "0.7rem",
         padding: isMobile
-          ? "0.3rem 0.3rem 0.1rem 0.3rem"
-          : "0.8rem 0.8rem 0.4rem 0.8rem",
+          ? `${isPinned ? "1.6rem" : "0.3rem"} 0.3rem 0.1rem 0.3rem`
+          : `${isPinned ? "1.8rem" : "0.8rem"} 0.8rem 0.4rem 0.8rem`,
       }}
     >
       {/* Avatar: clickable to profile if we have a username */}
@@ -634,6 +637,26 @@ export default function CommentRow(props: CommentRowProps) {
           )}
         </div>
       )}
+
+      {isPinned ? (
+        <div
+          style={{
+            position: "absolute",
+            top: 6,
+            left: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: "0.75rem",
+            fontWeight: 600,
+            color: "#6b7280",
+            pointerEvents: "none",
+          }}
+        >
+          <Pin width={13} height={13} strokeWidth={2.2} />
+          Pinned
+        </div>
+      ) : null}
 
       {body}
 

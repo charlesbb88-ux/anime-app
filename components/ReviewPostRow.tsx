@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { Heart } from "lucide-react";
+import { Heart, Pin } from "lucide-react";
 import ActionRow from "./ActionRow";
 import RichPostRenderer from "@/components/composer/RichPostRenderer";
 import PostAttachments from "@/components/composer/PostAttachments";
@@ -75,6 +75,8 @@ export type ReviewPostRowProps = {
   // ✅ pin / unpin (profile)
   pinnedPostId?: string | null;
   onTogglePin?: (postId: string, e: any) => void;
+
+  isPinned?: boolean;
 
   isMain?: boolean;
 };
@@ -393,6 +395,8 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
     pinnedPostId,
     onTogglePin,
 
+    isPinned = false,
+
     onRowClick,
     disableHoverHighlight = false,
 
@@ -590,6 +594,26 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
         </div>
       )}
 
+      {isPinned ? (
+        <div
+          style={{
+            position: "absolute",
+            top: 6,
+            left: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: "0.75rem",
+            fontWeight: 600,
+            color: "#6b7280",
+            pointerEvents: "none",
+          }}
+        >
+          <Pin width={13} height={13} strokeWidth={2.2} />
+          Pinned
+        </div>
+      ) : null}
+
       {/* BODY */}
       <div
         style={{
@@ -597,8 +621,8 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
           alignItems: "flex-start",
           gap: isMobile ? "0.2rem" : "0.7rem",
           padding: isMobile
-            ? "0.3rem 0.3rem 0.1rem 0.3rem"
-            : "0.8rem 0.8rem 0.4rem 0.8rem",
+            ? `${isPinned ? "1.6rem" : "0.3rem"} 0.3rem 0.1rem 0.3rem`
+            : `${isPinned ? "1.8rem" : "0.8rem"} 0.8rem 0.4rem 0.8rem`,
         }}
       >
         {/* Avatar */}
