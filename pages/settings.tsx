@@ -121,7 +121,15 @@ const SettingsPage: NextPage = () => {
                 }}
               />
             ) : activeTab === "avatar" ? (
-              <SettingsAvatarTab profile={profile} onUpdated={(next) => setProfileOptimistic(next)} />
+              <SettingsAvatarTab
+                profile={profile}
+                onUpdated={(next) =>
+                  setProfileOptimistic({
+                    ...profile,
+                    ...next,
+                  })
+                }
+              />
             ) : (
               <SettingsBannerTab
                 userId={profile.id}
