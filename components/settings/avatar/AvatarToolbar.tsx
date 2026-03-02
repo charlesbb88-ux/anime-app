@@ -48,23 +48,25 @@ export default function AvatarToolbar({
         </div>
 
         <div className="flex items-center gap-3 md:ml-auto">
+          {/* Change image — styled like a button */}
+          <label
+            htmlFor={inputId}
+            className="inline-flex items-center justify-center px-3 py-1.5 md:px-5 md:py-2 text-xs font-semibold rounded-sm bg-blue-500 text-white hover:bg-blue-600 cursor-pointer"
+          >
+            Change image
+          </label>
+
           {/* Save */}
           <button
             type="button"
             onClick={onSave}
             disabled={saving || !canEdit}
-            className="inline-flex items-center justify-center px-5 py-2 text-xs font-semibold rounded-sm bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60"
+            className="inline-flex items-center justify-center px-3 py-1.5 md:px-5 md:py-2 text-xs font-semibold rounded-sm
+bg-green-600 text-white hover:bg-green-700
+disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed disabled:hover:bg-slate-300"
           >
             {saving ? "Saving…" : "Save avatar"}
           </button>
-
-          {/* Change image — styled like a button */}
-          <label
-            htmlFor={inputId}
-            className="inline-flex items-center justify-center px-5 py-2 text-xs font-semibold rounded-sm bg-blue-500 text-white hover:bg-blue-600 cursor-pointer"
-          >
-            Change image
-          </label>
 
           {/* Remove */}
           <button
@@ -86,7 +88,7 @@ export default function AvatarToolbar({
 
       <label
         htmlFor={inputId}
-        className="justify-self-center inline-flex items-center justify-center px-5 py-2 text-xs font-semibold rounded-sm bg-blue-500 text-white hover:bg-blue-600 cursor-pointer"
+        className="justify-self-center inline-flex items-center justify-center px-5 py-2 text-xs font-semibold rounded-sm bg-blue-500 text-white hover:bg-blue-600 cursor-pointer min-w-[150px] md:min-w-0"
       >
         Select new avatar
       </label>
