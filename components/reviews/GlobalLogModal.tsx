@@ -309,6 +309,24 @@ export default function GlobalLogModal({
     setError("");
   }, [open, isEpisodeLikeTarget]);
 
+  // ✅ prevent background page from scrolling while modal is open
+  useEffect(() => {
+    if (!open) return;
+
+    const prevOverflow = document.body.style.overflow;
+    const prevPaddingRight = document.body.style.paddingRight;
+
+    // avoid layout shift when scrollbar disappears (desktop)
+    const scrollbarW = window.innerWidth - document.documentElement.clientWidth;
+    document.body.style.overflow = "hidden";
+    if (scrollbarW > 0) document.body.style.paddingRight = `${scrollbarW}px`;
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.paddingRight = prevPaddingRight;
+    };
+  }, [open]);
+
   function handleToggleJournal(checked: boolean) {
     setLogWatchToActivity(checked);
     if (checked) setLoggedOnDate(toDateInputValue(new Date()));
@@ -678,7 +696,8 @@ export default function GlobalLogModal({
 
   const desktopView = (
     <div
-      className="relative z-10 h-full w-full bg-zinc-900 p-4 shadow-xl sm:h-auto sm:w-[94vw] sm:max-w-[860px] sm:rounded-xl sm:p-5"
+      className="relative z-10 w-full bg-zinc-900 p-4 shadow-xl sm:w-[94vw] sm:max-w-[860px] sm:rounded-xl sm:p-5
+                 max-h-[90vh] overflow-y-auto overscroll-contain"
       onClick={(e) => e.stopPropagation()}
     >
       <div className="mb-4 flex items-center justify-between">
@@ -711,7 +730,7 @@ export default function GlobalLogModal({
           )}
         </div>
 
-        <div className="flex flex-col gap-4">
+        <div className="flex min-h-0 flex-col gap-4">
           {/* Log checkbox + date picker */}
           {showJournalCheckbox ? (
             <div className="flex flex-col gap-2">
@@ -975,7 +994,9 @@ export default function GlobalLogModal({
       </div>
 
       {/* phone */}
-      <div className="sm:hidden">{phoneView}</div>
+      <div className="sm:hidden h-full overflow-y-auto overscroll-contain">
+        {phoneView}
+      </div>
     </div>
   );
 }
