@@ -43,16 +43,19 @@ export default function BackdropPositionEditor({
   endDrag,
   editorH,
 }: Props) {
+  const canDrag = !!(pickedUrl && imgSize && editorBase);
+
   return (
     <div
       ref={editorRef}
-      className="relative w-full rounded-md overflow-hidden border-2 border-black bg-black touch-none select-none"
+      className={`relative w-full rounded-md overflow-hidden border-2 border-black bg-black ${canDrag ? "touch-none select-none" : "touch-auto"
+        }`}
       style={{ height: editorH }}
-      onPointerDown={beginDrag}
-      onPointerMove={moveDrag}
-      onPointerUp={endDrag}
-      onPointerCancel={() => endDrag({} as any)}
-      onPointerLeave={() => endDrag({} as any)}
+      onPointerDown={canDrag ? beginDrag : undefined}
+      onPointerMove={canDrag ? moveDrag : undefined}
+      onPointerUp={canDrag ? endDrag : undefined}
+      onPointerCancel={canDrag ? (() => endDrag({} as any)) : undefined}
+      onPointerLeave={canDrag ? (() => endDrag({} as any)) : undefined}
     >
       {pickedUrl && imgSize && editorBase ? (
         <>
