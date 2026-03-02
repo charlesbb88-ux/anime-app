@@ -80,6 +80,30 @@ export default function Header({ transparent = false }: { transparent?: boolean 
     };
   }, []);
 
+  // ✅ listen for profile updates from anywhere (e.g. settings save)
+  useEffect(() => {
+    function onProfileUpdated(e: Event) {
+      const ce = e as CustomEvent<{ profile?: Profile }>;
+      const next = ce.detail?.profile;
+      if (!next) return;
+
+      // ✅ cache-bust avatar so browser doesn't keep showing the old pixels
+      const busted: Profile = {
+        ...next,
+        avatar_url: next.avatar_url
+          ? `${next.avatar_url}${next.avatar_url.includes("?") ? "&" : "?"}v=${Date.now()}`
+          : null,
+      };
+
+      setProfile(busted);
+    }
+
+    window.addEventListener("profile-updated", onProfileUpdated as EventListener);
+    return () => {
+      window.removeEventListener("profile-updated", onProfileUpdated as EventListener);
+    };
+  }, []);
+
   // CLICK OUTSIDE HANDLER FOR USER MENU
   useEffect(() => {
     if (!isUserMenuOpen) return;

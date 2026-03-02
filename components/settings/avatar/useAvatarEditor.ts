@@ -140,6 +140,10 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
         });
         onUpdated(updated);
 
+        window.dispatchEvent(
+          new CustomEvent("profile-updated", { detail: { profile: updated as any } })
+        );
+
         setCrop({ x: 0, y: 0 });
         setZoom(1);
 
@@ -173,6 +177,10 @@ export function useAvatarEditor({ profile, onUpdated }: Args) {
       });
 
       onUpdated(updated);
+
+      window.dispatchEvent(
+        new CustomEvent("profile-updated", { detail: { profile: updated as any } })
+      );
 
       // after save, we are no longer editing (file cleared -> canEdit false)
       setCrop({ x: 0, y: 0 });
