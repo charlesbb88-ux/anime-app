@@ -61,7 +61,7 @@ const SettingsPage: NextPage = () => {
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-900">
-      <div className="max-w-5xl mx-auto px-6 py-8">
+      <div className="max-w-5xl mx-auto px-6 pt-2 pb-4 sm:py-8">
         {/* HEADER */}
         <header className="mb-6 border-b border-slate-200 pb-3">
           <div className="flex items-center justify-between gap-4">

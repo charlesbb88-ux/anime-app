@@ -116,7 +116,9 @@ export default function SettingsBannerTab({ userId, username, avatarUrl, isActiv
                   type="button"
                   disabled={!pickedUrl || saving || !imgSize}
                   onClick={saveBackdropToDb}
-                  className="inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-sm bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60"
+                  className="inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-sm
+bg-emerald-600 text-white hover:bg-emerald-700
+disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed disabled:hover:bg-slate-300"
                 >
                   {saving ? "Saving…" : "Save banner"}
                 </button>
