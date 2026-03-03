@@ -36,6 +36,8 @@ import EnglishTitle from "@/components/EnglishTitle";
 import SmartBackdropImage from "@/components/SmartBackdropImage";
 import { FALLBACK_BACKDROP_SRC } from "@/lib/fallbacks";
 
+import { pickEnglishTitle } from "@/lib/pickEnglishTitle";
+
 type AnimeTag = {
   id: number;
   anime_id: string;
@@ -346,6 +348,23 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
   }
 
   const a: any = anime;
+
+  const picked = pickEnglishTitle(
+    {
+      title_english: (anime as any).title_english,
+      title_preferred: (anime as any).title_preferred,
+      title: anime.title,
+      title_native: (anime as any).title_native,
+    },
+    {
+      preferredKeys: ["title_english", "title_preferred", "title"],
+      fallbackKeys: ["title_preferred", "title", "title_native", "title_english"],
+      minScore: 0.55,
+    }
+  );
+
+  const displayPrimaryTitle = picked?.value ?? anime.title ?? "Untitled";
+
   const hasGenres = Array.isArray(a.genres) && a.genres.length > 0;
   const genres: string[] = a.genres || [];
 
@@ -657,8 +676,8 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
         }}
         title={
           selectedEpisodeNumber
-            ? `${anime.title} — Episode ${selectedEpisodeNumber}`
-            : anime.title
+            ? `${displayPrimaryTitle} — Episode ${selectedEpisodeNumber}`
+            : displayPrimaryTitle
         }
         posterUrl={anime.image_url}
         animeId={anime.id}
