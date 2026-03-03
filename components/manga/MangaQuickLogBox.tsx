@@ -232,6 +232,37 @@ export default function MangaQuickLogBox({
 
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+  // ✅ Instant UI update when a chapter review is created in the modal
+  useEffect(() => {
+    function onChapterReviewCreated(e: Event) {
+      const ce = e as CustomEvent<{
+        mangaId?: string;
+        chapterId?: string;
+        reviewId?: string | null;
+      }>;
+
+      const nextMangaId = ce.detail?.mangaId ?? null;
+      const chapterId = ce.detail?.chapterId ?? null;
+
+      // only apply to this box
+      if (!nextMangaId || nextMangaId !== mangaId) return;
+      if (!chapterId) return;
+
+      setReviewCounts((prev) => ({
+        ...prev,
+        [chapterId]: (prev[chapterId] ?? 0) + 1,
+      }));
+
+      // keep your DB-sync behavior too
+      setReviewBump((n) => n + 1);
+    }
+
+    window.addEventListener("chapter-review-created", onChapterReviewCreated as EventListener);
+    return () => {
+      window.removeEventListener("chapter-review-created", onChapterReviewCreated as EventListener);
+    };
+  }, [mangaId]);
+
   // 1) Load chapters (normalize chapter_number to number)
   useEffect(() => {
     if (!mangaId) return;
