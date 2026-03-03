@@ -437,6 +437,19 @@ export default function GlobalLogModal({
           });
           if (result.error) throw result.error;
           reviewId = result.data?.review?.id ?? null;
+
+          // ✅ tell AnimeQuickLogBox to update the Review button instantly
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent("episode-review-created", {
+                detail: {
+                  animeId,
+                  episodeId: animeEpisodeId,
+                  reviewId,
+                },
+              })
+            );
+          }
         }
 
         // Marks (episode-scoped): watched always, liked/rating only if touched
@@ -568,6 +581,19 @@ export default function GlobalLogModal({
           });
           if (result.error) throw result.error;
           reviewId = result.data?.review?.id ?? null;
+
+          // ✅ optional: tell a MangaQuickLogBox (if you have one)
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent("chapter-review-created", {
+                detail: {
+                  mangaId,
+                  chapterId: mangaChapterId,
+                  reviewId,
+                },
+              })
+            );
+          }
         }
 
         // Marks (chapter-scoped): watched always, liked/rating only if touched

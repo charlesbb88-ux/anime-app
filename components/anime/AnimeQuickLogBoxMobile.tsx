@@ -425,6 +425,55 @@ export default function AnimeQuickLogBoxMobile({
         };
     }, [animeId, refreshToken, reviewBump]);
 
+    // ✅ listen for modal-created logs/reviews so mobile box updates instantly
+    useEffect(() => {
+        function onEpisodeLogCreated(e: Event) {
+            const ce = e as CustomEvent<{ animeId?: string; animeEpisodeId?: string }>;
+            const nextAnimeId = ce.detail?.animeId;
+            const episodeId = ce.detail?.animeEpisodeId;
+
+            // only react if this event is for THIS anime
+            if (!nextAnimeId || nextAnimeId !== animeId) return;
+
+            // bump log counts immediately (so ring/check updates without waiting on refetch)
+            if (episodeId) {
+                setLogCounts((prev) => ({
+                    ...prev,
+                    [episodeId]: (prev[episodeId] ?? 0) + 1,
+                }));
+            }
+
+            // also bump to trigger the DB refetch effect (keeps you honest)
+            setLogBump((n) => n + 1);
+        }
+
+        function onEpisodeReviewCreated(e: Event) {
+            const ce = e as CustomEvent<{ animeId?: string; animeEpisodeId?: string }>;
+            const nextAnimeId = ce.detail?.animeId;
+            const episodeId = ce.detail?.animeEpisodeId;
+
+            if (!nextAnimeId || nextAnimeId !== animeId) return;
+
+            // bump review counts immediately (so badge updates instantly)
+            if (episodeId) {
+                setReviewCounts((prev) => ({
+                    ...prev,
+                    [episodeId]: (prev[episodeId] ?? 0) + 1,
+                }));
+            }
+
+            setReviewBump((n) => n + 1);
+        }
+
+        window.addEventListener("episode-log-created", onEpisodeLogCreated as EventListener);
+        window.addEventListener("episode-review-created", onEpisodeReviewCreated as EventListener);
+
+        return () => {
+            window.removeEventListener("episode-log-created", onEpisodeLogCreated as EventListener);
+            window.removeEventListener("episode-review-created", onEpisodeReviewCreated as EventListener);
+        };
+    }, [animeId]);
+
     const derivedTotalEpisodes = useMemo(() => {
         if (typeof totalEpisodes === "number" && Number.isFinite(totalEpisodes) && totalEpisodes > 0) {
             return totalEpisodes;

@@ -429,6 +429,36 @@ export default function AnimeQuickLogBox({
     };
   }, [animeId, refreshToken, reviewBump]);
 
+  // ✅ Instant UI update when a review is created in the modal
+  useEffect(() => {
+    function onEpisodeReviewCreated(e: Event) {
+      const ce = e as CustomEvent<{
+        animeId?: string;
+        episodeId?: string;
+      }>;
+
+      const nextAnimeId = ce.detail?.animeId ?? null;
+      const episodeId = ce.detail?.episodeId ?? null;
+
+      // only apply to this box + valid ids
+      if (!nextAnimeId || nextAnimeId !== animeId) return;
+      if (!episodeId) return;
+
+      setReviewCounts((prev) => ({
+        ...prev,
+        [episodeId]: (prev[episodeId] ?? 0) + 1,
+      }));
+
+      // optional: also bump so your “Load REVIEW counts” effect re-syncs from DB
+      setReviewBump((n) => n + 1);
+    }
+
+    window.addEventListener("episode-review-created", onEpisodeReviewCreated as EventListener);
+    return () => {
+      window.removeEventListener("episode-review-created", onEpisodeReviewCreated as EventListener);
+    };
+  }, [animeId]);
+
   // ✅ Derive totalEpisodes if prop is missing (this restores leftover chunk groups)
   const derivedTotalEpisodes = useMemo(() => {
     if (typeof totalEpisodes === "number" && Number.isFinite(totalEpisodes) && totalEpisodes > 0) {

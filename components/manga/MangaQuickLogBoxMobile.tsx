@@ -428,6 +428,55 @@ export default function MangaQuickLogBoxMobile({
     };
   }, [mangaId, refreshToken, reviewBump]);
 
+  // ✅ listen for modal-created logs/reviews so mobile box updates instantly
+  useEffect(() => {
+    function onChapterLogCreated(e: Event) {
+      const ce = e as CustomEvent<{ mangaId?: string; mangaChapterId?: string }>;
+      const nextMangaId = ce.detail?.mangaId;
+      const chapterId = ce.detail?.mangaChapterId;
+
+      // only react if this event is for THIS manga
+      if (!nextMangaId || nextMangaId !== mangaId) return;
+
+      // bump log counts immediately (progress ring/check updates instantly)
+      if (chapterId) {
+        setLogCounts((prev) => ({
+          ...prev,
+          [chapterId]: (prev[chapterId] ?? 0) + 1,
+        }));
+      }
+
+      // also bump to trigger DB refetch (keeps counts in sync)
+      setLogBump((n) => n + 1);
+    }
+
+    function onChapterReviewCreated(e: Event) {
+      const ce = e as CustomEvent<{ mangaId?: string; mangaChapterId?: string }>;
+      const nextMangaId = ce.detail?.mangaId;
+      const chapterId = ce.detail?.mangaChapterId;
+
+      if (!nextMangaId || nextMangaId !== mangaId) return;
+
+      // bump review counts immediately (badge updates instantly)
+      if (chapterId) {
+        setReviewCounts((prev) => ({
+          ...prev,
+          [chapterId]: (prev[chapterId] ?? 0) + 1,
+        }));
+      }
+
+      setReviewBump((n) => n + 1);
+    }
+
+    window.addEventListener("chapter-log-created", onChapterLogCreated as EventListener);
+    window.addEventListener("chapter-review-created", onChapterReviewCreated as EventListener);
+
+    return () => {
+      window.removeEventListener("chapter-log-created", onChapterLogCreated as EventListener);
+      window.removeEventListener("chapter-review-created", onChapterReviewCreated as EventListener);
+    };
+  }, [mangaId]);
+
   const derivedTotalChapters = useMemo(() => {
     if (typeof totalChapters === "number" && Number.isFinite(totalChapters) && totalChapters > 0) {
       return totalChapters;
