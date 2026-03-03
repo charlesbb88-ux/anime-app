@@ -820,41 +820,58 @@ export default function GlobalLogModal({
             />
           </div>
 
-          {/* ✅ Attachments (media) */}
-          <div className="mt-2">
-            <div className="flex items-center gap-2">
-              <input
-                id={fileInputId}
-                type="file"
-                accept="image/*,video/*"
-                multiple
-                className="hidden"
-                disabled={saving}
-                onChange={(e) => {
-                  onPickFiles(e.target.files);
-                  // allow picking same file again later
-                  e.currentTarget.value = "";
-                }}
-              />
+          {/* ✅ Attachments (media) + Contains spoilers (same row) */}
+          <div className="mt-0">
+            {/* top row: Add media (left) + Contains spoilers (right) */}
+            <div className="flex items-center justify-between gap-3 pr-5">
+              {/* LEFT: your original Add media row */}
+              <div className="flex items-center gap-2">
+                <input
+                  id={fileInputId}
+                  type="file"
+                  accept="image/*,video/*"
+                  multiple
+                  className="hidden"
+                  disabled={saving}
+                  onChange={(e) => {
+                    onPickFiles(e.target.files);
+                    // allow picking same file again later
+                    e.currentTarget.value = "";
+                  }}
+                />
 
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => {
-                  const el = document.getElementById(fileInputId) as HTMLInputElement | null;
-                  el?.click();
-                }}
-                className={[
-                  "rounded-md border border-zinc-700 px-3 py-2 text-sm text-zinc-200",
-                  saving ? "opacity-60 cursor-not-allowed" : "hover:bg-zinc-800",
-                ].join(" ")}
-              >
-                Add media
-              </button>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => {
+                    const el = document.getElementById(fileInputId) as HTMLInputElement | null;
+                    el?.click();
+                  }}
+                  className={[
+                    "rounded-md border border-zinc-700 px-3 py-2 text-sm text-zinc-200",
+                    saving ? "opacity-60 cursor-not-allowed" : "hover:bg-zinc-800",
+                  ].join(" ")}
+                >
+                  Add media
+                </button>
 
-              <div className="text-xs text-zinc-400">Up to 4 images/GIFs, or 1 video</div>
+                <div className="text-xs text-zinc-400">Up to 4 images/GIFs, or 1 video</div>
+              </div>
+
+              {/* RIGHT: your original Contains spoilers checkbox (unchanged) */}
+              <label className="relative -top-5 flex items-center gap-2 text-sm text-zinc-200">
+                <input
+                  type="checkbox"
+                  checked={containsSpoilers}
+                  onChange={(e) => setContainsSpoilers(e.target.checked)}
+                  disabled={saving}
+                  className="h-3.5 w-3.5"
+                />
+                Contains spoilers
+              </label>
             </div>
 
+            {/* below: your original pending attachments preview (unchanged) */}
             {pendingAttachments.length > 0 ? (
               <div className="mt-3">
                 <ComposerPendingAttachments
@@ -867,90 +884,88 @@ export default function GlobalLogModal({
             ) : null}
           </div>
 
-          {/* Like (heart) */}
+          {/* Like + Stars (same row, nothing removed) */}
           {showLikeAndStars ? (
-            <div className="flex justify-center">
-              <button
-                type="button"
-                onClick={toggleLike}
-                disabled={saving}
-                aria-pressed={likeChoice === true}
-                className={[
-                  "rounded-md px-2 py-1",
-                  saving
-                    ? "opacity-60 cursor-not-allowed"
-                    : "hover:bg-white/5 active:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/10",
-                ].join(" ")}
-                title={
-                  likeChoice === null
-                    ? "Like"
-                    : likeChoice
-                      ? "Will like on save"
-                      : "Will remove like on save"
-                }
-              >
-                <Heart className={["h-7 w-7", heartColor, heartFill].join(" ")} />
-              </button>
-            </div>
-          ) : null}
+            <div className="flex items-start mt-3 mr-20">
+              {/* LEFT half: Like */}
+              <div className="flex w-1/2 flex-col items-center">
+                <div className="mb-1 text-center text-xs font-semibold text-zinc-300">Like</div>
 
-          {/* Stars */}
-          {showLikeAndStars ? (
-            <div className="pt-1">
-              <div className="mb-1 text-center text-xs font-semibold text-zinc-300">
-                {halfStars == null ? "Rate" : "Rated"}
+                {/* --- original heart block (unchanged) --- */}
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={toggleLike}
+                    disabled={saving}
+                    aria-pressed={likeChoice === true}
+                    className={[
+                      "rounded-md px-2 py-1",
+                      saving
+                        ? "opacity-60 cursor-not-allowed"
+                        : "hover:bg-white/5 active:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/10",
+                    ].join(" ")}
+                    title={
+                      likeChoice === null
+                        ? "Like"
+                        : likeChoice
+                          ? "Will like on save"
+                          : "Will remove like on save"
+                    }
+                  >
+                    <Heart className={["h-7 w-7", heartColor, heartFill].join(" ")} />
+                  </button>
+                </div>
               </div>
 
-              <div
-                className="flex justify-center gap-[8px]"
-                onMouseLeave={() => setHoverHalfStars(null)}
-              >
-                {Array.from({ length: 5 }).map((_, i) => {
-                  const starIndex = i + 1;
-                  const filled = computeStarFillPercent(shownHalfStars, starIndex);
+              {/* RIGHT half: Rate */}
+              <div className="flex w-1/2 flex-col items-center">
+                {/* --- original stars block (unchanged) --- */}
+                <div className="pt-1">
+                  <div className="mb-1 text-center text-xs font-semibold text-zinc-300">
+                    {halfStars == null ? "Rate" : "Rated"}
+                  </div>
 
-                  return (
-                    <div key={starIndex} className="relative">
-                      <StarVisual filledPercent={filled} dim={saving} size={34} />
+                  <div
+                    className="flex justify-center gap-[8px]"
+                    onMouseLeave={() => setHoverHalfStars(null)}
+                  >
+                    {Array.from({ length: 5 }).map((_, i) => {
+                      const starIndex = i + 1;
+                      const filled = computeStarFillPercent(shownHalfStars, starIndex);
 
-                      <button
-                        type="button"
-                        disabled={saving}
-                        className="absolute inset-y-0 left-0 w-1/2"
-                        onMouseEnter={() => setHoverHalfStars(starIndex * 2 - 1)}
-                        onFocus={() => setHoverHalfStars(starIndex * 2 - 1)}
-                        onClick={() => setRatingHalfStars(starIndex * 2 - 1)}
-                        aria-label={`Rate ${starIndex - 0.5} stars`}
-                        title={`Rate ${starIndex - 0.5} stars`}
-                      />
+                      return (
+                        <div key={starIndex} className="relative">
+                          <StarVisual filledPercent={filled} dim={saving} size={34} />
 
-                      <button
-                        type="button"
-                        disabled={saving}
-                        className="absolute inset-y-0 right-0 w-1/2"
-                        onMouseEnter={() => setHoverHalfStars(starIndex * 2)}
-                        onFocus={() => setHoverHalfStars(starIndex * 2)}
-                        onClick={() => setRatingHalfStars(starIndex * 2)}
-                        aria-label={`Rate ${starIndex} stars`}
-                        title={`Rate ${starIndex} stars`}
-                      />
-                    </div>
-                  );
-                })}
+                          <button
+                            type="button"
+                            disabled={saving}
+                            className="absolute inset-y-0 left-0 w-1/2"
+                            onMouseEnter={() => setHoverHalfStars(starIndex * 2 - 1)}
+                            onFocus={() => setHoverHalfStars(starIndex * 2 - 1)}
+                            onClick={() => setRatingHalfStars(starIndex * 2 - 1)}
+                            aria-label={`Rate ${starIndex - 0.5} stars`}
+                            title={`Rate ${starIndex - 0.5} stars`}
+                          />
+
+                          <button
+                            type="button"
+                            disabled={saving}
+                            className="absolute inset-y-0 right-0 w-1/2"
+                            onMouseEnter={() => setHoverHalfStars(starIndex * 2)}
+                            onFocus={() => setHoverHalfStars(starIndex * 2)}
+                            onClick={() => setRatingHalfStars(starIndex * 2)}
+                            aria-label={`Rate ${starIndex} stars`}
+                            title={`Rate ${starIndex} stars`}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
           ) : null}
-
-          <label className="flex items-center gap-2 text-sm text-zinc-200">
-            <input
-              type="checkbox"
-              checked={containsSpoilers}
-              onChange={(e) => setContainsSpoilers(e.target.checked)}
-              disabled={saving}
-              className="h-4 w-4"
-            />
-            Contains spoilers
-          </label>
 
           {error ? (
             <div className="rounded-md border border-red-900/40 bg-red-950/30 px-3 py-2 text-sm text-red-200">
