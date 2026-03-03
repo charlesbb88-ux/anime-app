@@ -123,6 +123,12 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
   const [selectedChapterNumber, setSelectedChapterNumber] = useState<number | null>(null);
   const [chapterLogsNonce, setChapterLogsNonce] = useState(0);
 
+  // ✅ refresh QuickLogBox after ANY modal success (review OR log)
+  const [quickLogRefreshNonce, setQuickLogRefreshNonce] = useState(0);
+
+  // ✅ single token you pass into quick log boxes
+  const quickLogRefreshToken = chapterLogsNonce * 100000 + quickLogRefreshNonce;
+
   // ✅ my manga series log count
   const [myMangaSeriesLogCount, setMyMangaSeriesLogCount] = useState<number | null>(
     null
@@ -582,7 +588,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                   <MangaQuickLogBox
                     mangaId={manga.id}
                     totalChapters={manga.total_chapters}
-                    refreshToken={chapterLogsNonce}
+                    refreshToken={quickLogRefreshToken}
                     onOpenLog={(chapterId, chapterNumber) => {
                       setSelectedChapterId(chapterId ?? null);
                       setSelectedChapterNumber(
@@ -656,7 +662,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
       setShowSpoilers={setShowSpoilers}
       cleanSynopsis={cleanSynopsis}
       actionBoxNonce={actionBoxNonce}
-      chapterLogsNonce={chapterLogsNonce}
+      chapterLogsNonce={quickLogRefreshToken}
       onOpenLog={() => {
         setSelectedChapterId(null);
         setSelectedChapterNumber(null);
@@ -694,6 +700,10 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
         mangaChapterId={selectedChapterId}
         mangaChapterNumber={selectedChapterNumber}
         onSuccess={async () => {
+          // ✅ always refresh quick log box counts from the tables
+          setQuickLogRefreshNonce((n) => n + 1);
+
+          // ✅ keep your existing behavior for "chapter logs" specifically
           if (selectedChapterId) {
             setChapterLogsNonce((n) => n + 1);
           }
