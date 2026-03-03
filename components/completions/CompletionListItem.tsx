@@ -20,6 +20,10 @@ function safeInt(v: unknown) {
     return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
 }
 
+function clamp(n: number, min: number, max: number) {
+    return Math.min(max, Math.max(min, n));
+}
+
 function safeString(v: unknown) {
     return typeof v === "string" ? v.trim() : "";
 }
@@ -49,14 +53,19 @@ function pickDisplayTitle(item: CompletionItem) {
 
 export default function CompletionListItem({ item, onSelect }: Props) {
     // These now come directly from get_user_completions_with_stats
-    const progressCurrent = safeInt((item as any).progress_current);
-    const progressTotal = safeInt((item as any).progress_total);
+    const progressCurrentRaw = safeInt((item as any).progress_current);
+    const progressTotalRaw = safeInt((item as any).progress_total);
+    const progressPctRaw = safeInt((item as any).progress_pct);
 
     const reviewedCount = safeInt((item as any).reviewed_count);
     const ratedCount = safeInt((item as any).rated_count);
 
-    // Guard: avoid 0 total (your SQL should already enforce 1 for empty series, but this is extra safety)
-    const totalForRings = progressTotal > 0 ? progressTotal : 1;
+    // denominator used for *all* 3 rings
+    const totalForRings = progressTotalRaw > 0 ? progressTotalRaw : 1;
+
+    // ✅ Make progress ring match the "truth" (pct) when present
+    const progressCurrentForRing =
+        progressPctRaw >= 100 ? totalForRings : clamp(progressCurrentRaw, 0, totalForRings);
 
     const displayTitle = pickDisplayTitle(item);
 
@@ -92,7 +101,7 @@ export default function CompletionListItem({ item, onSelect }: Props) {
                 <div className="pointer-events-none flex shrink-0 items-center gap-1.5">
                     {/* progress */}
                     <MiniProgressRing
-                        current={progressCurrent}
+                        current={progressCurrentForRing}
                         total={totalForRings}
                         kind={item.kind}
                         slug={item.slug}
