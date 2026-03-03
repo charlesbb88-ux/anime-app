@@ -270,15 +270,15 @@ export default function GlobalLogModal({
   const isEpisodeLikeTarget = target === "animeEpisode" || target === "mangaChapter";
 
   // ✅ label shown in header so users know what they're logging
-  const loggingLabel = animeEpisodeNumber
-    ? `Logging Episode ${animeEpisodeNumber}`
+  const contextTag = animeEpisodeNumber
+    ? `Anime • Episode ${animeEpisodeNumber} Entry`
     : mangaChapterNumber
-      ? `Logging Chapter ${mangaChapterNumber}`
+      ? `Manga • Chapter ${mangaChapterNumber} Entry`
       : animeId
-        ? "Logging Anime Series"
+        ? "Anime • Series Entry"
         : mangaId
-          ? "Logging Manga Series"
-          : "Log Entry";
+          ? "Manga • Series Entry"
+          : "Entry";
 
   const canSubmit = useMemo(() => {
     if (saving) return false;
@@ -743,8 +743,11 @@ export default function GlobalLogModal({
     >
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
-            {loggingLabel}
+          {/* ✅ Context pill */}
+          <div className="mb-2 inline-flex items-center">
+            <span className="rounded-sm border border-white-500/30 bg-white px-1 py-1 text-[15px] font-semibold tracking-wide text-black">
+              {contextTag}
+            </span>
           </div>
           <div className="text-lg font-semibold text-white">{title ?? "Log"}</div>
         </div>
