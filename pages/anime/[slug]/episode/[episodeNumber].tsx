@@ -119,6 +119,9 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
   // ✅ quick log refresh (same pattern as series page)
   const [episodeLogsNonce, setEpisodeLogsNonce] = useState(0);
 
+  // ✅ NEW: refresh QuickLogBox counts after ANY modal save (review-only OR log)
+  const [quickLogRefreshToken, setQuickLogRefreshToken] = useState(0);
+
   // ✅ Backdrop from SSR (public.anime_episode_artwork) — random every reload
   const backdropUrl = initialBackdropUrl;
 
@@ -536,7 +539,7 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
                       <AnimeQuickLogBox
                         animeId={anime.id}
                         totalEpisodes={anime.total_episodes}
-                        refreshToken={episodeLogsNonce}
+                        refreshToken={quickLogRefreshToken}
                         onOpenLog={(episodeId, episodeNumber) => {
                           setSelectedEpisodeId(episodeId ?? episode?.id ?? null);
                           setSelectedEpisodeNumber(
@@ -636,7 +639,7 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
       showSpoilers={showSpoilers}
       setShowSpoilers={setShowSpoilers}
       actionBoxNonce={actionBoxNonce}
-      episodeLogsNonce={episodeLogsNonce}
+      episodeLogsNonce={quickLogRefreshToken}
       onOpenLog={() => setLogOpen(true)}
       onShowActivity={() =>
         router.push(`/anime/${slugString}/episode/${episodeNum}/activity`)
@@ -680,6 +683,9 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
         animeEpisodeId={selectedEpisodeId} // ✅ CRITICAL
         animeEpisodeNumber={selectedEpisodeNumber ?? episodeNum}
         onSuccess={async () => {
+          // ✅ always refresh QuickLogBox counts (review-only OR log)
+          setQuickLogRefreshToken((n) => n + 1);
+
           if (!selectedEpisodeId) return;
 
           const { count, error } = await getMyAnimeEpisodeLogCount(selectedEpisodeId);
@@ -687,6 +693,8 @@ const AnimeEpisodePage: NextPage<AnimeEpisodePageProps> = ({
 
           setFeedNonce((n) => n + 1);
           setActionBoxNonce((n) => n + 1);
+
+          // ✅ keep existing behavior so nothing else breaks
           setEpisodeLogsNonce((n) => n + 1);
         }}
       />

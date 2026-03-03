@@ -124,6 +124,9 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
   // ✅ force AnimeQuickLogBox to refresh its counts after a successful log
   const [episodeLogsNonce, setEpisodeLogsNonce] = useState(0);
 
+  // ✅ force quick log boxes to re-check DB after modal saves (logs OR reviews)
+  const [quickLogRefreshToken, setQuickLogRefreshToken] = useState(0);
+
   // ✅ my series log count
   const [mySeriesLogCount, setMySeriesLogCount] = useState<number | null>(null);
 
@@ -564,7 +567,7 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
                   <AnimeQuickLogBox
                     animeId={anime.id}
                     totalEpisodes={anime.total_episodes}
-                    refreshToken={episodeLogsNonce}
+                    refreshToken={quickLogRefreshToken}
                     onOpenLog={(episodeId, episodeNumber) => {
                       setSelectedEpisodeId(episodeId ?? null);
                       setSelectedEpisodeNumber(
@@ -662,6 +665,8 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
         animeEpisodeId={selectedEpisodeId}
         animeEpisodeNumber={selectedEpisodeNumber}
         onSuccess={async () => {
+          // ✅ NEW: always refresh QuickLogBoxes (log OR review OR both)
+          setQuickLogRefreshToken((n) => n + 1);
           if (selectedEpisodeId) {
             setEpisodeLogsNonce((n) => n + 1);
           }

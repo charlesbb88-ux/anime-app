@@ -175,6 +175,15 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
   // ✅ force ActionBox to remount so marks refresh immediately (no page refresh)
   const [actionBoxNonce, setActionBoxNonce] = useState(0);
 
+  // ✅ force QuickLogBox to refresh immediately after saving (no page refresh)
+  const [chapterLogsNonce, setChapterLogsNonce] = useState(0);
+
+  // ✅ combined token so either marks OR logs updates will refresh QuickLogBox
+  const quickLogRefreshToken = useMemo(
+    () => actionBoxNonce * 100000 + chapterLogsNonce,
+    [actionBoxNonce, chapterLogsNonce]
+  );
+
   // Normalize slug + chapterNumber to strings
   const slugString = useMemo(() => {
     return Array.isArray(slug) ? slug[0] : slug ?? "";
@@ -777,6 +786,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                   <MangaQuickLogBox
                     mangaId={manga?.id ?? ""}
                     totalChapters={(manga as any)?.total_chapters ?? null}
+                    refreshToken={quickLogRefreshToken}
                     onOpenLog={(chapterId, chapterNumber) => {
                       setSelectedChapterId(chapterId ?? null);
 
@@ -884,7 +894,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
       showSpoilers={showSpoilers}
       setShowSpoilers={setShowSpoilers}
       actionBoxNonce={actionBoxNonce}
-      chapterLogsNonce={0}
+      chapterLogsNonce={quickLogRefreshToken}
       onOpenLog={() => setLogOpen(true)}
       onShowActivity={() => router.push(`/manga/${slugString}/chapter/${chapterNum}/activity`)}
       onOpenLogForChapter={(chapterId, chapterNumber) => {
@@ -924,6 +934,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
         onSuccess={async () => {
           setFeedNonce((n) => n + 1);
           setActionBoxNonce((n) => n + 1);
+          setChapterLogsNonce((n) => n + 1);
         }}
       />
     </>
