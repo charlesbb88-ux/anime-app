@@ -691,7 +691,17 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
                 display: "flex",
                 alignItems: "center",
                 gap: "0.35rem",
+
+                // ✅ this lane owns the leftover space
+                flex: 1,
                 minWidth: 0,
+
+                // ✅ prevents it from spilling underneath the right side
+                overflow: "hidden",
+
+                // ✅ on phone, allow the "· time · Spoilers" to drop down if needed
+                flexWrap: "wrap",   // ✅ allow wrapping on desktop too
+                rowGap: 2,          // ✅ keeps the 2nd line tight/clean when it happens
               }}
             >
               {username ? (
@@ -703,6 +713,13 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
                     fontWeight: 500,
                     color: "#333",
                     textDecoration: "none",
+
+                    // ✅ keeps insane long names from breaking the layout
+                    display: "inline-block",
+                    maxWidth: isMobile ? "100%" : undefined,
+                    overflow: isMobile ? "hidden" : undefined,
+                    textOverflow: isMobile ? "ellipsis" : undefined,
+                    whiteSpace: isMobile ? "nowrap" : undefined,
                   }}
                 >
                   {displayName}
@@ -713,6 +730,13 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
                     fontSize: nameFontSize,
                     fontWeight: 500,
                     color: "#333",
+
+                    // ✅ keeps insane long names from breaking the layout
+                    display: "inline-block",
+                    maxWidth: isMobile ? "100%" : undefined,
+                    overflow: isMobile ? "hidden" : undefined,
+                    textOverflow: isMobile ? "ellipsis" : undefined,
+                    whiteSpace: isMobile ? "nowrap" : undefined,
                   }}
                 >
                   {displayName}
@@ -732,12 +756,13 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
                     style={{
                       fontSize: "0.72rem",
                       fontWeight: 600,
-                      color: "#b45309",
-                      background: "#fffbeb",
-                      border: "1px solid #fcd34d",
+                      color: "#b91c1c",
+                      background: "#fee2e2",
+                      border: "1px solid #fca5a5",
                       padding: "1px 6px",
                       borderRadius: 999,
                       lineHeight: 1.4,
+                      whiteSpace: "nowrap",
                     }}
                   >
                     Spoilers
@@ -752,7 +777,8 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
                 flexDirection: "column",
                 alignItems: "flex-end",
                 minWidth: 0,
-                maxWidth: "55%",
+                maxWidth: "50%",
+                flexShrink: 0,
               }}
             >
               <span
@@ -761,8 +787,9 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
                   color: "#333",
                   fontSize: "0.86rem",
                   overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
+                  display: "-webkit-box",
+                  WebkitBoxOrient: "vertical" as any,
+                  WebkitLineClamp: 2 as any,
                   width: "100%",
                   textAlign: "right",
                 }}
