@@ -6,6 +6,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { buildChapterNavGroups } from "@/lib/chapterNavigation";
 import type { NavGroup } from "@/lib/chapterNavigation";
+import SmartBackdropImage from "@/components/SmartBackdropImage";
 
 type Props = {
     slug: string;
@@ -723,16 +724,31 @@ export default function ChapterNavigatorMobile({
                                     }}
                                 >
                                     <div className="relative h-full w-full overflow-hidden rounded-xs bg-black">
-                                        {imageUrl ? (
-                                            <img
-                                                src={imageUrl}
+                                        {allCoverUrls.length > 0 ? (
+                                            <SmartBackdropImage
+                                                // 1) primary: the chapter's chosen cover (may be null)
+                                                src={imageUrl ?? null}
+                                                // 2) poster fallback: always pick *some* cover from pool for this chapter
+                                                posterFallbackSrc={
+                                                    pickStableRandomFromPool(allCoverUrls, `${mangaId ?? "m"}|ch-fb:${n}`) ??
+                                                    allCoverUrls[0] ??
+                                                    null
+                                                }
+                                                // 3) final fallback: another pool cover (guarantees "always image" if pool exists)
+                                                finalFallbackSrc={
+                                                    pickStableRandomFromPool(allCoverUrls, `${mangaId ?? "m"}|ch-final:${n}`) ??
+                                                    allCoverUrls[0]
+                                                }
                                                 alt=""
-                                                className="absolute inset-0 h-full w-full object-cover"
-                                                draggable={false}
-                                                loading="lazy"
-                                                decoding="async"
+                                                width={500}
+                                                height={750}
+                                                priority={false}
+                                                sizes="110px"
+                                                className="absolute inset-0 h-full w-full object-contain"
+                                                placeholderClassName="absolute inset-0 h-full w-full"
                                             />
                                         ) : (
+                                            // ✅ only “no image” case: there are literally zero covers in DB
                                             <div className="absolute inset-0 bg-black" />
                                         )}
 
