@@ -107,10 +107,10 @@ export default function GlobalLogModalPhone(props: GlobalLogModalPhoneProps) {
   } = props;
 
   const loggingLabel = animeEpisodeNumber
-    ? `Logging Episode ${animeEpisodeNumber}`
+    ? `Episode ${animeEpisodeNumber} Entry`
     : mangaChapterNumber
-      ? `Logging Chapter ${mangaChapterNumber}`
-      : "Log Entry";
+      ? `Chapter ${mangaChapterNumber} Entry`
+      : "Series Entry";
 
   // ✅ NEW: media picker (images/videos)
   const fileInputId = "global-log-review-media-phone";
@@ -171,13 +171,20 @@ export default function GlobalLogModalPhone(props: GlobalLogModalPhoneProps) {
               ) : null}
             </div>
 
-            <div className="min-w-0 flex-1">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
-                {loggingLabel}
+            <div className="min-w-0 flex-1 -mt-5">
+              <div className="mb-2 inline-flex items-center">
+                <span
+                  className={[
+                    "rounded-xs border px-1 py-.5 text-[13px] font-semibold tracking-wide",
+                    "border-white/30 bg-white text-black",
+                  ].join(" ")}
+                >
+                  {loggingLabel}
+                </span>
               </div>
 
               {/* ✅ no truncate — allow wrapping */}
-              <div className="whitespace-normal break-words text-[16px] font-semibold leading-snug text-white">
+              <div className="whitespace-normal break-words text-[18px] font-semibold leading-snug text-white">
                 {title ?? "Log"}
               </div>
             </div>
