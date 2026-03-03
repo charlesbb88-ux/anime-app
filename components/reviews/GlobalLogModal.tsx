@@ -108,16 +108,31 @@ function toDateInputValue(d: Date) {
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
-
-// Use noon UTC so the date never "shifts" for users in negative timezones.
 function dateInputToLoggedAtISO(dateStr: string) {
   // dateStr = "YYYY-MM-DD"
-  return `${dateStr}T12:00:00.000Z`;
+  const [y, m, d] = dateStr.split("-").map(Number);
+
+  const now = new Date();
+
+  // Create a LOCAL datetime: selected day + current time-of-day
+  const local = new Date(
+    y,
+    m - 1,
+    d,
+    now.getHours(),
+    now.getMinutes(),
+    now.getSeconds(),
+    now.getMilliseconds()
+  );
+
+  // Store as ISO (UTC) for timestamptz
+  return local.toISOString();
 }
 
 function dateInputToDisplayDate(dateStr: string) {
-  // interpret as noon UTC for stable display too
-  return new Date(`${dateStr}T12:00:00.000Z`);
+  const [y, m, d] = dateStr.split("-").map(Number);
+  // local midnight of that date (display-only)
+  return new Date(y, m - 1, d);
 }
 
 // Map half-stars (1..10) to rating 0..100 in 10-point steps.
