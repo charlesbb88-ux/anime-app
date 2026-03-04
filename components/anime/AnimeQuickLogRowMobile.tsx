@@ -114,6 +114,19 @@ export default function AnimeQuickLogRowMobile({
     return found ?? null;
   }, [sortedEpisodes, maxLoggedNumber]);
 
+  const totalEpisodes = sortedEpisodes.length;
+
+  const completedEpisodes = useMemo(() => {
+    if (totalEpisodes === 0) return 0;
+    if (maxLoggedNumber === null) return 0;
+
+    let count = 0;
+    for (const ep of sortedEpisodes) {
+      if (ep.episode_number <= maxLoggedNumber) count++;
+    }
+    return count;
+  }, [sortedEpisodes, totalEpisodes, maxLoggedNumber]);
+
   const resolvedSlug = useMemo(() => {
     if (typeof slug === "string" && slug.trim()) return slug.trim();
 
@@ -458,7 +471,9 @@ export default function AnimeQuickLogRowMobile({
       {sortedEpisodes.length === 0 ? (
         <div className="px-3 py-2 text-xs text-gray-400">No episodes.</div>
       ) : !nextEpisode ? (
-        <div className="px-3 py-2 text-xs text-gray-400">You’re caught up ✅</div>
+        <div className="px-3 py-2 text-xs font-semibold text-white">
+          {completedEpisodes}/{totalEpisodes} episodes complete
+        </div>
       ) : (
         <AuthGate>
           <div className="relative overflow-hidden">
