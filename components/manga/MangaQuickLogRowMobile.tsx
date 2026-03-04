@@ -147,6 +147,19 @@ export default function MangaQuickLogRowMobile({
     return found ?? null;
   }, [sortedChapters, maxLoggedNumber]);
 
+  const totalChapters = sortedChapters.length;
+
+  const completedChapters = useMemo(() => {
+    if (totalChapters === 0) return 0;
+    if (maxLoggedNumber === null) return 0;
+
+    let count = 0;
+    for (const ch of sortedChapters) {
+      if (ch.chapter_number <= maxLoggedNumber) count++;
+    }
+    return count;
+  }, [sortedChapters, totalChapters, maxLoggedNumber]);
+
   const resolvedSlug = useMemo(() => {
     if (typeof slug === "string" && slug.trim()) return slug.trim();
 
@@ -493,7 +506,9 @@ export default function MangaQuickLogRowMobile({
       {sortedChapters.length === 0 ? (
         <div className="px-3 py-2 text-xs text-gray-400">No chapters.</div>
       ) : !nextChapter ? (
-        <div className="px-3 py-2 text-xs text-gray-400">You’re caught up ✅</div>
+        <div className="px-3 py-2 text-xs font-semibold text-white">
+          {completedChapters}/{totalChapters} chapters complete
+        </div>
       ) : (
         <AuthGate>
           <div ref={swipeTrackRef} className="relative overflow-hidden">
