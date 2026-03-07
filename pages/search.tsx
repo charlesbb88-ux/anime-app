@@ -1,50 +1,37 @@
-// pages/search.tsx
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { supabase } from "@/lib/supabaseClient";
 
-type AnimeRow = {
-  id: string;
-  slug: string;
-  title: string;
-  title_english: string | null;
-  title_native: string | null;
-  title_preferred: string | null;
-  image_url: string | null;
-  average_score: number | null;
-  season_year: number | null;
-};
-
-type MangaRow = {
-  id: string;
-  slug: string;
-  title: string;
-  title_english: string | null;
-  title_native: string | null;
-  title_preferred: string | null;
-  image_url: string | null;
-  cover_image_url: string | null;
-  average_score: number | null;
-  publication_year: number | null;
-};
-
 type Tab = "all" | "anime" | "manga";
+
+type SearchRow = {
+  kind: "anime" | "manga";
+  id: string;
+  slug: string;
+  title: string;
+  image_url: string | null;
+  score: number | null;
+};
 
 function cleanSearch(s?: string | null): string {
   return (s || "").trim();
 }
 
-function buildSearchOr(raw: string): string {
-  return [
-    `title.ilike.%${raw}%`,
-    `title_english.ilike.%${raw}%`,
-    `title_preferred.ilike.%${raw}%`,
-    `title_native.ilike.%${raw}%`,
-    `slug.ilike.%${raw}%`,
-  ].join(",");
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function normalizeSearchInput(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export default function SearchPage() {
@@ -57,46 +44,82 @@ export default function SearchPage() {
 
   const [query, setQuery] = useState(initialQ);
   const [activeTab, setActiveTab] = useState<Tab>("all");
-  const debounceRef = useRef<number | null>(null);
+
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const [anime, setAnime] = useState<AnimeRow[]>([]);
-  const [manga, setManga] = useState<MangaRow[]>([]);
+  const [rows, setRows] = useState<SearchRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
 
+  const debounceRef = useRef<number | null>(null);
+  const requestSeqRef = useRef(0);
+
+  const [highlightIndex, setHighlightIndex] = useState<number>(-1);
+
   const load = useCallback(async (search?: string) => {
     const raw = cleanSearch(search);
-    if (!raw) {
-      setAnime([]);
-      setManga([]);
+    const normalizedQuery = normalizeSearchInput(raw);
+
+    if (!normalizedQuery) {
+      setRows([]);
       setLoading(false);
       setHasSearched(false);
+      setHighlightIndex(-1);
       return;
     }
 
     setLoading(true);
     setHasSearched(true);
-    const or = buildSearchOr(raw);
 
-    const [aRes, mRes] = await Promise.all([
+    const mySeq = ++requestSeqRef.current;
+    const pattern = `%${normalizedQuery}%`;
+
+    const [animeRes, mangaRes] = await Promise.all([
       supabase
         .from("anime")
-        .select("id,slug,title,title_english,title_native,title_preferred,image_url,average_score,season_year")
-        .or(or)
-        .order("average_score", { ascending: false, nullsFirst: false })
-        .limit(60),
+        .select("id, slug, title, title_english, image_url")
+        .ilike("search_text", pattern)
+        .limit(50),
+
       supabase
         .from("manga")
-        .select("id,slug,title,title_english,title_native,title_preferred,image_url,cover_image_url,average_score,publication_year")
-        .or(or)
-        .order("average_score", { ascending: false, nullsFirst: false })
-        .limit(60),
+        .select("id, slug, title, title_english, image_url")
+        .ilike("search_text", pattern)
+        .limit(50),
     ]);
 
-    setAnime((aRes.data as AnimeRow[]) || []);
-    setManga((mRes.data as MangaRow[]) || []);
+    if (mySeq !== requestSeqRef.current) return;
+
+    if (animeRes.error || mangaRes.error) {
+      console.error("[search] anime error", animeRes.error);
+      console.error("[search] manga error", mangaRes.error);
+      setRows([]);
+      setLoading(false);
+      setHighlightIndex(-1);
+      return;
+    }
+
+    const animeRows = ((animeRes.data || []) as any[]).map((r) => ({
+      kind: "anime" as const,
+      id: String(r.id),
+      slug: String(r.slug),
+      title: String(r.title_english || r.title || ""),
+      image_url: (r.image_url ?? null) as string | null,
+      score: null,
+    }));
+
+    const mangaRows = ((mangaRes.data || []) as any[]).map((r) => ({
+      kind: "manga" as const,
+      id: String(r.id),
+      slug: String(r.slug),
+      title: String(r.title_english || r.title || ""),
+      image_url: (r.image_url ?? null) as string | null,
+      score: null,
+    }));
+
+    setRows([...animeRows, ...mangaRows]);
     setLoading(false);
+    setHighlightIndex(-1);
   }, []);
 
   useEffect(() => setQuery(initialQ), [initialQ]);
@@ -105,55 +128,104 @@ export default function SearchPage() {
     const q = query.trim();
     const current = typeof router.query.q === "string" ? router.query.q : "";
     if (q === current) return;
-    router.replace({ pathname: "/search", query: q ? { q } : {} }, undefined, { shallow: true });
+
+    router.replace({ pathname: "/search", query: q ? { q } : {} }, undefined, {
+      shallow: true,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
   useEffect(() => {
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
-    debounceRef.current = window.setTimeout(() => load(query), 300);
-    return () => { if (debounceRef.current) window.clearTimeout(debounceRef.current); };
+    debounceRef.current = window.setTimeout(() => load(query), 180);
+    return () => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    };
   }, [query, load]);
 
-  // Auto-focus on mount
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
   const qtrim = query.trim();
 
-  const animeItems = anime.map((a) => ({
-    key: a.id,
-    href: `/anime/${a.slug}`,
-    title: a.title_preferred || a.title_english || a.title_native || a.title,
-    sub: a.title_english !== (a.title_preferred || a.title_native) ? (a.title_english || "") : "",
-    imageUrl: a.image_url,
-    score: a.average_score,
-    year: a.season_year,
-    type: "Anime" as const,
-  }));
+  const animeRows = useMemo(() => rows.filter((r) => r.kind === "anime"), [rows]);
+  const mangaRows = useMemo(() => rows.filter((r) => r.kind === "manga"), [rows]);
 
-  const mangaItems = manga.map((m) => ({
-    key: m.id,
-    href: `/manga/${m.slug}`,
-    title: m.title_preferred || m.title_english || m.title_native || m.title,
-    sub: m.title_english !== (m.title_preferred || m.title_native) ? (m.title_english || "") : "",
-    imageUrl: m.cover_image_url || m.image_url,
-    score: m.average_score,
-    year: m.publication_year,
-    type: "Manga" as const,
-  }));
+  const animeItems = useMemo(
+    () =>
+      animeRows.map((r) => ({
+        key: r.id,
+        href: `/anime/${r.slug}`,
+        title: r.title,
+        sub: "",
+        imageUrl: r.image_url,
+        score: null as number | null,
+        year: null as number | null,
+        type: "Anime" as const,
+      })),
+    [animeRows]
+  );
 
-  const allItems = [...animeItems, ...mangaItems].sort((a, b) => (b.score || 0) - (a.score || 0));
+  const mangaItems = useMemo(
+    () =>
+      mangaRows.map((r) => ({
+        key: r.id,
+        href: `/manga/${r.slug}`,
+        title: r.title,
+        sub: "",
+        imageUrl: r.image_url,
+        score: null as number | null,
+        year: null as number | null,
+        type: "Manga" as const,
+      })),
+    [mangaRows]
+  );
 
-  const tabs: { id: Tab; label: string; count: number }[] = [
-    { id: "all", label: "All", count: allItems.length },
-    { id: "anime", label: "Anime", count: animeItems.length },
-    { id: "manga", label: "Manga", count: mangaItems.length },
-  ];
+  const allItems = useMemo(() => [...animeItems, ...mangaItems], [animeItems, mangaItems]);
 
-  const visibleItems =
-    activeTab === "all" ? allItems : activeTab === "anime" ? animeItems : mangaItems;
+  const tabs: { id: Tab; label: string; count: number }[] = useMemo(
+    () => [
+      { id: "all", label: "All", count: allItems.length },
+      { id: "anime", label: "Anime", count: animeItems.length },
+      { id: "manga", label: "Manga", count: mangaItems.length },
+    ],
+    [allItems.length, animeItems.length, mangaItems.length]
+  );
+
+  const visibleItems = useMemo(() => {
+    if (activeTab === "anime") return animeItems;
+    if (activeTab === "manga") return mangaItems;
+    return allItems;
+  }, [activeTab, allItems, animeItems, mangaItems]);
+
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (!qtrim) return;
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (visibleItems.length === 0) return;
+        setHighlightIndex((prev) => clamp(prev + 1, 0, visibleItems.length - 1));
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (visibleItems.length === 0) return;
+        setHighlightIndex((prev) => clamp(prev - 1, 0, visibleItems.length - 1));
+      } else if (e.key === "Enter") {
+        if (highlightIndex >= 0 && highlightIndex < visibleItems.length) {
+          e.preventDefault();
+          router.push(visibleItems[highlightIndex].href);
+        }
+      } else if (e.key === "Escape") {
+        if (highlightIndex !== -1) {
+          setHighlightIndex(-1);
+        } else {
+          setQuery("");
+        }
+      }
+    },
+    [qtrim, visibleItems, highlightIndex, router]
+  );
 
   return (
     <>
@@ -189,7 +261,6 @@ export default function SearchPage() {
           padding: 0 24px 80px;
         }
 
-        /* ── Header ── */
         .search-header {
           padding: 64px 0 40px;
           border-bottom: 1px solid var(--border);
@@ -216,10 +287,9 @@ export default function SearchPage() {
           letter-spacing: -0.01em;
         }
 
-        /* ── Search Bar ── */
         .search-bar-wrap {
           position: relative;
-          max-width: 680px;
+          max-width: 720px;
         }
 
         .search-bar {
@@ -260,9 +330,7 @@ export default function SearchPage() {
           caret-color: var(--gold);
         }
 
-        .search-input::placeholder {
-          color: var(--text-muted);
-        }
+        .search-input::placeholder { color: var(--text-muted); }
 
         .search-clear {
           display: flex;
@@ -294,20 +362,12 @@ export default function SearchPage() {
           gap: 6px;
         }
 
-        .loading-dots {
-          display: flex;
-          gap: 4px;
-          align-items: center;
-        }
-
+        .loading-dots { display: flex; gap: 4px; align-items: center; }
         .loading-dots span {
-          width: 4px;
-          height: 4px;
-          border-radius: 50%;
+          width: 4px; height: 4px; border-radius: 50%;
           background: var(--gold);
           animation: dot-bounce 1.2s ease-in-out infinite;
         }
-
         .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
         .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
 
@@ -316,7 +376,6 @@ export default function SearchPage() {
           40% { opacity: 1; transform: scale(1); }
         }
 
-        /* ── Tabs ── */
         .tabs-row {
           display: flex;
           align-items: center;
@@ -366,7 +425,6 @@ export default function SearchPage() {
           color: var(--gold);
         }
 
-        /* ── Grid ── */
         .results-grid {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -381,11 +439,10 @@ export default function SearchPage() {
           .results-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
         }
 
-        /* ── Card ── */
         .card {
           text-decoration: none;
           display: block;
-          group: true;
+          position: relative;
         }
 
         .card-poster {
@@ -412,9 +469,7 @@ export default function SearchPage() {
           transition: transform 0.35s ease;
         }
 
-        .card:hover .card-poster img {
-          transform: scale(1.04);
-        }
+        .card:hover .card-poster img { transform: scale(1.04); }
 
         .card-poster-placeholder {
           width: 100%;
@@ -425,9 +480,7 @@ export default function SearchPage() {
           background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
         }
 
-        .card-poster-placeholder svg {
-          opacity: 0.15;
-        }
+        .card-poster-placeholder svg { opacity: 0.15; }
 
         .card-badge {
           position: absolute;
@@ -443,22 +496,6 @@ export default function SearchPage() {
           color: var(--gold);
           backdrop-filter: blur(4px);
           border: 1px solid rgba(201,169,110,0.2);
-        }
-
-        .card-score {
-          position: absolute;
-          bottom: 8px;
-          right: 8px;
-          font-size: 11px;
-          font-weight: 600;
-          padding: 3px 7px;
-          border-radius: 4px;
-          background: rgba(13,13,15,0.85);
-          color: var(--text-primary);
-          backdrop-filter: blur(4px);
-          display: flex;
-          align-items: center;
-          gap: 3px;
         }
 
         .card-info {
@@ -478,21 +515,17 @@ export default function SearchPage() {
           transition: color 0.15s;
         }
 
-        .card:hover .card-title {
+        .card:hover .card-title { color: var(--gold-light); }
+
+        .card.highlight .card-poster {
+          box-shadow: 0 18px 44px rgba(0,0,0,0.65), 0 0 0 1px rgba(201,169,110,0.28);
+          transform: translateY(-2px);
+        }
+
+        .card.highlight .card-title {
           color: var(--gold-light);
         }
 
-        .card-sub {
-          font-size: 11.5px;
-          font-weight: 400;
-          color: var(--text-muted);
-          margin-top: 3px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        /* ── Empty / Skeleton ── */
         .empty-state {
           display: flex;
           flex-direction: column;
@@ -525,10 +558,9 @@ export default function SearchPage() {
         .empty-sub {
           font-size: 13px;
           color: var(--text-muted);
-          max-width: 300px;
+          max-width: 360px;
         }
 
-        /* Skeleton shimmer */
         .skeleton-grid {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -549,17 +581,13 @@ export default function SearchPage() {
           overflow: hidden;
         }
 
-        .skeleton-poster::after {
+        .skeleton-poster::after,
+        .skeleton-line::after {
           content: '';
           position: absolute;
           inset: 0;
           background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.04) 50%, transparent 100%);
           animation: shimmer 1.6s ease-in-out infinite;
-        }
-
-        @keyframes shimmer {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(100%); }
         }
 
         .skeleton-line {
@@ -570,82 +598,64 @@ export default function SearchPage() {
           overflow: hidden;
         }
 
-        .skeleton-line::after {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.04) 50%, transparent 100%);
-          animation: shimmer 1.6s ease-in-out infinite;
-        }
-
         .skeleton-line.short { width: 60%; }
 
-        /* ── Section divider ── */
-        .section-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-bottom: 20px;
-        }
-
-        .section-title {
-          font-family: 'Playfair Display', serif;
-          font-size: 20px;
-          font-weight: 400;
-          color: var(--text-primary);
-        }
-
-        .section-count {
-          font-size: 12px;
-          color: var(--text-muted);
-          font-weight: 500;
-        }
-
-        .divider {
-          height: 1px;
-          background: var(--border);
-          margin: 48px 0;
-        }
-
-        /* Fade-in animation for cards */
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(16px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-
-        .card-animate {
-          animation: fadeUp 0.3s ease forwards;
-          opacity: 0;
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
         }
       `}</style>
 
       <div className="search-page">
         <div className="search-container">
-
-          {/* Header */}
           <header className="search-header">
             <p className="search-eyebrow">Discover</p>
             <h1 className="search-headline">Search Anime & Manga</h1>
 
-            {/* Search bar */}
             <div className="search-bar-wrap">
               <div className="search-bar">
-                <svg className="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  className="search-icon"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <circle cx="11" cy="11" r="8" />
                   <path d="m21 21-4.35-4.35" />
                 </svg>
+
                 <input
                   ref={inputRef}
                   className="search-input"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search by title, native name, or slug…"
+                  onKeyDown={onKeyDown}
+                  placeholder="Type to search… (↑/↓ to navigate, Enter to open)"
                   autoComplete="off"
                   spellCheck={false}
                 />
-                {qtrim && (
-                  <button type="button" className="search-clear" onClick={() => setQuery("")} aria-label="Clear search">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+
+                {!!qtrim && (
+                  <button
+                    type="button"
+                    className="search-clear"
+                    onClick={() => setQuery("")}
+                    aria-label="Clear search"
+                  >
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                    >
                       <path d="M18 6 6 18M6 6l12 12" />
                     </svg>
                   </button>
@@ -656,7 +666,9 @@ export default function SearchPage() {
                 {loading ? (
                   <>
                     <div className="loading-dots">
-                      <span /><span /><span />
+                      <span />
+                      <span />
+                      <span />
                     </div>
                     <span>Searching…</span>
                   </>
@@ -671,17 +683,27 @@ export default function SearchPage() {
             </div>
           </header>
 
-          {/* Body */}
           {!qtrim && !hasSearched ? (
             <div className="empty-state">
               <div className="empty-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <circle cx="11" cy="11" r="8" />
                   <path d="m21 21-4.35-4.35" />
                 </svg>
               </div>
               <p className="empty-title">Start typing to search</p>
-              <p className="empty-sub">Find anime and manga by title in any language, or by slug.</p>
+              <p className="empty-sub">
+                This version is just doing a simple contains search with ILIKE.
+              </p>
             </div>
           ) : loading ? (
             <SkeletonGrid count={12} />
@@ -689,7 +711,16 @@ export default function SearchPage() {
             qtrim ? (
               <div className="empty-state">
                 <div className="empty-icon">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <path d="M9.172 16.172a4 4 0 0 1 5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                   </svg>
                 </div>
@@ -699,14 +730,16 @@ export default function SearchPage() {
             ) : null
           ) : (
             <>
-              {/* Tabs — only shown when there are results */}
               <div className="tabs-row">
                 {tabs.map((t) => (
                   <button
                     key={t.id}
                     type="button"
                     className={`tab-btn${activeTab === t.id ? " active" : ""}`}
-                    onClick={() => setActiveTab(t.id)}
+                    onClick={() => {
+                      setActiveTab(t.id);
+                      setHighlightIndex(-1);
+                    }}
                   >
                     {t.label}
                     {t.count > 0 && <span className="tab-count">{t.count}</span>}
@@ -714,31 +747,11 @@ export default function SearchPage() {
                 ))}
               </div>
 
-              {/* Results */}
-              {activeTab === "all" ? (
-                <ResultGrid items={visibleItems} />
-              ) : (
-                <>
-                  {activeTab === "anime" && (
-                    <section>
-                      <div className="section-header">
-                        <h2 className="section-title">Anime</h2>
-                        <span className="section-count">{animeItems.length} title{animeItems.length !== 1 ? "s" : ""}</span>
-                      </div>
-                      <ResultGrid items={animeItems} />
-                    </section>
-                  )}
-                  {activeTab === "manga" && (
-                    <section>
-                      <div className="section-header">
-                        <h2 className="section-title">Manga</h2>
-                        <span className="section-count">{mangaItems.length} title{mangaItems.length !== 1 ? "s" : ""}</span>
-                      </div>
-                      <ResultGrid items={mangaItems} />
-                    </section>
-                  )}
-                </>
-              )}
+              <ResultGrid
+                items={visibleItems}
+                highlightIndex={highlightIndex}
+                setHighlightIndex={setHighlightIndex}
+              />
             </>
           )}
         </div>
@@ -758,43 +771,51 @@ type ResultItem = {
   type: "Anime" | "Manga";
 };
 
-function ResultGrid({ items }: { items: ResultItem[] }) {
+function ResultGrid({
+  items,
+  highlightIndex,
+  setHighlightIndex,
+}: {
+  items: ResultItem[];
+  highlightIndex: number;
+  setHighlightIndex: (n: number) => void;
+}) {
   return (
     <div className="results-grid">
       {items.map((item, i) => (
         <Link
           key={item.key}
           href={item.href}
-          className="card card-animate"
+          className={`card card-animate${i === highlightIndex ? " highlight" : ""}`}
           style={{ animationDelay: `${Math.min(i * 30, 300)}ms` }}
           prefetch={false}
+          onMouseEnter={() => setHighlightIndex(i)}
         >
           <div className="card-poster">
             {item.imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
               <img src={item.imageUrl} alt={item.title} loading="lazy" />
             ) : (
               <div className="card-poster-placeholder">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <svg
+                  width="32"
+                  height="32"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                >
                   <rect x="3" y="3" width="18" height="18" rx="2" />
                   <path d="m9 9 6 6m0-6-6 6" />
                 </svg>
               </div>
             )}
             <span className="card-badge">{item.type}</span>
-            {item.score && (
-              <span className="card-score">
-                <svg width="9" height="9" viewBox="0 0 24 24" fill="#c9a96e" stroke="none">
-                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                </svg>
-                {item.score}
-              </span>
-            )}
           </div>
+
           <div className="card-info">
             <p className="card-title">{item.title}</p>
-            {item.sub && item.sub !== item.title && (
-              <p className="card-sub">{item.sub}</p>
-            )}
+            {item.sub && item.sub !== item.title ? <p className="card-sub">{item.sub}</p> : null}
           </div>
         </Link>
       ))}
