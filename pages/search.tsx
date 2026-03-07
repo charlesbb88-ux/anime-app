@@ -29,9 +29,13 @@ function normalizeSearchInput(value: string) {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/[^a-z0-9 ]/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function hasSpecialSearchChars(value: string) {
+  return /[':./\\\-!()&]/.test(value);
 }
 
 export default function SearchPage() {
@@ -72,52 +76,137 @@ export default function SearchPage() {
     setHasSearched(true);
 
     const mySeq = ++requestSeqRef.current;
-    const pattern = `%${normalizedQuery}%`;
+    const regex = `(^| )${normalizedQuery}`;
+    const useRawPriority = hasSpecialSearchChars(raw);
+    const rawPattern = `%${raw}%`;
 
-    const [animeRes, mangaRes] = await Promise.all([
+    const requests = [
       supabase
         .from("anime")
         .select("id, slug, title, title_english, image_url")
-        .ilike("search_text", pattern)
-        .limit(50),
+        .filter("search_text_main", "match", regex)
+        .limit(100),
 
       supabase
         .from("manga")
         .select("id, slug, title, title_english, image_url")
-        .ilike("search_text", pattern)
-        .limit(50),
-    ]);
+        .filter("search_text_main", "match", regex)
+        .limit(100),
+
+      supabase
+        .from("anime")
+        .select("id, slug, title, title_english, image_url")
+        .filter("search_text", "match", regex)
+        .limit(100),
+
+      supabase
+        .from("manga")
+        .select("id, slug, title, title_english, image_url")
+        .filter("search_text", "match", regex)
+        .limit(100),
+    ];
+
+    const rawRequests = useRawPriority
+      ? [
+        supabase
+          .from("anime")
+          .select("id, slug, title, title_english, image_url")
+          .or(`title.ilike.${rawPattern},title_english.ilike.${rawPattern}`)
+          .limit(50),
+
+        supabase
+          .from("manga")
+          .select("id, slug, title, title_english, image_url")
+          .or(`title.ilike.${rawPattern},title_english.ilike.${rawPattern}`)
+          .limit(50),
+      ]
+      : [];
+
+    const results = await Promise.all([...rawRequests, ...requests]);
 
     if (mySeq !== requestSeqRef.current) return;
 
-    if (animeRes.error || mangaRes.error) {
-      console.error("[search] anime error", animeRes.error);
-      console.error("[search] manga error", mangaRes.error);
+    let animeRawRes: any = null;
+    let mangaRawRes: any = null;
+    let animeMainRes: any;
+    let mangaMainRes: any;
+    let animeFallbackRes: any;
+    let mangaFallbackRes: any;
+
+    if (useRawPriority) {
+      [animeRawRes, mangaRawRes, animeMainRes, mangaMainRes, animeFallbackRes, mangaFallbackRes] = results;
+    } else {
+      [animeMainRes, mangaMainRes, animeFallbackRes, mangaFallbackRes] = results;
+    }
+
+    if (
+      animeRawRes?.error ||
+      mangaRawRes?.error ||
+      animeMainRes.error ||
+      mangaMainRes.error ||
+      animeFallbackRes.error ||
+      mangaFallbackRes.error
+    ) {
+      console.error("[search] anime raw error", animeRawRes?.error);
+      console.error("[search] manga raw error", mangaRawRes?.error);
+      console.error("[search] anime main error", animeMainRes.error);
+      console.error("[search] manga main error", mangaMainRes.error);
+      console.error("[search] anime fallback error", animeFallbackRes.error);
+      console.error("[search] manga fallback error", mangaFallbackRes.error);
       setRows([]);
       setLoading(false);
       setHighlightIndex(-1);
       return;
     }
 
-    const animeRows = ((animeRes.data || []) as any[]).map((r) => ({
-      kind: "anime" as const,
+    const mapRow = (r: any, kind: "anime" | "manga"): SearchRow => ({
+      kind,
       id: String(r.id),
       slug: String(r.slug),
       title: String(r.title_english || r.title || ""),
       image_url: (r.image_url ?? null) as string | null,
       score: null,
-    }));
+    });
 
-    const mangaRows = ((mangaRes.data || []) as any[]).map((r) => ({
-      kind: "manga" as const,
-      id: String(r.id),
-      slug: String(r.slug),
-      title: String(r.title_english || r.title || ""),
-      image_url: (r.image_url ?? null) as string | null,
-      score: null,
-    }));
+    const merged = new Map<string, SearchRow>();
 
-    setRows([...animeRows, ...mangaRows]);
+    if (useRawPriority) {
+      for (const r of (animeRawRes?.data || []) as any[]) {
+        const row = mapRow(r, "anime");
+        merged.set(`anime:${row.id}`, row);
+      }
+
+      for (const r of (mangaRawRes?.data || []) as any[]) {
+        const row = mapRow(r, "manga");
+        merged.set(`manga:${row.id}`, row);
+      }
+    }
+
+    for (const r of (animeMainRes.data || []) as any[]) {
+      const row = mapRow(r, "anime");
+      const key = `anime:${row.id}`;
+      if (!merged.has(key)) merged.set(key, row);
+    }
+
+    for (const r of (mangaMainRes.data || []) as any[]) {
+      const row = mapRow(r, "manga");
+      const key = `manga:${row.id}`;
+      if (!merged.has(key)) merged.set(key, row);
+    }
+
+    for (const r of (animeFallbackRes.data || []) as any[]) {
+      const row = mapRow(r, "anime");
+      const key = `anime:${row.id}`;
+      if (!merged.has(key)) merged.set(key, row);
+    }
+
+    for (const r of (mangaFallbackRes.data || []) as any[]) {
+      const row = mapRow(r, "manga");
+      const key = `manga:${row.id}`;
+      if (!merged.has(key)) merged.set(key, row);
+    }
+
+    setRows(Array.from(merged.values()).slice(0, 200));
     setLoading(false);
     setHighlightIndex(-1);
   }, []);
@@ -702,7 +791,7 @@ export default function SearchPage() {
               </div>
               <p className="empty-title">Start typing to search</p>
               <p className="empty-sub">
-                This version is just doing a simple contains search with ILIKE.
+                This search shows clean title matches first, then broader fallback matches.
               </p>
             </div>
           ) : loading ? (
