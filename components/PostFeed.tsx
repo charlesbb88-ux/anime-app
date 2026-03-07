@@ -147,7 +147,7 @@ function ImpressionWrap({
       },
       {
         root: null,
-        rootMargin: "250px 0px",
+        rootMargin: "0px 0px",
         threshold: 0.01,
       }
     );
@@ -171,6 +171,7 @@ export default function PostFeed({
   const seenThisSessionRef = useRef<Set<string>>(new Set());
 
   const [user, setUser] = useState<any>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [postContent, setPostContent] = useState("");
   const [postContentJson, setPostContentJson] = useState<any>(null);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -238,10 +239,12 @@ export default function PostFeed({
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user);
+      setAuthChecked(true);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      setAuthChecked(true);
     });
 
     return () => listener?.subscription.unsubscribe();
@@ -254,8 +257,25 @@ export default function PostFeed({
       void flushQueuedImpressions();
     }
 
+    function handlePageHide() {
+      void flushQueuedImpressions();
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "hidden") {
+        void flushQueuedImpressions();
+      }
+    }
+
     window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("pagehide", handlePageHide);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("pagehide", handlePageHide);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [isGlobal, user?.id]);
 
   // -------------------------------
@@ -293,9 +313,11 @@ export default function PostFeed({
   // FETCH FEED
   // -------------------------------
   useEffect(() => {
+    if (isGlobal && !authChecked) return;
+
     fetchFeed("initial");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [animeId, animeEpisodeId, mangaId, mangaChapterId]);
+  }, [animeId, animeEpisodeId, mangaId, mangaChapterId, authChecked]);
 
   // -------------------------------
   // LOAD REVIEWS FOR POSTS (posts.review_id → reviews.id)
@@ -457,6 +479,16 @@ export default function PostFeed({
       }
 
       const newPosts = (postsData || []) as Post[];
+
+      if (
+        isInitial &&
+        useHomeFeedRpc &&
+        user?.id &&
+        typeof window !== "undefined" &&
+        window.innerWidth <= 768
+      ) {
+        newPosts.slice(0, 4).forEach((p) => recordImpression(p.id));
+      }
 
       // ✅ append / replace, and track exactly which posts were truly added
       let addedPosts: Post[] = [];
@@ -908,12 +940,12 @@ export default function PostFeed({
     queuedImpressionIdsRef.current.add(postId);
   }
 
-async function flushQueuedImpressions() {
-  const ids = Array.from(queuedImpressionIdsRef.current);
-  if (ids.length === 0) return;
-  if (!user?.id) return;
+  async function flushQueuedImpressions() {
+    const ids = Array.from(queuedImpressionIdsRef.current);
+    if (ids.length === 0) return;
+    if (!user?.id) return;
 
-  queuedImpressionIdsRef.current.clear();
+    queuedImpressionIdsRef.current.clear();
 
     const nowIso = new Date().toISOString();
 
