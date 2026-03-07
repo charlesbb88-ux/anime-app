@@ -1,7 +1,7 @@
 "use client";
 
 import ReviewPostRow from "./ReviewPostRow";
-import { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { supabase } from "../lib/supabaseClient";
@@ -31,6 +31,10 @@ type Post = {
 
   // ✅ review link (posts.review_id → reviews.id)
   review_id: string | null;
+
+  // home-feed RPC fields
+  seen_group?: number;
+  rank_score?: number;
 };
 
 type Like = {
@@ -112,6 +116,49 @@ type PostFeedProps = {
   mangaChapterId?: string;
 };
 
+function ImpressionWrap({
+  postId,
+  onSeen,
+  children,
+}: {
+  postId: string;
+  onSeen?: (postId: string) => void;
+  children: React.ReactNode;
+}) {
+  const rowRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!onSeen) return;
+
+    const el = rowRef.current;
+    if (!el) return;
+
+    let fired = false;
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0];
+        if (!first?.isIntersecting) return;
+        if (fired) return;
+
+        fired = true;
+        onSeen(postId);
+        obs.disconnect();
+      },
+      {
+        root: null,
+        rootMargin: "250px 0px",
+        threshold: 0.01,
+      }
+    );
+
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [onSeen, postId]);
+
+  return <div ref={rowRef}>{children}</div>;
+}
+
 export default function PostFeed({
   animeId,
   animeEpisodeId,
@@ -119,6 +166,9 @@ export default function PostFeed({
   mangaChapterId,
 }: PostFeedProps) {
   const router = useRouter();
+  const isGlobal = !animeId && !animeEpisodeId && !mangaId && !mangaChapterId;
+  const queuedImpressionIdsRef = useRef<Set<string>>(new Set());
+  const seenThisSessionRef = useRef<Set<string>>(new Set());
 
   const [user, setUser] = useState<any>(null);
   const [postContent, setPostContent] = useState("");
@@ -145,6 +195,8 @@ export default function PostFeed({
 
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [cursorSeenGroup, setCursorSeenGroup] = useState<number | null>(null);
+  const [cursorScore, setCursorScore] = useState<number | null>(null);
   const [cursorCreatedAt, setCursorCreatedAt] = useState<string | null>(null);
   const [cursorId, setCursorId] = useState<string | null>(null);
 
@@ -194,6 +246,17 @@ export default function PostFeed({
 
     return () => listener?.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!isGlobal || !user?.id) return;
+
+    function handleBeforeUnload() {
+      void flushQueuedImpressions();
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isGlobal, user?.id]);
 
   // -------------------------------
   // LOAD CURRENT USER PROFILE
@@ -324,6 +387,8 @@ export default function PostFeed({
     if (isInitial) {
       setIsLoadingPosts(true);
       setHasMore(true);
+      setCursorSeenGroup(null);
+      setCursorScore(null);
       setCursorCreatedAt(null);
       setCursorId(null);
       setAttachmentsByPostId({});
@@ -336,30 +401,50 @@ export default function PostFeed({
 
     try {
       const limit = isInitial ? INITIAL_LIMIT : PAGE_SIZE;
+      const useHomeFeedRpc = isGlobal;
 
-      let query = supabase
-        .from("posts")
-        .select(
-          "id, user_id, content, content_text, content_json, created_at, anime_id, anime_episode_id, manga_id, manga_chapter_id, review_id"
-        )
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false })
-        .limit(limit);
+      let postsData: any[] | null = null;
+      let postsError: any = null;
 
-      // filters (same as you already had)
-      if (animeEpisodeId) query = query.eq("anime_episode_id", animeEpisodeId);
-      else if (animeId) query = query.eq("anime_id", animeId);
-      else if (mangaChapterId) query = query.eq("manga_chapter_id", mangaChapterId);
-      else if (mangaId) query = query.eq("manga_id", mangaId);
+      if (useHomeFeedRpc) {
+        const { data, error } = await supabase.rpc("get_home_feed", {
+          p_user_id: user?.id ?? null,
+          p_limit: limit,
+          p_cursor_seen_group: isInitial ? null : cursorSeenGroup,
+          p_cursor_score: isInitial ? null : cursorScore,
+          p_cursor_created_at: isInitial ? null : cursorCreatedAt,
+          p_cursor_id: isInitial ? null : cursorId,
+        });
 
-      // ✅ keyset pagination: older than the current cursor
-      if (!isInitial && cursorCreatedAt && cursorId) {
-        query = query.or(
-          `created_at.lt.${cursorCreatedAt},and(created_at.eq.${cursorCreatedAt},id.lt.${cursorId})`
-        );
+        postsData = data;
+        postsError = error;
+      } else {
+        let query = supabase
+          .from("posts")
+          .select(
+            "id, user_id, content, content_text, content_json, created_at, anime_id, anime_episode_id, manga_id, manga_chapter_id, review_id"
+          )
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .limit(limit);
+
+        // filters (same as you already had)
+        if (animeEpisodeId) query = query.eq("anime_episode_id", animeEpisodeId);
+        else if (animeId) query = query.eq("anime_id", animeId);
+        else if (mangaChapterId) query = query.eq("manga_chapter_id", mangaChapterId);
+        else if (mangaId) query = query.eq("manga_id", mangaId);
+
+        // ✅ keyset pagination: older than the current cursor
+        if (!isInitial && cursorCreatedAt && cursorId) {
+          query = query.or(
+            `created_at.lt.${cursorCreatedAt},and(created_at.eq.${cursorCreatedAt},id.lt.${cursorId})`
+          );
+        }
+
+        const { data, error } = await query;
+        postsData = data;
+        postsError = error;
       }
-
-      const { data: postsData, error: postsError } = await query;
 
       if (postsError) {
         console.error("Error fetching posts:", postsError);
@@ -373,20 +458,39 @@ export default function PostFeed({
 
       const newPosts = (postsData || []) as Post[];
 
-      // ✅ append / replace
+      // ✅ append / replace, and track exactly which posts were truly added
+      let addedPosts: Post[] = [];
+
       const nextPostList = isInitial
-        ? newPosts
+        ? (() => {
+          addedPosts = newPosts;
+          return newPosts;
+        })()
         : (() => {
           const seen = new Set(posts.map((p) => p.id));
           const merged = [...posts];
-          for (const p of newPosts) if (!seen.has(p.id)) merged.push(p);
+
+          for (const p of newPosts) {
+            if (!seen.has(p.id)) {
+              merged.push(p);
+              seen.add(p.id);
+              addedPosts.push(p);
+            }
+          }
+
           return merged;
         })();
 
       setPosts(nextPostList);
 
-      // ✅ update cursor to the LAST item we have
-      const last = nextPostList[nextPostList.length - 1];
+      // ✅ update cursor from the LAST ROW RETURNED BY THIS FETCH
+      const last = newPosts[newPosts.length - 1];
+      setCursorSeenGroup(
+        useHomeFeedRpc && typeof last?.seen_group === "number" ? last.seen_group : null
+      );
+      setCursorScore(
+        useHomeFeedRpc && typeof last?.rank_score === "number" ? last.rank_score : null
+      );
       setCursorCreatedAt(last?.created_at ?? null);
       setCursorId(last?.id ?? null);
 
@@ -396,8 +500,8 @@ export default function PostFeed({
       // ------------------------------------------------------------
       // Now load metadata/likes/comments for the NEWLY ADDED posts only
       // ------------------------------------------------------------
-      const newIds = newPosts.map((p) => p.id);
-      const newUserIds = Array.from(new Set(newPosts.map((p) => p.user_id)));
+      const newIds = addedPosts.map((p) => p.id);
+      const newUserIds = Array.from(new Set(addedPosts.map((p) => p.user_id)));
 
       // -------------------------------
       // LOAD ATTACHMENTS for new posts
@@ -413,7 +517,7 @@ export default function PostFeed({
           console.error("Error loading attachments:", attErr);
         } else {
           setAttachmentsByPostId((prev) => {
-            const next = { ...prev };
+            const next = isInitial ? {} : { ...prev };
             (attRows || []).forEach((r: any) => {
               const list = next[r.post_id] ? [...next[r.post_id]] : [];
               list.push(r);
@@ -435,7 +539,10 @@ export default function PostFeed({
 
         if (!likesError) {
           setLikeCounts((prev) => {
-            const next = { ...prev };
+            const next = isInitial ? {} : { ...prev };
+            newIds.forEach((id) => {
+              next[id] = 0;
+            });
             (likesData || []).forEach((l: Like) => {
               next[l.post_id] = (next[l.post_id] || 0) + 1;
             });
@@ -450,7 +557,10 @@ export default function PostFeed({
 
         if (!commentsError) {
           setReplyCounts((prev) => {
-            const next = { ...prev };
+            const next = isInitial ? {} : { ...prev };
+            newIds.forEach((id) => {
+              next[id] = 0;
+            });
             (commentsData || []).forEach((c: CommentMeta) => {
               if (c.parent_comment_id === null) {
                 next[c.post_id] = (next[c.post_id] || 0) + 1;
@@ -470,7 +580,7 @@ export default function PostFeed({
 
         if (!profilesError) {
           setUsernamesById((prev) => {
-            const next = { ...prev };
+            const next = isInitial ? {} : { ...prev };
             (profilesData || []).forEach((profile: Profile) => {
               if (profile.username?.trim()) next[profile.id] = profile.username.trim();
             });
@@ -478,7 +588,7 @@ export default function PostFeed({
           });
 
           setAvatarUrlsById((prev) => {
-            const next = { ...prev };
+            const next = isInitial ? {} : { ...prev };
             (profilesData || []).forEach((profile: Profile) => {
               next[profile.id] = profile.avatar_url ?? null;
             });
@@ -489,7 +599,7 @@ export default function PostFeed({
 
       // anime meta for new posts only
       const uniqueAnimeIds = Array.from(
-        new Set(newPosts.map((p) => p.anime_id).filter((id): id is string => !!id))
+        new Set(addedPosts.map((p) => p.anime_id).filter((id): id is string => !!id))
       );
 
       if (uniqueAnimeIds.length > 0) {
@@ -500,7 +610,7 @@ export default function PostFeed({
 
         if (!animeError) {
           setAnimeMetaById((prev) => {
-            const next = { ...prev };
+            const next = isInitial ? {} : { ...prev };
             (animeRows || []).forEach((row: any) => {
               if (!row.id) return;
               next[row.id] = {
@@ -517,7 +627,9 @@ export default function PostFeed({
 
       // episode meta for new posts only
       const uniqueEpisodeIds = Array.from(
-        new Set(newPosts.map((p) => p.anime_episode_id).filter((id): id is string => !!id))
+        new Set(
+          addedPosts.map((p) => p.anime_episode_id).filter((id): id is string => !!id)
+        )
       );
 
       if (uniqueEpisodeIds.length > 0) {
@@ -528,7 +640,7 @@ export default function PostFeed({
 
         if (!episodeError) {
           setEpisodeMetaById((prev) => {
-            const next = { ...prev };
+            const next = isInitial ? {} : { ...prev };
             (episodeRows || []).forEach((row: any) => {
               if (!row.id) return;
               next[row.id] = {
@@ -547,7 +659,7 @@ export default function PostFeed({
 
       // manga meta for new posts only
       const uniqueMangaIds = Array.from(
-        new Set(newPosts.map((p) => p.manga_id).filter((id): id is string => !!id))
+        new Set(addedPosts.map((p) => p.manga_id).filter((id): id is string => !!id))
       );
 
       if (uniqueMangaIds.length > 0) {
@@ -558,7 +670,7 @@ export default function PostFeed({
 
         if (!mangaError) {
           setMangaMetaById((prev) => {
-            const next = { ...prev };
+            const next = isInitial ? {} : { ...prev };
             (mangaRows || []).forEach((row: any) => {
               if (!row.id) return;
               next[row.id] = {
@@ -575,7 +687,9 @@ export default function PostFeed({
 
       // chapter meta for new posts only
       const uniqueChapterIds = Array.from(
-        new Set(newPosts.map((p) => p.manga_chapter_id).filter((id): id is string => !!id))
+        new Set(
+          addedPosts.map((p) => p.manga_chapter_id).filter((id): id is string => !!id)
+        )
       );
 
       if (uniqueChapterIds.length > 0) {
@@ -586,7 +700,7 @@ export default function PostFeed({
 
         if (!chapterError) {
           setChapterMetaById((prev) => {
-            const next = { ...prev };
+            const next = isInitial ? {} : { ...prev };
             (chapterRows || []).forEach((row: any) => {
               if (!row.id) return;
               next[row.id] = {
@@ -603,8 +717,13 @@ export default function PostFeed({
         }
       }
     } finally {
-      if (isInitial) setIsLoadingPosts(false);
-      else setLoadingMore(false);
+      if (isInitial) {
+        setIsLoadingPosts(false);
+      } else {
+        setLoadingMore(false);
+      }
+
+      void flushQueuedImpressions();
     }
   }
 
@@ -778,9 +897,56 @@ export default function PostFeed({
   }
 
   // ============================================================
+  // RECORD IMPRESSION (not used yet)
+  // ============================================================
+  function recordImpression(postId: string) {
+    if (!isGlobal) return;
+    if (!user?.id) return;
+    if (seenThisSessionRef.current.has(postId)) return;
+
+    seenThisSessionRef.current.add(postId);
+    queuedImpressionIdsRef.current.add(postId);
+  }
+
+async function flushQueuedImpressions() {
+  const ids = Array.from(queuedImpressionIdsRef.current);
+  if (ids.length === 0) return;
+  if (!user?.id) return;
+
+  queuedImpressionIdsRef.current.clear();
+
+    const nowIso = new Date().toISOString();
+
+    const rows = ids.map((postId) => ({
+      user_id: user.id,
+      post_id: postId,
+      last_seen_at: nowIso,
+    }));
+
+    const { error } = await supabase
+      .from("post_impressions")
+      .upsert(rows, { onConflict: "user_id,post_id" });
+
+    if (error) {
+      console.error("Error flushing queued impressions:", error);
+    }
+  }
+
+  // ============================================================
   // OPEN POST
   // ============================================================
-  function openPost(postId: string) {
+  async function openPost(postId: string) {
+    if (user?.id) {
+      const { error } = await supabase.from("post_clicks").insert({
+        post_id: postId,
+        user_id: user.id,
+      });
+
+      if (error) {
+        console.error("Error inserting post click:", error);
+      }
+    }
+
     router.push(`/posts/${postId}`);
   }
 
@@ -1027,84 +1193,88 @@ export default function PostFeed({
               const atts = attachmentsByPostId[p.id] || [];
 
               return review ? (
-                <ReviewPostRow
-                  key={p.id}
-                  postId={p.id}
-                  reviewId={review.id}
-                  userId={p.user_id}
-                  createdAt={p.created_at}
-                  content={(review.content ?? p.content) as string}
-                  contentText={p.content_text ?? null}
-                  contentJson={p.content_json ?? null}
-                  attachments={atts}
-                  rating={review.rating}
-                  containsSpoilers={!!review.contains_spoilers}
-                  authorLiked={!!review.author_liked}
-                  displayName={displayName}
-                  initial={initial}
-                  username={handle ?? undefined}
-                  avatarUrl={avatarUrl ?? null}
-                  originLabel={originLabel}
-                  originHref={originHref}
-                  episodeLabel={episodeLabel}
-                  episodeHref={episodeHref}
-                  posterUrl={posterUrl ?? null}
-                  href={`/posts/${p.id}`}
-                  isOwner={!!isOwner}
-                  replyCount={replyCount}
-                  likeCount={likeCount}
-                  likedByMe={liked}
-                  onRowClick={openPostFromIcon}
-                  onReplyClick={openPostFromIcon}
-                  onToggleLike={toggleLike}
-                  onEdit={(id, e) => {
-                    const post = posts.find((x) => x.id === id);
-                    if (post) handleEditPost(post, e);
-                  }}
-                  onDelete={(id, e) => {
-                    const post = posts.find((x) => x.id === id);
-                    if (post) handleDeletePost(post, e);
-                  }}
-                  isMenuOpen={isMenuOpen}
-                  onToggleMenu={toggleMenu}
-                />
+                <ImpressionWrap postId={p.id} onSeen={recordImpression}>
+                  <ReviewPostRow
+                    key={p.id}
+                    postId={p.id}
+                    reviewId={review.id}
+                    userId={p.user_id}
+                    createdAt={p.created_at}
+                    content={(review.content ?? p.content) as string}
+                    contentText={p.content_text ?? null}
+                    contentJson={p.content_json ?? null}
+                    attachments={atts}
+                    rating={review.rating}
+                    containsSpoilers={!!review.contains_spoilers}
+                    authorLiked={!!review.author_liked}
+                    displayName={displayName}
+                    initial={initial}
+                    username={handle ?? undefined}
+                    avatarUrl={avatarUrl ?? null}
+                    originLabel={originLabel}
+                    originHref={originHref}
+                    episodeLabel={episodeLabel}
+                    episodeHref={episodeHref}
+                    posterUrl={posterUrl ?? null}
+                    href={`/posts/${p.id}`}
+                    isOwner={!!isOwner}
+                    replyCount={replyCount}
+                    likeCount={likeCount}
+                    likedByMe={liked}
+                    onRowClick={openPostFromIcon}
+                    onReplyClick={openPostFromIcon}
+                    onToggleLike={toggleLike}
+                    onEdit={(id, e) => {
+                      const post = posts.find((x) => x.id === id);
+                      if (post) handleEditPost(post, e);
+                    }}
+                    onDelete={(id, e) => {
+                      const post = posts.find((x) => x.id === id);
+                      if (post) handleDeletePost(post, e);
+                    }}
+                    isMenuOpen={isMenuOpen}
+                    onToggleMenu={toggleMenu}
+                  />
+                </ImpressionWrap>
               ) : (
-                <CommentRow
-                  key={p.id}
-                  id={p.id}
-                  userId={p.user_id}
-                  createdAt={p.created_at}
-                  content={p.content}
-                  contentText={p.content_text ?? null}
-                  contentJson={p.content_json ?? null}
-                  attachments={atts}
-                  displayName={displayName}
-                  initial={initial}
-                  username={handle ?? undefined}
-                  avatarUrl={avatarUrl}
-                  isOwner={!!isOwner}
-                  href={`/posts/${p.id}`}
-                  replyCount={replyCount}
-                  likeCount={likeCount}
-                  likedByMe={liked}
-                  onRowClick={openPostFromIcon}
-                  onReplyClick={openPostFromIcon}
-                  onToggleLike={toggleLike}
-                  onEdit={(id, e) => {
-                    const post = posts.find((x) => x.id === id);
-                    if (post) handleEditPost(post, e);
-                  }}
-                  onDelete={(id, e) => {
-                    const post = posts.find((x) => x.id === id);
-                    if (post) handleDeletePost(post, e);
-                  }}
-                  isMenuOpen={isMenuOpen}
-                  onToggleMenu={toggleMenu}
-                  originLabel={originLabel}
-                  originHref={originHref}
-                  episodeLabel={episodeLabel}
-                  episodeHref={episodeHref}
-                />
+                <ImpressionWrap postId={p.id} onSeen={recordImpression}>
+                  <CommentRow
+                    key={p.id}
+                    id={p.id}
+                    userId={p.user_id}
+                    createdAt={p.created_at}
+                    content={p.content}
+                    contentText={p.content_text ?? null}
+                    contentJson={p.content_json ?? null}
+                    attachments={atts}
+                    displayName={displayName}
+                    initial={initial}
+                    username={handle ?? undefined}
+                    avatarUrl={avatarUrl}
+                    isOwner={!!isOwner}
+                    href={`/posts/${p.id}`}
+                    replyCount={replyCount}
+                    likeCount={likeCount}
+                    likedByMe={liked}
+                    onRowClick={openPostFromIcon}
+                    onReplyClick={openPostFromIcon}
+                    onToggleLike={toggleLike}
+                    onEdit={(id, e) => {
+                      const post = posts.find((x) => x.id === id);
+                      if (post) handleEditPost(post, e);
+                    }}
+                    onDelete={(id, e) => {
+                      const post = posts.find((x) => x.id === id);
+                      if (post) handleDeletePost(post, e);
+                    }}
+                    isMenuOpen={isMenuOpen}
+                    onToggleMenu={toggleMenu}
+                    originLabel={originLabel}
+                    originHref={originHref}
+                    episodeLabel={episodeLabel}
+                    episodeHref={episodeHref}
+                  />
+                </ImpressionWrap>
               );
             })}
 
@@ -1119,7 +1289,8 @@ export default function PostFeed({
               </div>
             )}
           </>
-        )}
+        )
+        }
       </div>
     </>
   );
