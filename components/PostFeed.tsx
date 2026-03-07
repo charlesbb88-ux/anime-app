@@ -317,7 +317,7 @@ export default function PostFeed({
 
     fetchFeed("initial");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [animeId, animeEpisodeId, mangaId, mangaChapterId, authChecked]);
+  }, [animeId, animeEpisodeId, mangaId, mangaChapterId, authChecked, user?.id]);
 
   // -------------------------------
   // LOAD REVIEWS FOR POSTS (posts.review_id → reviews.id)
