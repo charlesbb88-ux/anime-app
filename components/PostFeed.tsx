@@ -319,6 +319,14 @@ export default function PostFeed({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [animeId, animeEpisodeId, mangaId, mangaChapterId, authChecked, user?.id]);
 
+  useEffect(() => {
+    if (!isGlobal) return;
+    if (!authChecked) return;
+    if (!user?.id) return;
+
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [isGlobal, authChecked, user?.id]);
+
   // -------------------------------
   // LOAD REVIEWS FOR POSTS (posts.review_id → reviews.id)
   // -------------------------------
