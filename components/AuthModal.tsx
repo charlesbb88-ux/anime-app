@@ -393,7 +393,7 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
                       <input
                         value={identifier}
                         onChange={(e) => setIdentifier(e.target.value)}
-                        className="w-full h-12 rounded-xl border border-black/15 px-4 text-sm outline-none focus:border-black"
+                        className="w-full h-12 rounded-xl border border-black/15 px-4 text-base outline-none focus:border-black"
                         placeholder="Email or username"
                         autoComplete="username"
                         disabled={busy}
@@ -408,7 +408,7 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           type={showPassword ? "text" : "password"}
-                          className="w-full h-12 rounded-xl border border-black/15 pl-4 pr-12 text-sm outline-none focus:border-black"
+                          className="w-full h-12 rounded-xl border border-black/15 pl-4 pr-12 text-base outline-none focus:border-black"
                           placeholder="Password"
                           autoComplete="current-password"
                           disabled={busy}
@@ -459,7 +459,7 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         type="email"
-                        className="w-full h-12 rounded-xl border border-black/15 px-4 text-sm outline-none focus:border-black"
+                        className="w-full h-12 rounded-xl border border-black/15 px-4 text-base outline-none focus:border-black"
                         placeholder="Email"
                         autoComplete="email"
                         disabled={busy}
@@ -471,7 +471,7 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
                       <input
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
-                        className="w-full h-12 rounded-xl border border-black/15 px-4 text-sm outline-none focus:border-black"
+                        className="w-full h-12 rounded-xl border border-black/15 px-4 text-base outline-none focus:border-black"
                         placeholder="Username (lowercase)"
                         autoComplete="username"
                         disabled={busy}
@@ -489,7 +489,7 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           type={showPassword ? "text" : "password"}
-                          className="w-full h-12 rounded-xl border border-black/15 pl-4 pr-12 text-sm outline-none focus:border-black"
+                          className="w-full h-12 rounded-xl border border-black/15 pl-4 pr-12 text-base outline-none focus:border-black"
                           placeholder="Password (8+ characters)"
                           autoComplete="new-password"
                           disabled={busy}
@@ -542,7 +542,7 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
                     value={resetEmail}
                     onChange={(e) => setResetEmail(e.target.value)}
                     type="email"
-                    className="w-full h-12 rounded-xl border border-black/15 px-4 text-sm outline-none focus:border-black"
+                    className="w-full h-12 rounded-xl border border-black/15 px-4 text-base outline-none focus:border-black"
                     placeholder="Email address"
                     autoComplete="email"
                     disabled={busy}
