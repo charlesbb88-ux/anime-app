@@ -578,8 +578,29 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
 
   const showSecondaryTitle = Boolean(secondaryTitle);
 
-  const hasGenres = Array.isArray((m as any)?.genres) && (m as any).genres.length > 0;
-  const genres: string[] = (m as any)?.genres || [];
+  const genres: string[] = Array.isArray((m as any)?.genres) ? (m as any).genres : [];
+
+  const safetyPills: string[] = [
+    ...(typeof (m as any)?.content_rating === "string" && (m as any).content_rating.trim()
+      ? [(m as any).content_rating.trim()]
+      : []),
+    ...(Array.isArray((m as any)?.content_warnings)
+      ? (m as any).content_warnings.filter(
+        (x: unknown): x is string => typeof x === "string" && x.trim().length > 0
+      )
+      : []),
+  ];
+
+  const uniqueSafetyPills = Array.from(new Set(safetyPills));
+
+  const hasGenres = genres.length > 0 || uniqueSafetyPills.length > 0;
+
+  function formatSafetyPill(text: string) {
+    return text
+      .split(" ")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(" ");
+  }
 
   const spoilerTags = tags.filter((t) => t.is_general_spoiler === true || t.is_media_spoiler === true);
   const spoilerCount = spoilerTags.length;
@@ -634,10 +655,19 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                   <div className="flex flex-wrap gap-2">
                     {genres.map((g) => (
                       <span
-                        key={g}
+                        key={`genre-${g}`}
                         className="rounded-full bg-black px-3 py-1 text-xs text-gray-100"
                       >
                         {g}
+                      </span>
+                    ))}
+
+                    {uniqueSafetyPills.map((pill) => (
+                      <span
+                        key={`safety-${pill}`}
+                        className="rounded-full bg-red-700 px-3 py-1 text-xs text-white"
+                      >
+                        {formatSafetyPill(pill)}
                       </span>
                     ))}
                   </div>

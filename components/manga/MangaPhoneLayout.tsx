@@ -38,6 +38,8 @@ type Manga = {
     source: string | null;
 
     genres: string[] | null;
+    content_rating: string | null;
+    content_warnings: string[] | null;
 
     created_at: string;
 };
