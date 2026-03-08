@@ -83,12 +83,16 @@ export default function SearchPage() {
     const applyMangaSafetyFilters = <T,>(query: T) =>
       (query as any).or("content_rating.is.null,content_rating.not.in.(erotica,pornographic)");
 
+    const applyAnimeSafetyFilters = <T,>(query: T) =>
+      (query as any).or("genres.is.null,genres.not.cs.{Hentai}");
+
     const requests = [
-      supabase
-        .from("anime")
-        .select("id, slug, title, title_english, image_url")
-        .filter("search_text_main", "match", regex)
-        .limit(100),
+      applyAnimeSafetyFilters(
+        supabase
+          .from("anime")
+          .select("id, slug, title, title_english, image_url")
+          .filter("search_text_main", "match", regex)
+      ).limit(100),
 
       applyMangaSafetyFilters(
         supabase
@@ -97,11 +101,12 @@ export default function SearchPage() {
           .filter("search_text_main", "match", regex)
       ).limit(100),
 
-      supabase
-        .from("anime")
-        .select("id, slug, title, title_english, image_url")
-        .filter("search_text", "match", regex)
-        .limit(100),
+      applyAnimeSafetyFilters(
+        supabase
+          .from("anime")
+          .select("id, slug, title, title_english, image_url")
+          .filter("search_text", "match", regex)
+      ).limit(100),
 
       applyMangaSafetyFilters(
         supabase
