@@ -118,11 +118,12 @@ export default function SearchPage() {
 
     const rawRequests = useRawPriority
       ? [
-        supabase
-          .from("anime")
-          .select("id, slug, title, title_english, image_url")
-          .or(`title.ilike.${rawPattern},title_english.ilike.${rawPattern}`)
-          .limit(50),
+        applyAnimeSafetyFilters(
+          supabase
+            .from("anime")
+            .select("id, slug, title, title_english, image_url")
+            .or(`title.ilike.${rawPattern},title_english.ilike.${rawPattern}`)
+        ).limit(50),
 
         applyMangaSafetyFilters(
           supabase
