@@ -322,27 +322,26 @@ export default function SearchPage() {
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=DM+Sans:wght@300;400;500;600&display=swap');
 
         :root {
-          --bg: #0d0d0f;
-          --surface: #141416;
-          --surface-2: #1c1c1f;
-          --border: rgba(255,255,255,0.07);
-          --border-hover: rgba(255,255,255,0.14);
-          --gold: #c9a96e;
-          --gold-light: #e2c898;
-          --text-primary: #f0ede8;
-          --text-secondary: #8a8780;
-          --text-muted: #555350;
-          --accent: #c9a96e;
+          --bg: #f2f2f0;
+          --surface: #ffffff;
+          --surface-2: #f5f5f1;
+          --border: rgba(0,0,0,0.12);
+          --border-hover: rgba(0,0,0,0.2);
+          --gold: #365691;
+          --gold-light: #1d3767;
+          --text-primary: #0f1217;
+          --text-secondary: #5d605f;
+          --text-muted: #8f9194;
+          --accent: #365691;
         }
 
         * { box-sizing: border-box; }
 
-        .search-page {
-          min-height: 100vh;
-          background: var(--bg);
-          font-family: 'DM Sans', sans-serif;
-          color: var(--text-primary);
-        }
+.search-page {
+  min-height: 100vh;
+  font-family: 'DM Sans', sans-serif;
+  color: var(--text-primary);
+}
 
         .search-container {
           max-width: 1200px;
@@ -351,10 +350,16 @@ export default function SearchPage() {
         }
 
         .search-header {
-          padding: 64px 0 40px;
+          padding: 50px 0 20px;
           border-bottom: 1px solid var(--border);
-          margin-bottom: 40px;
+          margin-bottom: 30px;
         }
+
+        @media (max-width: 639px) {
+  .search-header {
+    padding-top: 20px;
+  }
+}
 
         .search-eyebrow {
           font-family: 'DM Sans', sans-serif;
@@ -388,13 +393,13 @@ export default function SearchPage() {
           background: var(--surface);
           border: 1px solid var(--border);
           border-radius: 14px;
-          padding: 14px 18px;
+          padding: 8px 18px;
           transition: border-color 0.2s, box-shadow 0.2s;
         }
 
         .search-bar:focus-within {
           border-color: var(--gold);
-          box-shadow: 0 0 0 3px rgba(201,169,110,0.1), 0 8px 32px rgba(0,0,0,0.4);
+          box-shadow: 0 0 0 3px rgba(54,86,145,0.1), 0 8px 32px rgba(0,0,0,0.08);
         }
 
         .search-icon {
@@ -437,7 +442,7 @@ export default function SearchPage() {
         }
 
         .search-clear:hover {
-          background: rgba(201,169,110,0.15);
+          background: rgba(54,86,145,0.12);
           color: var(--gold);
         }
 
@@ -453,7 +458,9 @@ export default function SearchPage() {
 
         .loading-dots { display: flex; gap: 4px; align-items: center; }
         .loading-dots span {
-          width: 4px; height: 4px; border-radius: 50%;
+          width: 4px;
+          height: 4px;
+          border-radius: 50%;
           background: var(--gold);
           animation: dot-bounce 1.2s ease-in-out infinite;
         }
@@ -495,8 +502,8 @@ export default function SearchPage() {
 
         .tab-btn.active {
           color: var(--gold);
-          background: rgba(201,169,110,0.08);
-          border-color: rgba(201,169,110,0.2);
+          background: rgba(54,86,145,0.08);
+          border-color: rgba(54,86,145,0.2);
         }
 
         .tab-count {
@@ -510,7 +517,7 @@ export default function SearchPage() {
         }
 
         .tab-btn.active .tab-count {
-          background: rgba(201,169,110,0.15);
+          background: rgba(54,86,145,0.14);
           color: var(--gold);
         }
 
@@ -519,6 +526,13 @@ export default function SearchPage() {
           grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
           gap: 20px;
         }
+
+        @media (max-width: 639px) {
+  .results-grid {
+  gap: 12px;
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
 
         @media (min-width: 640px) {
           .results-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
@@ -537,17 +551,17 @@ export default function SearchPage() {
         .card-poster {
           aspect-ratio: 2/3;
           width: 100%;
-          border-radius: 10px;
+          border-radius: 5px;
           overflow: hidden;
           background: var(--surface);
-          border: 1px solid var(--border);
+          border: 1px solid black;
           position: relative;
           transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.25s ease;
         }
 
         .card:hover .card-poster {
           transform: translateY(-4px);
-          box-shadow: 0 20px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(201,169,110,0.2);
+          box-shadow: 0 20px 48px rgba(0,0,0,0.14), 0 0 0 1px rgba(54,86,145,0.24);
         }
 
         .card-poster img {
@@ -569,7 +583,7 @@ export default function SearchPage() {
           background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
         }
 
-        .card-poster-placeholder svg { opacity: 0.15; }
+        .card-poster-placeholder svg { opacity: 0.22; }
 
         .card-badge {
           position: absolute;
@@ -581,10 +595,10 @@ export default function SearchPage() {
           text-transform: uppercase;
           padding: 3px 7px;
           border-radius: 4px;
-          background: rgba(13,13,15,0.85);
-          color: var(--gold);
+          background: rgba(255, 255, 255, 0.88);
+          color: black;
           backdrop-filter: blur(4px);
-          border: 1px solid rgba(201,169,110,0.2);
+          border: 1px solid rgb(0, 0, 0);
         }
 
         .card-info {
@@ -607,7 +621,7 @@ export default function SearchPage() {
         .card:hover .card-title { color: var(--gold-light); }
 
         .card.highlight .card-poster {
-          box-shadow: 0 18px 44px rgba(0,0,0,0.65), 0 0 0 1px rgba(201,169,110,0.28);
+          box-shadow: 0 18px 44px rgba(0,0,0,0.12), 0 0 0 1px rgba(54,86,145,0.28);
           transform: translateY(-2px);
         }
 
@@ -675,7 +689,7 @@ export default function SearchPage() {
           content: '';
           position: absolute;
           inset: 0;
-          background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.04) 50%, transparent 100%);
+          background: linear-gradient(90deg, transparent 0%, rgba(0,0,0,0.05) 50%, transparent 100%);
           animation: shimmer 1.6s ease-in-out infinite;
         }
 
@@ -689,6 +703,35 @@ export default function SearchPage() {
 
         .skeleton-line.short { width: 60%; }
 
+        @media (max-width: 639px) {
+
+  /* padding above and below the divider */
+  .search-header {
+    padding: 20px 0 12px;
+    margin-bottom: 16px;
+  }
+
+  /* space around the tab row */
+  .tabs-row {
+    margin-bottom: 16px;
+  }
+
+  /* padding inside All / Anime / Manga buttons */
+  .tab-btn {
+    padding: 5px 12px;
+  }
+
+    /* smaller Anime / Manga pill on phone */
+  .card-badge {
+    top: 5px;
+    left: 5px;
+    font-size: 8px;
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+
+}
+
         @keyframes shimmer {
           0% { transform: translateX(-100%); }
           100% { transform: translateX(100%); }
@@ -698,9 +741,6 @@ export default function SearchPage() {
       <div className="search-page">
         <div className="search-container">
           <header className="search-header">
-            <p className="search-eyebrow">Discover</p>
-            <h1 className="search-headline">Search Anime & Manga</h1>
-
             <div className="search-bar-wrap">
               <div className="search-bar">
                 <svg
@@ -724,7 +764,7 @@ export default function SearchPage() {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={onKeyDown}
-                  placeholder="Type to search… (↑/↓ to navigate, Enter to open)"
+                  placeholder="Type to search…"
                   autoComplete="off"
                   spellCheck={false}
                 />
@@ -790,9 +830,6 @@ export default function SearchPage() {
                 </svg>
               </div>
               <p className="empty-title">Start typing to search</p>
-              <p className="empty-sub">
-                This search shows clean title matches first, then broader fallback matches.
-              </p>
             </div>
           ) : loading ? (
             <SkeletonGrid count={12} />

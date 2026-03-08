@@ -29,6 +29,8 @@ type Manga = {
   source: string | null;
 
   genres: string[] | null;
+  content_rating: string | null;
+  content_warnings: string[] | null;
 
   created_at: string;
 };
@@ -57,7 +59,28 @@ export default function MangaInfoDropdownMobile(props: {
   const [open, setOpen] = useState(false);
 
   const genres = Array.isArray(manga.genres) ? manga.genres : [];
-  const hasGenres = genres.length > 0;
+
+  const safetyPills: string[] = [
+    ...(typeof manga.content_rating === "string" && manga.content_rating.trim()
+      ? [manga.content_rating.trim()]
+      : []),
+    ...(Array.isArray(manga.content_warnings)
+      ? manga.content_warnings.filter(
+        (x: unknown): x is string => typeof x === "string" && x.trim().length > 0
+      )
+      : []),
+  ];
+
+  const uniqueSafetyPills = Array.from(new Set(safetyPills));
+
+  const hasGenres = genres.length > 0 || uniqueSafetyPills.length > 0;
+
+  function formatSafetyPill(text: string) {
+    return text
+      .split(" ")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(" ");
+  }
 
   const spoilerTags = useMemo(() => {
     return tags.filter(
@@ -140,10 +163,19 @@ export default function MangaInfoDropdownMobile(props: {
                 <div className="flex flex-wrap justify-center gap-2">
                   {genres.map((g) => (
                     <span
-                      key={g}
+                      key={`genre-${g}`}
                       className="rounded-full border border-gray-700 bg-black px-3 py-1 text-[11px] font-semibold text-gray-200"
                     >
                       {g}
+                    </span>
+                  ))}
+
+                  {uniqueSafetyPills.map((pill) => (
+                    <span
+                      key={`safety-${pill}`}
+                      className="rounded-full border border-red-700 bg-red-700 px-3 py-1 text-[11px] font-semibold text-white"
+                    >
+                      {formatSafetyPill(pill)}
                     </span>
                   ))}
                 </div>
@@ -237,12 +269,10 @@ export default function MangaInfoDropdownMobile(props: {
                       className="mt-2 text-[12px] font-semibold text-sky-400 hover:text-sky-300"
                     >
                       {showSpoilers
-                        ? `Hide ${spoilerCount} spoiler tag${
-                            spoilerCount === 1 ? "" : "s"
-                          }`
-                        : `Show ${spoilerCount} spoiler tag${
-                            spoilerCount === 1 ? "" : "s"
-                          }`}
+                        ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
+                        }`
+                        : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
+                        }`}
                     </button>
                   </div>
                 )}

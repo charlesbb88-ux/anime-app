@@ -48,6 +48,8 @@ type Manga = {
   source: string | null;
 
   genres: string[] | null;
+  content_rating: string | null;
+  content_warnings: string[] | null;
 
   created_at: string;
 };
@@ -369,6 +371,20 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
   const hasGenres = Array.isArray(m.genres) && m.genres.length > 0;
   const genres: string[] = m.genres || [];
 
+  const safetyPills: string[] = [
+    ...(typeof m.content_rating === "string" && m.content_rating.trim()
+      ? [m.content_rating.trim()]
+      : []),
+    ...(Array.isArray(m.content_warnings)
+      ? m.content_warnings.filter(
+        (x: unknown): x is string => typeof x === "string" && x.trim().length > 0
+      )
+      : []),
+  ];
+
+  const uniqueSafetyPills = Array.from(new Set(safetyPills));
+  const hasAnyTopPills = genres.length > 0 || uniqueSafetyPills.length > 0;
+
   const spoilerTags = tags.filter(
     (t) => t.is_general_spoiler === true || t.is_media_spoiler === true
   );
@@ -380,6 +396,13 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
   // ------------------------
   // MAIN MANGA PAGE CONTENT
   // ------------------------
+
+  function formatSafetyPill(text: string) {
+    return text
+      .split(" ")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(" ");
+  }
 
   const desktopView = (
     <>
@@ -425,19 +448,29 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                 </div>
               )}
 
-              {/* Genres */}
-              {hasGenres && (
+              {/* Genres + Safety */}
+              {hasAnyTopPills && (
                 <div className="mt-4">
                   <h2 className="mb-1 text-sm font-semibold text-black-300">
                     Genres
                   </h2>
+
                   <div className="flex flex-wrap gap-2">
                     {genres.map((g) => (
                       <span
-                        key={g}
+                        key={`genre-${g}`}
                         className="rounded-full bg-black px-3 py-1 text-xs text-gray-100"
                       >
                         {g}
+                      </span>
+                    ))}
+
+                    {uniqueSafetyPills.map((pill) => (
+                      <span
+                        key={`safety-${pill}`}
+                        className="rounded-full bg-red-700 px-3 py-1 text-xs text-white"
+                      >
+                        {formatSafetyPill(pill)}
                       </span>
                     ))}
                   </div>
