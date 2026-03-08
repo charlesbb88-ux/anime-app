@@ -80,6 +80,9 @@ export default function SearchPage() {
     const useRawPriority = hasSpecialSearchChars(raw);
     const rawPattern = `%${raw}%`;
 
+    const applyMangaSafetyFilters = <T,>(query: T) =>
+      (query as any).or("content_rating.is.null,content_rating.not.in.(erotica,pornographic)");
+
     const requests = [
       supabase
         .from("anime")
@@ -87,11 +90,12 @@ export default function SearchPage() {
         .filter("search_text_main", "match", regex)
         .limit(100),
 
-      supabase
-        .from("manga")
-        .select("id, slug, title, title_english, image_url")
-        .filter("search_text_main", "match", regex)
-        .limit(100),
+      applyMangaSafetyFilters(
+        supabase
+          .from("manga")
+          .select("id, slug, title, title_english, image_url")
+          .filter("search_text_main", "match", regex)
+      ).limit(100),
 
       supabase
         .from("anime")
@@ -99,11 +103,12 @@ export default function SearchPage() {
         .filter("search_text", "match", regex)
         .limit(100),
 
-      supabase
-        .from("manga")
-        .select("id, slug, title, title_english, image_url")
-        .filter("search_text", "match", regex)
-        .limit(100),
+      applyMangaSafetyFilters(
+        supabase
+          .from("manga")
+          .select("id, slug, title, title_english, image_url")
+          .filter("search_text", "match", regex)
+      ).limit(100),
     ];
 
     const rawRequests = useRawPriority
@@ -114,11 +119,12 @@ export default function SearchPage() {
           .or(`title.ilike.${rawPattern},title_english.ilike.${rawPattern}`)
           .limit(50),
 
-        supabase
-          .from("manga")
-          .select("id, slug, title, title_english, image_url")
-          .or(`title.ilike.${rawPattern},title_english.ilike.${rawPattern}`)
-          .limit(50),
+        applyMangaSafetyFilters(
+          supabase
+            .from("manga")
+            .select("id, slug, title, title_english, image_url")
+            .or(`title.ilike.${rawPattern},title_english.ilike.${rawPattern}`)
+        ).limit(50),
       ]
       : [];
 
