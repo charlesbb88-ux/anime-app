@@ -477,9 +477,6 @@ export default function EpisodeNavigatorMobile({
                     cardBase,
                     cardSize,
 
-                    // make non-active quieter so current pops
-                    hasSelectedEpisode && !isActive ? "opacity-80" : "opacity-100",
-
                     // active treatment
                     isActive
                       ? [

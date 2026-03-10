@@ -705,9 +705,6 @@ export default function ChapterNavigatorMobile({
                                         cardHover,
                                         cardSize,
 
-                                        // make non-active quieter so current pops
-                                        hasSelectedChapter && !isActive ? "opacity-80" : "opacity-100",
-
                                         // active treatment
                                         isActive
                                             ? [
