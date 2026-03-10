@@ -50,7 +50,7 @@ function normalizeThumbUrl(url: string) {
   if (url.includes("https://image.tmdb.org/t/p/")) {
     return url.replace(
       /\/t\/p\/(original|w1280|w780|w500|w342|w300|w185)\//,
-      "/t/p/w500/"
+      "/t/p/original/"
     );
   }
 
@@ -737,7 +737,7 @@ export default function EpisodeNavigator({
                         width={500}
                         height={750}
                         priority={false}
-                        sizes="120px"
+                        sizes="150px"
                         className="h-full w-full object-cover"
                       />
                     </div>
