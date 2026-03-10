@@ -1195,9 +1195,6 @@ export default function ChapterNavigator({
                     cardHover,
                     cardSize,
 
-                    // make non-active slightly quieter
-                    hasSelectedChapter && !isActive ? "opacity-80 hover:opacity-100" : "",
-
                     // active treatment
                     isActive
                       ? [

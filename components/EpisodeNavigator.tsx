@@ -711,9 +711,6 @@ export default function EpisodeNavigator({
                     cardHover,
                     cardSize,
 
-                    // make non-active slightly quieter
-                    currentSafe && !isActive ? "opacity-80 hover:opacity-100" : "",
-
                     // active treatment (match ChapterNavigator)
                     isActive
                       ? [
