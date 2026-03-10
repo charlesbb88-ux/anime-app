@@ -36,8 +36,7 @@ function isContiguousOneToN(nums: number[]) {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-    // TEMP: disable admin guard locally so we can backfill mappings
-    // if (!requireAdmin(req, res)) return;
+if (!requireAdmin(req, res)) return;
 
     const limit = Math.min(parseInt(String(req.query.limit ?? "2"), 10) || 2, 25);
     const cursor = typeof req.query.cursor === "string" ? req.query.cursor : null;
