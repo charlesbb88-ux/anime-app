@@ -5,10 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { supabase } from "@/lib/supabaseClient";
 
-type Tab = "all" | "anime" | "manga";
+type Tab = "all" | "anime" | "manga" | "users";
 
 type SearchRow = {
-  kind: "anime" | "manga";
+  kind: "anime" | "manga" | "user";
   id: string;
   slug: string;
   title: string;
@@ -36,6 +36,10 @@ function normalizeSearchInput(value: string) {
 
 function hasSpecialSearchChars(value: string) {
   return /[':./\\\-!()&]/.test(value);
+}
+
+function isExactUsernameMatch(username: string, raw: string) {
+  return username.trim().toLowerCase() === raw.trim().toLowerCase();
 }
 
 export default function SearchPage() {
@@ -101,6 +105,12 @@ export default function SearchPage() {
           .filter("search_text_main", "match", regex)
       ).limit(100),
 
+      supabase
+        .from("profiles")
+        .select("id, username, avatar_url")
+        .ilike("username", `${normalizedQuery}%`)
+        .limit(100),
+
       applyAnimeSafetyFilters(
         supabase
           .from("anime")
@@ -114,6 +124,12 @@ export default function SearchPage() {
           .select("id, slug, title, title_english, image_url")
           .filter("search_text", "match", regex)
       ).limit(100),
+
+      supabase
+        .from("profiles")
+        .select("id, username, avatar_url")
+        .ilike("username", `%${normalizedQuery}%`)
+        .limit(100),
     ];
 
     const rawRequests = useRawPriority
@@ -131,6 +147,12 @@ export default function SearchPage() {
             .select("id, slug, title, title_english, image_url")
             .or(`title.ilike.${rawPattern},title_english.ilike.${rawPattern}`)
         ).limit(50),
+
+        supabase
+          .from("profiles")
+          .select("id, username, avatar_url")
+          .ilike("username", rawPattern)
+          .limit(50),
       ]
       : [];
 
@@ -140,31 +162,59 @@ export default function SearchPage() {
 
     let animeRawRes: any = null;
     let mangaRawRes: any = null;
+    let userRawRes: any = null;
+
     let animeMainRes: any;
     let mangaMainRes: any;
+    let userMainRes: any;
+
     let animeFallbackRes: any;
     let mangaFallbackRes: any;
+    let userFallbackRes: any;
 
     if (useRawPriority) {
-      [animeRawRes, mangaRawRes, animeMainRes, mangaMainRes, animeFallbackRes, mangaFallbackRes] = results;
+      [
+        animeRawRes,
+        mangaRawRes,
+        userRawRes,
+        animeMainRes,
+        mangaMainRes,
+        userMainRes,
+        animeFallbackRes,
+        mangaFallbackRes,
+        userFallbackRes,
+      ] = results;
     } else {
-      [animeMainRes, mangaMainRes, animeFallbackRes, mangaFallbackRes] = results;
+      [
+        animeMainRes,
+        mangaMainRes,
+        userMainRes,
+        animeFallbackRes,
+        mangaFallbackRes,
+        userFallbackRes,
+      ] = results;
     }
 
     if (
       animeRawRes?.error ||
       mangaRawRes?.error ||
+      userRawRes?.error ||
       animeMainRes.error ||
       mangaMainRes.error ||
+      userMainRes.error ||
       animeFallbackRes.error ||
-      mangaFallbackRes.error
+      mangaFallbackRes.error ||
+      userFallbackRes.error
     ) {
       console.error("[search] anime raw error", animeRawRes?.error);
       console.error("[search] manga raw error", mangaRawRes?.error);
+      console.error("[search] user raw error", userRawRes?.error);
       console.error("[search] anime main error", animeMainRes.error);
       console.error("[search] manga main error", mangaMainRes.error);
+      console.error("[search] user main error", userMainRes.error);
       console.error("[search] anime fallback error", animeFallbackRes.error);
       console.error("[search] manga fallback error", mangaFallbackRes.error);
+      console.error("[search] user fallback error", userFallbackRes.error);
       setRows([]);
       setLoading(false);
       setHighlightIndex(-1);
@@ -180,7 +230,17 @@ export default function SearchPage() {
       score: null,
     });
 
+    const mapUserRow = (r: any): SearchRow => ({
+      kind: "user",
+      id: String(r.id),
+      slug: String(r.username || ""),
+      title: String(r.username || ""),
+      image_url: (r.avatar_url ?? null) as string | null,
+      score: null,
+    });
+
     const merged = new Map<string, SearchRow>();
+    const mergedUsers = new Map<string, SearchRow>();
 
     if (useRawPriority) {
       for (const r of (animeRawRes?.data || []) as any[]) {
@@ -191,6 +251,11 @@ export default function SearchPage() {
       for (const r of (mangaRawRes?.data || []) as any[]) {
         const row = mapRow(r, "manga");
         merged.set(`manga:${row.id}`, row);
+      }
+
+      for (const r of (userRawRes?.data || []) as any[]) {
+        const row = mapUserRow(r);
+        mergedUsers.set(`user:${row.id}`, row);
       }
     }
 
@@ -206,6 +271,12 @@ export default function SearchPage() {
       if (!merged.has(key)) merged.set(key, row);
     }
 
+    for (const r of (userMainRes.data || []) as any[]) {
+      const row = mapUserRow(r);
+      const key = `user:${row.id}`;
+      if (!mergedUsers.has(key)) mergedUsers.set(key, row);
+    }
+
     for (const r of (animeFallbackRes.data || []) as any[]) {
       const row = mapRow(r, "anime");
       const key = `anime:${row.id}`;
@@ -218,7 +289,20 @@ export default function SearchPage() {
       if (!merged.has(key)) merged.set(key, row);
     }
 
-    setRows(Array.from(merged.values()).slice(0, 200));
+    for (const r of (userFallbackRes.data || []) as any[]) {
+      const row = mapUserRow(r);
+      const key = `user:${row.id}`;
+      if (!mergedUsers.has(key)) mergedUsers.set(key, row);
+    }
+
+    const orderedUsers = Array.from(mergedUsers.values()).sort((a, b) => {
+      const aExact = isExactUsernameMatch(a.title, raw) ? 1 : 0;
+      const bExact = isExactUsernameMatch(b.title, raw) ? 1 : 0;
+      if (aExact !== bExact) return bExact - aExact;
+      return a.title.localeCompare(b.title);
+    });
+
+    setRows([...Array.from(merged.values()), ...orderedUsers].slice(0, 200));
     setLoading(false);
     setHighlightIndex(-1);
   }, []);
@@ -252,6 +336,7 @@ export default function SearchPage() {
 
   const animeRows = useMemo(() => rows.filter((r) => r.kind === "anime"), [rows]);
   const mangaRows = useMemo(() => rows.filter((r) => r.kind === "manga"), [rows]);
+  const userRows = useMemo(() => rows.filter((r) => r.kind === "user"), [rows]);
 
   const animeItems = useMemo(
     () =>
@@ -283,22 +368,41 @@ export default function SearchPage() {
     [mangaRows]
   );
 
-  const allItems = useMemo(() => [...animeItems, ...mangaItems], [animeItems, mangaItems]);
+  const userItems = useMemo(
+    () =>
+      userRows
+        .filter((r) => r.slug.trim())
+        .map((r) => ({
+          key: r.id,
+          href: `/${r.slug}`,
+          title: r.title,
+          sub: "",
+          imageUrl: r.image_url,
+          score: null as number | null,
+          year: null as number | null,
+          type: "User" as const,
+        })),
+    [userRows]
+  );
+
+  const allItems = useMemo(() => [...animeItems, ...mangaItems, ...userItems], [animeItems, mangaItems, userItems]);
 
   const tabs: { id: Tab; label: string; count: number }[] = useMemo(
     () => [
       { id: "all", label: "All", count: allItems.length },
       { id: "anime", label: "Anime", count: animeItems.length },
       { id: "manga", label: "Manga", count: mangaItems.length },
+      { id: "users", label: "Users", count: userItems.length },
     ],
-    [allItems.length, animeItems.length, mangaItems.length]
+    [allItems.length, animeItems.length, mangaItems.length, userItems.length]
   );
 
   const visibleItems = useMemo(() => {
     if (activeTab === "anime") return animeItems;
     if (activeTab === "manga") return mangaItems;
+    if (activeTab === "users") return userItems;
     return allItems;
-  }, [activeTab, allItems, animeItems, mangaItems]);
+  }, [activeTab, allItems, animeItems, mangaItems, userItems]);
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -539,6 +643,18 @@ export default function SearchPage() {
           gap: 20px;
         }
 
+                .results-grid.users-grid {
+          grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+          gap: 22px 18px;
+        }
+
+        @media (max-width: 639px) {
+          .results-grid.users-grid {
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px 10px;
+          }
+        }
+
         @media (max-width: 639px) {
   .results-grid {
   gap: 12px;
@@ -560,6 +676,10 @@ export default function SearchPage() {
           position: relative;
         }
 
+                .card.user-card {
+          text-align: center;
+        }
+
         .card-poster {
           aspect-ratio: 2/3;
           width: 100%;
@@ -569,6 +689,17 @@ export default function SearchPage() {
           border: 1px solid black;
           position: relative;
           transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.25s ease;
+        }
+
+                .card-poster.user-avatar {
+          aspect-ratio: 1 / 1;
+          width: 100%;
+          max-width: 120px;
+          margin: 0 auto;
+          border-radius: 999px;
+          overflow: hidden;
+          border: 1px solid black;
+          background: var(--surface);
         }
 
         .card:hover .card-poster {
@@ -582,6 +713,12 @@ export default function SearchPage() {
           object-fit: cover;
           display: block;
           transition: transform 0.35s ease;
+        }
+
+                .card-poster.user-avatar img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
         }
 
         .card:hover .card-poster img { transform: scale(1.04); }
@@ -613,9 +750,20 @@ export default function SearchPage() {
           border: 1px solid rgb(0, 0, 0);
         }
 
+                .card.user-card .card-badge {
+          position: static;
+          display: inline-flex;
+          margin-top: 8px;
+        }
+
         .card-info {
           margin-top: 10px;
           padding: 0 2px;
+        }
+
+                .card.user-card .card-info {
+          margin-top: 10px;
+          padding: 0;
         }
 
         .card-title {
@@ -628,6 +776,11 @@ export default function SearchPage() {
           -webkit-box-orient: vertical;
           overflow: hidden;
           transition: color 0.15s;
+        }
+
+                .card.user-card .card-title {
+          text-align: center;
+          -webkit-line-clamp: 2;
         }
 
         .card:hover .card-title { color: var(--gold-light); }
@@ -906,7 +1059,7 @@ type ResultItem = {
   imageUrl: string | null;
   score: number | null;
   year: number | null;
-  type: "Anime" | "Manga";
+  type: "Anime" | "Manga" | "User";
 };
 
 function ResultGrid({
@@ -918,45 +1071,66 @@ function ResultGrid({
   highlightIndex: number;
   setHighlightIndex: (n: number) => void;
 }) {
-  return (
-    <div className="results-grid">
-      {items.map((item, i) => (
-        <Link
-          key={item.key}
-          href={item.href}
-          className={`card card-animate${i === highlightIndex ? " highlight" : ""}`}
-          style={{ animationDelay: `${Math.min(i * 30, 300)}ms` }}
-          prefetch={false}
-          onMouseEnter={() => setHighlightIndex(i)}
-        >
-          <div className="card-poster">
-            {item.imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={item.imageUrl} alt={item.title} loading="lazy" />
-            ) : (
-              <div className="card-poster-placeholder">
-                <svg
-                  width="32"
-                  height="32"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                >
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <path d="m9 9 6 6m0-6-6 6" />
-                </svg>
-              </div>
-            )}
-            <span className="card-badge">{item.type}</span>
-          </div>
+  const onlyUsers = items.length > 0 && items.every((item) => item.type === "User");
 
-          <div className="card-info">
-            <p className="card-title">{item.title}</p>
-            {item.sub && item.sub !== item.title ? <p className="card-sub">{item.sub}</p> : null}
-          </div>
-        </Link>
-      ))}
+  return (
+    <div className={`results-grid${onlyUsers ? " users-grid" : ""}`}>
+      {items.map((item, i) => {
+        const isUser = item.type === "User";
+
+        return (
+          <Link
+            key={item.key}
+            href={item.href}
+            className={`card card-animate${isUser ? " user-card" : ""}${i === highlightIndex ? " highlight" : ""}`}
+            style={{ animationDelay: `${Math.min(i * 30, 300)}ms` }}
+            prefetch={false}
+            onMouseEnter={() => setHighlightIndex(i)}
+          >
+            <div className={`card-poster${isUser ? " user-avatar" : ""}`}>
+              {item.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={item.imageUrl} alt={item.title} loading="lazy" />
+              ) : (
+                <div className="card-poster-placeholder">
+                  <svg
+                    width="32"
+                    height="32"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  >
+                    {isUser ? (
+                      <>
+                        <path d="M20 21a8 8 0 0 0-16 0" />
+                        <circle cx="12" cy="8" r="4" />
+                      </>
+                    ) : (
+                      <>
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <path d="m9 9 6 6m0-6-6 6" />
+                      </>
+                    )}
+                  </svg>
+                </div>
+              )}
+            </div>
+
+            <div className="card-info">
+              <p className="card-title">{item.title}</p>
+              {isUser ? (
+                <span className="card-badge">User</span>
+              ) : (
+                <>
+                  <span className="card-badge">{item.type}</span>
+                  {item.sub && item.sub !== item.title ? <p className="card-sub">{item.sub}</p> : null}
+                </>
+              )}
+            </div>
+          </Link>
+        );
+      })}
     </div>
   );
 }
