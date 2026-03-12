@@ -212,7 +212,7 @@ export default function MangaInfoDropdownMobile(props: {
                         <span
                           className={[
                             "relative inline-flex w-full items-center justify-between",
-                            "rounded-full border border-gray-700 bg-black",
+                            "rounded-full border border-gray-700 bg-gray-900/90",
                             "px-3 py-[3px] text-[12px] font-semibold",
                             "whitespace-nowrap overflow-hidden",
                             "transition-colors duration-150",
@@ -221,7 +221,7 @@ export default function MangaInfoDropdownMobile(props: {
                         >
                           {percent !== null && (
                             <span
-                              className="pointer-events-none absolute inset-y-0 left-0 bg-sky-500/15"
+                              className="pointer-events-none absolute inset-y-0 left-0 bg-black"
                               style={{ width: `${percent}%` }}
                             />
                           )}
