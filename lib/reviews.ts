@@ -4,6 +4,28 @@
 import { supabase } from "@/lib/supabaseClient";
 import { insertAttachments, type PendingAttachment } from "@/lib/postAttachments";
 
+async function tryAwardProgressionXp(input: {
+  user_id: string;
+  action_type: "log" | "review" | "rating";
+  content_type: "anime_episode" | "anime_series" | "manga_chapter" | "manga_series";
+  content_id: string;
+}) {
+  try {
+    const { error } = await supabase.rpc("award_progression_xp", {
+      p_user_id: input.user_id,
+      p_action_type: input.action_type,
+      p_content_type: input.content_type,
+      p_content_id: input.content_id,
+    });
+
+    if (error) {
+      console.warn("[reviews] Could not award progression XP:", error);
+    }
+  } catch (e) {
+    console.warn("[reviews] Exception awarding progression XP:", e);
+  }
+}
+
 export type ReviewRow = {
   id: string;
   user_id: string;
@@ -136,7 +158,7 @@ export async function createAnimeSeriesReview(
     return { data: null, error: postError ?? new Error("Failed to create post") };
   }
 
-  // 3) optional attachments -> post_attachments
+    // 3) optional attachments -> post_attachments
   try {
     if (input.attachments?.length) {
       await insertAttachments({
@@ -151,6 +173,13 @@ export async function createAnimeSeriesReview(
     await supabase.from("reviews").delete().eq("id", review.id);
     return { data: null, error: e };
   }
+
+  await tryAwardProgressionXp({
+    user_id: user.id,
+    action_type: "review",
+    content_type: "anime_series",
+    content_id: input.anime_id,
+  });
 
   return { data: { review: review as ReviewRow, postId: post.id }, error: null };
 }
@@ -216,7 +245,7 @@ export async function createAnimeEpisodeReview(
     return { data: null, error: postError ?? new Error("Failed to create post") };
   }
 
-  // 3) optional attachments -> post_attachments
+    // 3) optional attachments -> post_attachments
   try {
     if (input.attachments?.length) {
       await insertAttachments({
@@ -232,6 +261,13 @@ export async function createAnimeEpisodeReview(
     await supabase.from("reviews").delete().eq("id", review.id);
     return { data: null, error: e };
   }
+
+  await tryAwardProgressionXp({
+    user_id: user.id,
+    action_type: "review",
+    content_type: "anime_episode",
+    content_id: input.anime_episode_id,
+  });
 
   return { data: { review: review as ReviewRow, postId: post.id }, error: null };
 }
@@ -297,7 +333,7 @@ export async function createMangaSeriesReview(
     return { data: null, error: postError ?? new Error("Failed to create post") };
   }
 
-  // 3) optional attachments -> post_attachments
+    // 3) optional attachments -> post_attachments
   try {
     if (input.attachments?.length) {
       await insertAttachments({
@@ -312,6 +348,13 @@ export async function createMangaSeriesReview(
     await supabase.from("reviews").delete().eq("id", review.id);
     return { data: null, error: e };
   }
+
+  await tryAwardProgressionXp({
+    user_id: user.id,
+    action_type: "review",
+    content_type: "manga_series",
+    content_id: input.manga_id,
+  });
 
   return { data: { review: review as ReviewRow, postId: post.id }, error: null };
 }
@@ -376,7 +419,7 @@ export async function createMangaChapterReview(
     return { data: null, error: postError ?? new Error("Failed to create post") };
   }
 
-  // 3) optional attachments -> post_attachments
+    // 3) optional attachments -> post_attachments
   try {
     if (input.attachments?.length) {
       await insertAttachments({
@@ -391,6 +434,13 @@ export async function createMangaChapterReview(
     await supabase.from("reviews").delete().eq("id", review.id);
     return { data: null, error: e };
   }
+
+  await tryAwardProgressionXp({
+    user_id: user.id,
+    action_type: "review",
+    content_type: "manga_chapter",
+    content_id: input.manga_chapter_id,
+  });
 
   return { data: { review: review as ReviewRow, postId: post.id }, error: null };
 }
