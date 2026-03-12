@@ -139,6 +139,28 @@ async function tryCreatePostForLog(input: {
   }
 }
 
+async function tryAwardProgressionXp(input: {
+  user_id: string;
+  action_type: "log" | "review" | "rating";
+  content_type: "anime_episode" | "anime_series" | "manga_chapter" | "manga_series";
+  content_id: string;
+}) {
+  try {
+    const { error } = await supabase.rpc("award_progression_xp", {
+      p_user_id: input.user_id,
+      p_action_type: input.action_type,
+      p_content_type: input.content_type,
+      p_content_id: input.content_id,
+    });
+
+    if (error) {
+      console.warn("[logs] Could not award progression XP:", error);
+    }
+  } catch (e) {
+    console.warn("[logs] Exception awarding progression XP:", e);
+  }
+}
+
 /* ============================================================
    ANIME: Episode Log
 ============================================================ */
@@ -234,6 +256,13 @@ export async function createAnimeEpisodeLog(
 
     note: (log as any).note ?? null,
     created_at_iso: (log as any).logged_at ?? loggedAt,
+  });
+
+  await tryAwardProgressionXp({
+    user_id: userId,
+    action_type: "log",
+    content_type: "anime_episode",
+    content_id: (log as any).anime_episode_id ?? input.anime_episode_id,
   });
 
   return { data: log as AnimeEpisodeLogRow, error: null };
@@ -334,7 +363,7 @@ export async function createAnimeSeriesLog(
     .select("*")
     .single();
 
-  if (logError || !log) return { data: null, error: logError };
+   if (logError || !log) return { data: null, error: logError };
 
   await tryCreatePostForLog({
     user_id: userId,
@@ -349,6 +378,13 @@ export async function createAnimeSeriesLog(
 
     note: (log as any).note ?? null,
     created_at_iso: (log as any).logged_at ?? loggedAt,
+  });
+
+  await tryAwardProgressionXp({
+    user_id: userId,
+    action_type: "log",
+    content_type: "anime_series",
+    content_id: (log as any).anime_id ?? input.anime_id,
   });
 
   return { data: log as AnimeSeriesLogRow, error: null };
@@ -446,6 +482,13 @@ export async function createMangaSeriesLog(
 
     note: (log as any).note ?? null,
     created_at_iso: (log as any).logged_at ?? loggedAt,
+  });
+
+  await tryAwardProgressionXp({
+    user_id: userId,
+    action_type: "log",
+    content_type: "manga_series",
+    content_id: (log as any).manga_id ?? input.manga_id,
   });
 
   const normalized = {
@@ -553,6 +596,13 @@ export async function createMangaChapterLog(
 
     note: (log as any).note ?? null,
     created_at_iso: (log as any).logged_at ?? loggedAt,
+  });
+
+  await tryAwardProgressionXp({
+    user_id: userId,
+    action_type: "log",
+    content_type: "manga_chapter",
+    content_id: (log as any).manga_chapter_id ?? input.manga_chapter_id,
   });
 
   const normalized = {

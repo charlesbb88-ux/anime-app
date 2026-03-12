@@ -3,6 +3,28 @@
 
 import { supabase } from "@/lib/supabaseClient";
 
+async function tryAwardProgressionXp(input: {
+  user_id: string;
+  action_type: "log" | "review" | "rating";
+  content_type: "anime_episode" | "anime_series" | "manga_chapter" | "manga_series";
+  content_id: string;
+}) {
+  try {
+    const { error } = await supabase.rpc("award_progression_xp", {
+      p_user_id: input.user_id,
+      p_action_type: input.action_type,
+      p_content_type: input.content_type,
+      p_content_id: input.content_id,
+    });
+
+    if (error) {
+      console.warn("[marks] Could not award progression XP:", error);
+    }
+  } catch (e) {
+    console.warn("[marks] Exception awarding progression XP:", e);
+  }
+}
+
 /* ======================================================
    Helpers
 ====================================================== */
@@ -457,7 +479,7 @@ export async function setMyAnimeRatingMark(
 
   const clamped = Math.max(1, Math.min(10, Math.round(halfStars)));
 
-  const { error } = await supabase.from("user_marks").insert({
+    const { error } = await supabase.from("user_marks").insert({
     user_id: user.id,
     kind: "rating",
     anime_id,
@@ -465,7 +487,16 @@ export async function setMyAnimeRatingMark(
     stars: clamped,
   });
 
-  return { error };
+  if (error) return { error };
+
+  await tryAwardProgressionXp({
+    user_id: user.id,
+    action_type: "rating",
+    content_type: anime_episode_id ? "anime_episode" : "anime_series",
+    content_id: anime_episode_id ?? anime_id,
+  });
+
+  return { error: null };
 }
 
 export async function getMyMangaRatingMark(
@@ -530,5 +561,14 @@ export async function setMyMangaRatingMark(
     stars: clamped, // ✅ matches your table
   });
 
-  return { error };
+  if (error) return { error };
+
+  await tryAwardProgressionXp({
+    user_id: user.id,
+    action_type: "rating",
+    content_type: manga_chapter_id ? "manga_chapter" : "manga_series",
+    content_id: manga_chapter_id ?? manga_id,
+  });
+
+  return { error: null };
 }
