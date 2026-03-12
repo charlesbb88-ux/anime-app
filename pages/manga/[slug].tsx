@@ -515,7 +515,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                             >
                               {percent !== null && (
                                 <span
-                                  className="pointer-events-none absolute inset-y-0 left-0 bg-blue-500/20"
+                                  className="pointer-events-none absolute inset-y-0 left-0 bg-black"
                                   style={{ width: `${percent}%` }}
                                 />
                               )}
