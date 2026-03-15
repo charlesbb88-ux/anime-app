@@ -1,5 +1,5 @@
-import MC from "@/components/mc/ProfileProgressionCard";
+import MCLayout from "@/components/mc/MCLayout";
 
 export default function MCPage() {
-  return <MC />;
+  return <MCLayout />;
 }
