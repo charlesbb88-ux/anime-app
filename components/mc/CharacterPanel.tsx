@@ -1,12 +1,20 @@
 "use client";
 
+import type { GeneratedTitle } from "@/lib/generateTitle";
+
 type Props = {
   username: string;
   title: string;
   rank: string;
+  titleDebug?: GeneratedTitle;
 };
 
-export default function CharacterPanel({ username, title, rank }: Props) {
+export default function CharacterPanel({
+  username,
+  title,
+  rank,
+  titleDebug,
+}: Props) {
   return (
     <div className="h-full rounded-3xl border border-white/10 bg-white/5 p-5">
       <div className="flex h-full flex-col">
@@ -17,6 +25,27 @@ export default function CharacterPanel({ username, title, rank }: Props) {
             </div>
             <h2 className="mt-2 text-2xl font-bold">{username}</h2>
             <p className="mt-1 text-sm text-white/55">{title}</p>
+
+            {titleDebug && (
+              <div className="mt-4 rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-white/70">
+                <div>
+                  <span className="text-white/40">Class Tag:</span>{" "}
+                  {titleDebug.classTag ?? "—"} ({titleDebug.classBand ?? "—"})
+                </div>
+                <div className="mt-1">
+                  <span className="text-white/40">Prefix Tag:</span>{" "}
+                  {titleDebug.prefixTag ?? "—"} ({titleDebug.prefixBand ?? "—"})
+                </div>
+                <div className="mt-1">
+                  <span className="text-white/40">Domain Tag:</span>{" "}
+                  {titleDebug.domainTag ?? "—"} ({titleDebug.domainBand ?? "—"})
+                </div>
+                <div className="mt-2 border-t border-white/10 pt-2">
+                  <span className="text-white/40">Short Title:</span>{" "}
+                  {titleDebug.shortTitle}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs font-semibold text-white/70">
