@@ -10,6 +10,11 @@ import StatsCard from "@/components/mc/StatsCard";
 import CombatStatsCard from "@/components/mc/CombatStatsCard";
 import AbilitiesCard from "@/components/mc/AbilitiesCard";
 import AffinitiesCard, { type AffinityRow } from "@/components/mc/AffinitiesCard";
+import type {
+  CharacterAvatarLayer,
+  CharacterLoadoutOptionGroup,
+} from "@/components/mc/avatarTypes";
+import CharacterLoadoutEditor from "@/components/mc/CharacterLoadoutEditor";
 
 type AccountProgressionRow = {
   user_id: string;
@@ -69,6 +74,9 @@ export default function MCLayout() {
   const [titlePartRows, setTitlePartRows] = useState<McTitlePartsRow[]>([]);
   const [baseStats, setBaseStats] = useState<BaseStatRow[]>([]);
   const [combatStats, setCombatStats] = useState<CombatStatRow[]>([]);
+  const [avatarLayers, setAvatarLayers] = useState<CharacterAvatarLayer[]>([]);
+  const [loadoutOptions, setLoadoutOptions] = useState<CharacterLoadoutOptionGroup[]>([]);
+  const [savingSlotKey, setSavingSlotKey] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,6 +102,9 @@ export default function MCLayout() {
             setTitlePartRows([]);
             setBaseStats([]);
             setCombatStats([]);
+            setAvatarLayers([]);
+            setLoadoutOptions([]);
+            setSavingSlotKey(null);
             setLoading(false);
           }
           return;
@@ -102,6 +113,13 @@ export default function MCLayout() {
         if (!cancelled) {
           setUserId(user.id);
         }
+
+        const { error: ensureCharacterError } = await supabase.rpc(
+          "ensure_user_mc_character",
+          { p_user_id: user.id }
+        );
+
+        if (ensureCharacterError) throw ensureCharacterError;
 
         const [
           { data: accountData, error: accountError },
@@ -213,12 +231,187 @@ export default function MCLayout() {
           }));
         }
 
+        let normalizedAvatarLayers: CharacterAvatarLayer[] = [];
+        let normalizedLoadoutOptions: CharacterLoadoutOptionGroup[] = [];
+
+        const { data: userCharacterData, error: userCharacterError } = await supabase
+          .from("user_mc_characters")
+          .select("base_body_id, pose_id")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (userCharacterError) throw userCharacterError;
+
+        let activeBaseBodyId: number | null = null;
+        let activePoseId: number | null = null;
+
+        if (userCharacterData) {
+          activeBaseBodyId = safeNumber(userCharacterData.base_body_id, 0);
+          activePoseId = safeNumber(userCharacterData.pose_id, 0);
+        } else {
+          const { data: defaultBodyData, error: defaultBodyError } = await supabase
+            .from("mc_base_bodies")
+            .select("id")
+            .eq("body_key", "base_neutral_v1")
+            .maybeSingle();
+
+          if (defaultBodyError) throw defaultBodyError;
+
+          const { data: defaultPoseData, error: defaultPoseError } = await supabase
+            .from("mc_poses")
+            .select("id")
+            .eq("pose_key", "neutral_front_v1")
+            .maybeSingle();
+
+          if (defaultPoseError) throw defaultPoseError;
+
+          activeBaseBodyId = safeNumber(defaultBodyData?.id, 0);
+          activePoseId = safeNumber(defaultPoseData?.id, 0);
+        }
+
+        if (activeBaseBodyId && activePoseId) {
+          const { data: equippedRows, error: equippedError } = await supabase
+            .from("user_mc_equipped_assets")
+            .select("slot_key, asset_id")
+            .eq("user_id", user.id);
+
+          if (equippedError) throw equippedError;
+
+          const equippedBySlot = new Map<string, number>();
+
+          for (const row of (equippedRows as any[] | null) ?? []) {
+            equippedBySlot.set(String(row.slot_key ?? ""), safeNumber(row.asset_id, 0));
+          }
+
+          const { data: defaultAssetsData, error: defaultAssetsError } = await supabase
+            .from("mc_assets")
+            .select("id, asset_key, slot_key, asset_kind, image_url, shape_data, layer_order")
+            .eq("base_body_id", activeBaseBodyId)
+            .eq("pose_id", activePoseId)
+            .eq("is_default", true)
+            .eq("is_active", true);
+
+          if (defaultAssetsError) throw defaultAssetsError;
+
+          const defaultAssets = ((defaultAssetsData as any[] | null) ?? []).map((row) => ({
+            asset_id: safeNumber(row.id, 0),
+            asset_key: String(row.asset_key ?? ""),
+            slot_key: String(row.slot_key ?? ""),
+            asset_kind: String(row.asset_kind ?? "shape") as "shape" | "image",
+            image_url: row.image_url ? String(row.image_url) : null,
+            shape_data: row.shape_data ?? null,
+            layer_order: safeNumber(row.layer_order, 0),
+          }));
+
+          const equippedAssetIds = Array.from(equippedBySlot.values()).filter((id) => id > 0);
+
+          let equippedAssets: CharacterAvatarLayer[] = [];
+
+          if (equippedAssetIds.length > 0) {
+            const { data: equippedAssetsData, error: equippedAssetsError } = await supabase
+              .from("mc_assets")
+              .select("id, asset_key, slot_key, asset_kind, image_url, shape_data, layer_order")
+              .in("id", equippedAssetIds)
+              .eq("is_active", true);
+
+            if (equippedAssetsError) throw equippedAssetsError;
+
+            equippedAssets = ((equippedAssetsData as any[] | null) ?? []).map((row) => ({
+              asset_id: safeNumber(row.id, 0),
+              asset_key: String(row.asset_key ?? ""),
+              slot_key: String(row.slot_key ?? ""),
+              asset_kind: String(row.asset_kind ?? "shape") as "shape" | "image",
+              image_url: row.image_url ? String(row.image_url) : null,
+              shape_data: row.shape_data ?? null,
+              layer_order: safeNumber(row.layer_order, 0),
+            }));
+          }
+
+          const equippedSlotSet = new Set(equippedAssets.map((asset) => asset.slot_key));
+
+          normalizedAvatarLayers = [
+            ...defaultAssets.filter((asset) => !equippedSlotSet.has(asset.slot_key)),
+            ...equippedAssets,
+          ].sort((a, b) => a.layer_order - b.layer_order);
+
+          const editableSlots = ["hair_front", "hair_back", "aura_front"];
+
+          const { data: ownedAssetsData, error: ownedAssetsError } = await supabase
+            .from("user_mc_owned_assets")
+            .select(`
+              asset_id,
+              mc_assets!inner (
+                id,
+                asset_key,
+                display_name,
+                slot_key,
+                asset_kind,
+                image_url,
+                shape_data,
+                layer_order,
+                base_body_id,
+                pose_id,
+                is_active
+              )
+            `)
+            .eq("user_id", user.id);
+
+          if (ownedAssetsError) throw ownedAssetsError;
+
+          const grouped = new Map<string, CharacterLoadoutOptionGroup>();
+
+          for (const slotKey of editableSlots) {
+            grouped.set(slotKey, {
+              slotKey,
+              slotLabel:
+                slotKey === "hair_front"
+                  ? "Hair Front"
+                  : slotKey === "hair_back"
+                    ? "Hair Back"
+                    : "Aura Front",
+              options: [],
+            });
+          }
+
+          for (const row of (ownedAssetsData as any[] | null) ?? []) {
+            const asset = row.mc_assets;
+            if (!asset) continue;
+
+            const slotKey = String(asset.slot_key ?? "");
+            if (!editableSlots.includes(slotKey)) continue;
+            if (!grouped.has(slotKey)) continue;
+
+            const assetBaseBodyId = safeNumber(asset.base_body_id, 0);
+            const assetPoseId = safeNumber(asset.pose_id, 0);
+
+            if (assetBaseBodyId !== activeBaseBodyId || assetPoseId !== activePoseId) {
+              continue;
+            }
+
+            grouped.get(slotKey)!.options.push({
+              assetId: safeNumber(asset.id, 0),
+              assetKey: String(asset.asset_key ?? ""),
+              displayName: String(asset.display_name ?? ""),
+              slotKey,
+              assetKind: String(asset.asset_kind ?? "shape") as "shape" | "image",
+              imageUrl: asset.image_url ? String(asset.image_url) : null,
+              shapeData: asset.shape_data ?? null,
+              layerOrder: safeNumber(asset.layer_order, 0),
+              isEquipped: equippedBySlot.get(slotKey) === safeNumber(asset.id, 0),
+            });
+          }
+
+          normalizedLoadoutOptions = Array.from(grouped.values());
+        }
+
         if (!cancelled) {
           setAccount(normalizedAccount);
           setAffinities(normalizedAffinities);
           setTitlePartRows(normalizedTitlePartRows);
           setBaseStats(normalizedBaseStats);
           setCombatStats(normalizedCombatStats);
+          setAvatarLayers(normalizedAvatarLayers);
+          setLoadoutOptions(normalizedLoadoutOptions);
           setUsername(profileData?.username ?? "Player");
           setLoading(false);
         }
@@ -248,6 +441,70 @@ export default function MCLayout() {
   const shortTitle = titleData.shortTitle;
   const fullTitle = titleData.fullTitle;
 
+  async function handleEquipAsset(slotKey: string, assetId: number) {
+    if (!userId) return;
+
+    try {
+      setSavingSlotKey(slotKey);
+
+      const { error: equipError } = await supabase
+        .from("user_mc_equipped_assets")
+        .upsert(
+          {
+            user_id: userId,
+            slot_key: slotKey,
+            asset_id: assetId,
+            updated_at: new Date().toISOString(),
+          },
+          {
+            onConflict: "user_id,slot_key",
+          }
+        );
+
+      if (equipError) throw equipError;
+
+      setAvatarLayers((prev) => {
+        const replacementGroup = loadoutOptions
+          .find((group) => group.slotKey === slotKey)
+          ?.options.find((option) => option.assetId === assetId);
+
+        if (!replacementGroup) return prev;
+
+        const next = prev.filter((layer) => layer.slot_key !== slotKey);
+
+        next.push({
+          asset_id: replacementGroup.assetId,
+          asset_key: replacementGroup.assetKey,
+          slot_key: replacementGroup.slotKey,
+          asset_kind: replacementGroup.assetKind,
+          image_url: replacementGroup.imageUrl,
+          shape_data: replacementGroup.shapeData,
+          layer_order: replacementGroup.layerOrder,
+        });
+
+        return next.sort((a, b) => a.layer_order - b.layer_order);
+      });
+
+      setLoadoutOptions((prev) =>
+        prev.map((group) => {
+          if (group.slotKey !== slotKey) return group;
+
+          return {
+            ...group,
+            options: group.options.map((option) => ({
+              ...option,
+              isEquipped: option.assetId === assetId,
+            })),
+          };
+        })
+      );
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to equip asset.");
+    } finally {
+      setSavingSlotKey(null);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-neutral-950 text-white">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
@@ -271,44 +528,53 @@ export default function MCLayout() {
             You must be logged in to view this page.
           </div>
         ) : (
-          <div className="grid gap-6 lg:grid-cols-[320px_minmax(320px,1fr)_320px] lg:grid-rows-[auto_auto_auto]">
-            <div className="lg:col-start-1 lg:row-start-1">
-              <ProfileCard
-                accountLevel={accountLevel}
-                accountXp={accountXp}
-                progressPercent={progressPercent}
-                progressIntoLevel={progressIntoLevel}
-                progressNeededInLevel={progressNeededInLevel}
-                title={shortTitle}
-                rank={rank}
-              />
+          <>
+            <div className="grid gap-6 lg:grid-cols-[320px_minmax(320px,1fr)_320px] lg:grid-rows-[auto_auto_auto]">
+              <div className="lg:col-start-1 lg:row-start-1">
+                <ProfileCard
+                  accountLevel={accountLevel}
+                  accountXp={accountXp}
+                  progressPercent={progressPercent}
+                  progressIntoLevel={progressIntoLevel}
+                  progressNeededInLevel={progressNeededInLevel}
+                  title={shortTitle}
+                  rank={rank}
+                />
+              </div>
+
+              <div className="lg:col-start-1 lg:row-start-2">
+                <StatsCard stats={baseStats} />
+              </div>
+
+              <div className="lg:col-start-2 lg:row-start-1 lg:row-span-3">
+                <CharacterPanel
+                  username={username}
+                  title={fullTitle}
+                  rank={rank}
+                  titleDebug={titleData}
+                  avatarLayers={avatarLayers}
+                />
+              </div>
+
+              <div className="lg:col-start-3 lg:row-start-1">
+                <AbilitiesCard />
+              </div>
+
+              <div className="lg:col-start-3 lg:row-start-2">
+                <CombatStatsCard stats={combatStats} />
+              </div>
+
+              <div className="lg:col-start-3 lg:row-start-3">
+                <AffinitiesCard affinities={affinities} />
+              </div>
             </div>
 
-            <div className="lg:col-start-1 lg:row-start-2">
-              <StatsCard stats={baseStats} />
-            </div>
-
-            <div className="lg:col-start-2 lg:row-start-1 lg:row-span-3">
-              <CharacterPanel
-                username={username}
-                title={fullTitle}
-                rank={rank}
-                titleDebug={titleData}
-              />
-            </div>
-
-            <div className="lg:col-start-3 lg:row-start-1">
-              <AbilitiesCard />
-            </div>
-
-            <div className="lg:col-start-3 lg:row-start-2">
-              <CombatStatsCard stats={combatStats} />
-            </div>
-
-            <div className="lg:col-start-3 lg:row-start-3">
-              <AffinitiesCard affinities={affinities} />
-            </div>
-          </div>
+            <CharacterLoadoutEditor
+              groups={loadoutOptions}
+              savingSlotKey={savingSlotKey}
+              onEquip={handleEquipAsset}
+            />
+          </>
         )}
       </div>
     </div>

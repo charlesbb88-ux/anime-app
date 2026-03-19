@@ -295,39 +295,53 @@ async function update_manga_anilist_id(manga_id, anilist_id) {
 }
 
 async function fetch_batch(last_id = null) {
-    let query = supabase
-        .from("manga")
-        .select(`
-      id,
-      title,
-      title_english,
-      title_native,
-      title_preferred,
-      manga_anilist_matches!left(manga_id)
-    `)
-        .is("anilist_id", null)
-        .not("title", "is", null)
-        .is("manga_anilist_matches.manga_id", null)
-        .order("id", { ascending: true })
-        .limit(batch_size);
+    let current_last_id = last_id;
+    const candidate_limit = batch_size * 5;
 
-    if (last_id) {
-        query = query.gt("id", last_id);
+    while (true) {
+        let query = supabase
+            .from("manga")
+            .select("id, title, title_english, title_native, title_preferred")
+            .is("anilist_id", null)
+            .not("title", "is", null)
+            .order("id", { ascending: true })
+            .limit(candidate_limit);
+
+        if (current_last_id) {
+            query = query.gt("id", current_last_id);
+        }
+
+        const { data: candidates, error: candidates_error } = await query;
+
+        if (candidates_error) {
+            throw candidates_error;
+        }
+
+        if (!candidates || candidates.length === 0) {
+            return [];
+        }
+
+        const candidate_ids = candidates.map((row) => row.id);
+
+        const { data: checked_rows, error: checked_error } = await supabase
+            .from("manga_anilist_matches")
+            .select("manga_id")
+            .in("manga_id", candidate_ids);
+
+        if (checked_error) {
+            throw checked_error;
+        }
+
+        const checked_ids = new Set((checked_rows || []).map((row) => row.manga_id));
+
+        const unchecked_rows = candidates.filter((row) => !checked_ids.has(row.id));
+
+        if (unchecked_rows.length > 0) {
+            return unchecked_rows.slice(0, batch_size);
+        }
+
+        current_last_id = candidates[candidates.length - 1].id;
     }
-
-    const { data, error } = await query;
-
-    if (error) {
-        throw error;
-    }
-
-    return (data || []).map((row) => ({
-        id: row.id,
-        title: row.title,
-        title_english: row.title_english,
-        title_native: row.title_native,
-        title_preferred: row.title_preferred,
-    }));
 }
 
 async function main() {
@@ -347,7 +361,6 @@ async function main() {
 
         for (const row of rows) {
             processed++;
-            last_id = row.id;
 
             const local_titles = [
                 row.title,
@@ -369,33 +382,32 @@ async function main() {
 
                     no_match++;
                     console.log(`[NO MATCH] ${row.title}`);
-                    continue;
-                }
-
-                const score_percent = Number((best.score * 100).toFixed(2));
-
-                await upsert_match_row(row.id, {
-                    matched_title: best.matched_title,
-                    match_score: score_percent,
-                    match_status: decision.match_status,
-                });
-
-                if (decision.should_save) {
-                    await update_manga_anilist_id(row.id, best.id);
-                    matched++;
-                    console.log(
-                        `[MATCHED] ${row.title} -> ${best.matched_title} (${best.id}) ${score_percent}%`
-                    );
-                } else if (decision.match_status === "needs_review") {
-                    review++;
-                    console.log(
-                        `[REVIEW] ${row.title} -> ${best.matched_title} ${score_percent}%`
-                    );
                 } else {
-                    no_match++;
-                    console.log(
-                        `[NO MATCH] ${row.title} -> ${best.matched_title} ${score_percent}%`
-                    );
+                    const score_percent = Number((best.score * 100).toFixed(2));
+
+                    await upsert_match_row(row.id, {
+                        matched_title: best.matched_title,
+                        match_score: score_percent,
+                        match_status: decision.match_status,
+                    });
+
+                    if (decision.should_save) {
+                        await update_manga_anilist_id(row.id, best.id);
+                        matched++;
+                        console.log(
+                            `[MATCHED] ${row.title} -> ${best.matched_title} (${best.id}) ${score_percent}%`
+                        );
+                    } else if (decision.match_status === "needs_review") {
+                        review++;
+                        console.log(
+                            `[REVIEW] ${row.title} -> ${best.matched_title} ${score_percent}%`
+                        );
+                    } else {
+                        no_match++;
+                        console.log(
+                            `[NO MATCH] ${row.title} -> ${best.matched_title} ${score_percent}%`
+                        );
+                    }
                 }
             } catch (err) {
                 errors++;
@@ -419,6 +431,8 @@ async function main() {
                 );
             }
         }
+
+        last_id = rows[rows.length - 1].id;
     }
 
     console.log("");
