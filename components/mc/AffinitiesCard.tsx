@@ -21,7 +21,7 @@ export default function AffinitiesCard({ affinities }: Props) {
   const topAffinities = affinities.slice(0, 5);
 
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+    <div className="rounded-md border border-white/10 bg-black px-4 py-2">
       <div className="flex items-center justify-between gap-3">
         <div className="text-xs uppercase tracking-[0.2em] text-white/45">
           Affinities
@@ -39,7 +39,7 @@ export default function AffinitiesCard({ affinities }: Props) {
           No affinities yet.
         </div>
       ) : (
-        <div className="mt-4 space-y-3">
+        <div className="mt-2 space-y-2">
           {topAffinities.map((affinity) => {
             const percent = safeNumber(affinity.progress_percent);
             const xp = safeNumber(affinity.tag_xp);

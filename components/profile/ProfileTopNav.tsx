@@ -13,7 +13,8 @@ type Props = {
     | "activity"
     | "journal"
     | "library"
-    | "completions";
+    | "completions"
+    | "mc";
 };
 
 export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: Props) {
@@ -50,7 +51,8 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
         seg === "activity" ||
         seg === "journal" ||
         seg === "library" ||
-        seg === "completions"
+        seg === "completions" ||
+        seg === "mc"
       ) {
         return seg;
       }
@@ -78,7 +80,6 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
   return (
     <div className="mb-3 border-b border-black pb-4">
       <div className="flex items-start justify-between gap-6">
-        {/* Left: avatar + username (clickable) */}
         <Link
           href={baseProfilePath}
           className="flex items-center gap-3 min-w-0"
@@ -86,7 +87,6 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
         >
           <div className="w-10 h-10 rounded-full bg-black ring-1 ring-black flex items-center justify-center overflow-hidden shrink-0">
             {avatarUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
               <img src={avatarUrl} alt={username} className="w-full h-full object-cover" />
             ) : (
               <span className="text-sm font-semibold text-slate-200">{avatarInitial}</span>
@@ -100,7 +100,6 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
           </div>
         </Link>
 
-        {/* Right: tabs */}
         <nav
           ref={navRef}
           className="mt-4 min-w-0 flex-1 overflow-x-auto whitespace-nowrap [-webkit-overflow-scrolling:touch] scrollbar-hide md:flex-none md:overflow-visible"
@@ -112,6 +111,14 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
               className={tabClass(currentTab === "posts")}
             >
               Posts
+            </Link>
+
+            <Link
+              href={`${baseProfilePath}/mc`}
+              ref={currentTab === "mc" ? activeTabRef : null}
+              className={tabClass(currentTab === "mc")}
+            >
+              MC
             </Link>
 
             <Link

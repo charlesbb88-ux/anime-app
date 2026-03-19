@@ -15,6 +15,11 @@ import type {
   CharacterLoadoutOptionGroup,
 } from "@/components/mc/avatarTypes";
 import CharacterLoadoutEditor from "@/components/mc/CharacterLoadoutEditor";
+import MCLayoutSkeleton from "@/components/mc/MCLayoutSkeleton";
+
+type Props = {
+  userId: string;
+};
 
 type AccountProgressionRow = {
   user_id: string;
@@ -64,10 +69,10 @@ function getRankFromLevel(level: number) {
   return "F Rank";
 }
 
-export default function MCLayout() {
+export default function MCLayout({ userId }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [viewerId, setViewerId] = useState<string | null>(null);
   const [username, setUsername] = useState<string>("Player");
   const [account, setAccount] = useState<AccountProgressionRow | null>(null);
   const [affinities, setAffinities] = useState<AffinityRow[]>([]);
@@ -82,6 +87,8 @@ export default function MCLayout() {
     let cancelled = false;
 
     async function load() {
+      if (!userId) return;
+
       setLoading(true);
       setError(null);
 
@@ -93,33 +100,20 @@ export default function MCLayout() {
 
         if (userError) throw userError;
 
-        if (!user) {
-          if (!cancelled) {
-            setUserId(null);
-            setUsername("Player");
-            setAccount(null);
-            setAffinities([]);
-            setTitlePartRows([]);
-            setBaseStats([]);
-            setCombatStats([]);
-            setAvatarLayers([]);
-            setLoadoutOptions([]);
-            setSavingSlotKey(null);
-            setLoading(false);
-          }
-          return;
-        }
-
         if (!cancelled) {
-          setUserId(user.id);
+          setViewerId(user?.id ?? null);
         }
 
-        const { error: ensureCharacterError } = await supabase.rpc(
-          "ensure_user_mc_character",
-          { p_user_id: user.id }
-        );
+        const isOwner = user?.id === userId;
 
-        if (ensureCharacterError) throw ensureCharacterError;
+        if (isOwner) {
+          const { error: ensureCharacterError } = await supabase.rpc(
+            "ensure_user_mc_character",
+            { p_user_id: userId }
+          );
+
+          if (ensureCharacterError) throw ensureCharacterError;
+        }
 
         const [
           { data: accountData, error: accountError },
@@ -128,11 +122,11 @@ export default function MCLayout() {
           { data: combatStatsData, error: combatStatsError },
           { data: profileData, error: profileError },
         ] = await Promise.all([
-          supabase.rpc("get_account_progression", { p_user_id: user.id }),
-          supabase.rpc("get_user_progression_detailed", { p_user_id: user.id }),
-          supabase.rpc("get_user_base_stats", { p_user_id: user.id }),
-          supabase.rpc("get_user_combat_stats", { p_user_id: user.id }),
-          supabase.from("profiles").select("username").eq("id", user.id).maybeSingle(),
+          supabase.rpc("get_account_progression", { p_user_id: userId }),
+          supabase.rpc("get_user_progression_detailed", { p_user_id: userId }),
+          supabase.rpc("get_user_base_stats", { p_user_id: userId }),
+          supabase.rpc("get_user_combat_stats", { p_user_id: userId }),
+          supabase.from("profiles").select("username").eq("id", userId).maybeSingle(),
         ]);
 
         if (accountError) throw accountError;
@@ -145,7 +139,7 @@ export default function MCLayout() {
 
         const normalizedAccount: AccountProgressionRow | null = rawAccount
           ? {
-            user_id: String(rawAccount.user_id ?? user.id),
+            user_id: String(rawAccount.user_id ?? userId),
             account_level: safeNumber(rawAccount.account_level, 1),
             account_xp: safeNumber(rawAccount.account_xp, 0),
             current_level_floor_xp: safeNumber(rawAccount.current_level_floor_xp, 0),
@@ -180,15 +174,15 @@ export default function MCLayout() {
           })
         );
 
-        const normalizedCombatStats: CombatStatRow[] = ((combatStatsData as any[] | null) ?? []).map(
-          (stat) => ({
-            stat_key: String(stat.stat_key ?? ""),
-            display_name: String(stat.display_name ?? ""),
-            sort_order: safeNumber(stat.sort_order, 0),
-            account_level: safeNumber(stat.account_level, 1),
-            stat_value: safeNumber(stat.stat_value, 0),
-          })
-        );
+        const normalizedCombatStats: CombatStatRow[] = (
+          (combatStatsData as any[] | null) ?? []
+        ).map((stat) => ({
+          stat_key: String(stat.stat_key ?? ""),
+          display_name: String(stat.display_name ?? ""),
+          sort_order: safeNumber(stat.sort_order, 0),
+          account_level: safeNumber(stat.account_level, 1),
+          stat_value: safeNumber(stat.stat_value, 0),
+        }));
 
         const topTagIds = normalizedAffinities.slice(0, 3).map((tag) => tag.tag_id);
 
@@ -237,7 +231,7 @@ export default function MCLayout() {
         const { data: userCharacterData, error: userCharacterError } = await supabase
           .from("user_mc_characters")
           .select("base_body_id, pose_id")
-          .eq("user_id", user.id)
+          .eq("user_id", userId)
           .maybeSingle();
 
         if (userCharacterError) throw userCharacterError;
@@ -273,7 +267,7 @@ export default function MCLayout() {
           const { data: equippedRows, error: equippedError } = await supabase
             .from("user_mc_equipped_assets")
             .select("slot_key, asset_id")
-            .eq("user_id", user.id);
+            .eq("user_id", userId);
 
           if (equippedError) throw equippedError;
 
@@ -336,72 +330,74 @@ export default function MCLayout() {
 
           const editableSlots = ["hair_front", "hair_back", "aura_front"];
 
-          const { data: ownedAssetsData, error: ownedAssetsError } = await supabase
-            .from("user_mc_owned_assets")
-            .select(`
-              asset_id,
-              mc_assets!inner (
-                id,
-                asset_key,
-                display_name,
-                slot_key,
-                asset_kind,
-                image_url,
-                shape_data,
-                layer_order,
-                base_body_id,
-                pose_id,
-                is_active
-              )
-            `)
-            .eq("user_id", user.id);
+          if (isOwner) {
+            const { data: ownedAssetsData, error: ownedAssetsError } = await supabase
+              .from("user_mc_owned_assets")
+              .select(`
+                asset_id,
+                mc_assets!inner (
+                  id,
+                  asset_key,
+                  display_name,
+                  slot_key,
+                  asset_kind,
+                  image_url,
+                  shape_data,
+                  layer_order,
+                  base_body_id,
+                  pose_id,
+                  is_active
+                )
+              `)
+              .eq("user_id", userId);
 
-          if (ownedAssetsError) throw ownedAssetsError;
+            if (ownedAssetsError) throw ownedAssetsError;
 
-          const grouped = new Map<string, CharacterLoadoutOptionGroup>();
+            const grouped = new Map<string, CharacterLoadoutOptionGroup>();
 
-          for (const slotKey of editableSlots) {
-            grouped.set(slotKey, {
-              slotKey,
-              slotLabel:
-                slotKey === "hair_front"
-                  ? "Hair Front"
-                  : slotKey === "hair_back"
-                    ? "Hair Back"
-                    : "Aura Front",
-              options: [],
-            });
-          }
-
-          for (const row of (ownedAssetsData as any[] | null) ?? []) {
-            const asset = row.mc_assets;
-            if (!asset) continue;
-
-            const slotKey = String(asset.slot_key ?? "");
-            if (!editableSlots.includes(slotKey)) continue;
-            if (!grouped.has(slotKey)) continue;
-
-            const assetBaseBodyId = safeNumber(asset.base_body_id, 0);
-            const assetPoseId = safeNumber(asset.pose_id, 0);
-
-            if (assetBaseBodyId !== activeBaseBodyId || assetPoseId !== activePoseId) {
-              continue;
+            for (const slotKey of editableSlots) {
+              grouped.set(slotKey, {
+                slotKey,
+                slotLabel:
+                  slotKey === "hair_front"
+                    ? "Hair Front"
+                    : slotKey === "hair_back"
+                      ? "Hair Back"
+                      : "Aura Front",
+                options: [],
+              });
             }
 
-            grouped.get(slotKey)!.options.push({
-              assetId: safeNumber(asset.id, 0),
-              assetKey: String(asset.asset_key ?? ""),
-              displayName: String(asset.display_name ?? ""),
-              slotKey,
-              assetKind: String(asset.asset_kind ?? "shape") as "shape" | "image",
-              imageUrl: asset.image_url ? String(asset.image_url) : null,
-              shapeData: asset.shape_data ?? null,
-              layerOrder: safeNumber(asset.layer_order, 0),
-              isEquipped: equippedBySlot.get(slotKey) === safeNumber(asset.id, 0),
-            });
-          }
+            for (const row of (ownedAssetsData as any[] | null) ?? []) {
+              const asset = row.mc_assets;
+              if (!asset) continue;
 
-          normalizedLoadoutOptions = Array.from(grouped.values());
+              const slotKey = String(asset.slot_key ?? "");
+              if (!editableSlots.includes(slotKey)) continue;
+              if (!grouped.has(slotKey)) continue;
+
+              const assetBaseBodyId = safeNumber(asset.base_body_id, 0);
+              const assetPoseId = safeNumber(asset.pose_id, 0);
+
+              if (assetBaseBodyId !== activeBaseBodyId || assetPoseId !== activePoseId) {
+                continue;
+              }
+
+              grouped.get(slotKey)!.options.push({
+                assetId: safeNumber(asset.id, 0),
+                assetKey: String(asset.asset_key ?? ""),
+                displayName: String(asset.display_name ?? ""),
+                slotKey,
+                assetKind: String(asset.asset_kind ?? "shape") as "shape" | "image",
+                imageUrl: asset.image_url ? String(asset.image_url) : null,
+                shapeData: asset.shape_data ?? null,
+                layerOrder: safeNumber(asset.layer_order, 0),
+                isEquipped: equippedBySlot.get(slotKey) === safeNumber(asset.id, 0),
+              });
+            }
+
+            normalizedLoadoutOptions = Array.from(grouped.values());
+          }
         }
 
         if (!cancelled) {
@@ -428,7 +424,7 @@ export default function MCLayout() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [userId]);
 
   const accountLevel = account?.account_level ?? 1;
   const accountXp = account?.account_xp ?? 0;
@@ -442,7 +438,7 @@ export default function MCLayout() {
   const fullTitle = titleData.fullTitle;
 
   async function handleEquipAsset(slotKey: string, assetId: number) {
-    if (!userId) return;
+    if (!viewerId || viewerId !== userId) return;
 
     try {
       setSavingSlotKey(slotKey);
@@ -451,7 +447,7 @@ export default function MCLayout() {
         .from("user_mc_equipped_assets")
         .upsert(
           {
-            user_id: userId,
+            user_id: viewerId,
             slot_key: slotKey,
             asset_id: assetId,
             updated_at: new Date().toISOString(),
@@ -506,31 +502,20 @@ export default function MCLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-white">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold tracking-tight">MC</h1>
-          <p className="mt-2 text-sm text-white/60">
-            Character overview, progression, abilities, and affinities.
-          </p>
-        </div>
+    <div className="min-h-screen text-white">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-1"></div>
 
         {loading ? (
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-            Loading...
-          </div>
+          <MCLayoutSkeleton />
         ) : error ? (
           <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-5 text-red-200">
             {error}
           </div>
-        ) : !userId ? (
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-            You must be logged in to view this page.
-          </div>
         ) : (
           <>
-            <div className="grid gap-6 lg:grid-cols-[320px_minmax(320px,1fr)_320px] lg:grid-rows-[auto_auto_auto]">
-              <div className="lg:col-start-1 lg:row-start-1">
+            <div className="grid gap-4 lg:grid-cols-[320px_minmax(320px,1fr)_320px]">
+              <div className="order-2 flex flex-col gap-6 lg:order-none lg:col-start-1">
                 <ProfileCard
                   accountLevel={accountLevel}
                   accountXp={accountXp}
@@ -540,13 +525,11 @@ export default function MCLayout() {
                   title={shortTitle}
                   rank={rank}
                 />
-              </div>
 
-              <div className="lg:col-start-1 lg:row-start-2">
                 <StatsCard stats={baseStats} />
               </div>
 
-              <div className="lg:col-start-2 lg:row-start-1 lg:row-span-3">
+              <div className="order-1 lg:order-none lg:col-start-2">
                 <CharacterPanel
                   username={username}
                   title={fullTitle}
@@ -556,24 +539,19 @@ export default function MCLayout() {
                 />
               </div>
 
-              <div className="lg:col-start-3 lg:row-start-1">
+              <div className="order-3 flex flex-col gap-6 lg:order-none lg:col-start-3">
                 <AbilitiesCard />
-              </div>
-
-              <div className="lg:col-start-3 lg:row-start-2">
                 <CombatStatsCard stats={combatStats} />
-              </div>
-
-              <div className="lg:col-start-3 lg:row-start-3">
                 <AffinitiesCard affinities={affinities} />
               </div>
             </div>
-
-            <CharacterLoadoutEditor
-              groups={loadoutOptions}
-              savingSlotKey={savingSlotKey}
-              onEquip={handleEquipAsset}
-            />
+            {viewerId === userId ? (
+              <CharacterLoadoutEditor
+                groups={loadoutOptions}
+                savingSlotKey={savingSlotKey}
+                onEquip={handleEquipAsset}
+              />
+            ) : null}
           </>
         )}
       </div>
