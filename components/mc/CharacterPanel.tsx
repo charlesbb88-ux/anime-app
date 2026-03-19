@@ -1,12 +1,16 @@
 "use client";
 
+import CharacterAvatar from "@/components/mc/CharacterAvatar";
+import type { CharacterAvatarLayer } from "@/components/mc/avatarTypes";
 import type { GeneratedTitle } from "@/lib/generateTitle";
+import CharacterRigAvatar from "@/components/mc/CharacterRigAvatar";
 
 type Props = {
   username: string;
   title: string;
   rank: string;
   titleDebug?: GeneratedTitle;
+  avatarLayers?: CharacterAvatarLayer[];
 };
 
 export default function CharacterPanel({
@@ -14,7 +18,10 @@ export default function CharacterPanel({
   title,
   rank,
   titleDebug,
+  avatarLayers = [],
 }: Props) {
+  const hasAvatar = avatarLayers.length > 0;
+
   return (
     <div className="h-full rounded-3xl border border-white/10 bg-white/5 p-5">
       <div className="flex h-full flex-col">
@@ -55,19 +62,23 @@ export default function CharacterPanel({
 
         <div className="flex flex-1 items-center justify-center">
           <div className="flex w-full max-w-md flex-col items-center">
-            <div className="flex h-[420px] w-full items-center justify-center rounded-[2rem] border border-dashed border-white/15 bg-black/20">
-              <div className="text-center">
-                <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full border border-white/15 bg-white/5 text-3xl">
-                  ?
-                </div>
-                <div className="mt-4 text-lg font-semibold">
-                  Character Portrait
-                </div>
-                <div className="mt-1 text-sm text-white/45">
-                  Avatar / generated character goes here
+            {hasAvatar ? (
+              <CharacterRigAvatar />
+            ) : (
+              <div className="flex h-[420px] w-full items-center justify-center rounded-[2rem] border border-dashed border-white/15 bg-black/20">
+                <div className="text-center">
+                  <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full border border-white/15 bg-white/5 text-3xl">
+                    ?
+                  </div>
+                  <div className="mt-4 text-lg font-semibold">
+                    Character Portrait
+                  </div>
+                  <div className="mt-1 text-sm text-white/45">
+                    Avatar / generated character goes here
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             <div className="mt-5 text-center">
               <div className="text-xl font-semibold">{username}</div>
