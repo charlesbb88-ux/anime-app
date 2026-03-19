@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "@/lib/supabaseClient";
 import ProfileTopNav from "./ProfileTopNav";
+import MCLayoutSkeleton from "@/components/mc/MCLayoutSkeleton";
+import ProfileTopNavSkeleton from "./ProfileTopNavSkeleton";
 
 type Profile = {
   id: string;
@@ -22,7 +24,8 @@ type Props = {
   | "journal"
   | "library"
   | "activity"
-  | "completions";
+  | "completions"
+  | "mc";
 
   maxWidthClassName?: string;
 };
@@ -91,8 +94,20 @@ export default function ProfileLayout({
 
   if (loadingProfile) {
     return (
-      <main className="min-h-screen flex items-center justify-center">
-        <p className="text-slate-600">Loading…</p>
+      <main className="min-h-screen">
+        <div className={`${maxWidthClassName} mx-auto px-4 pt-5 pb-7`}>
+          {/* top nav skeleton */}
+          <ProfileTopNavSkeleton />
+
+          {/* page-specific skeleton */}
+          {activeTab === "mc" ? (
+            <MCLayoutSkeleton />
+          ) : (
+            <div className="flex items-center justify-center py-20 text-white/60">
+              Loading...
+            </div>
+          )}
+        </div>
       </main>
     );
   }
