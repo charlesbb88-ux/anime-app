@@ -14,6 +14,7 @@ type FighterProps = {
   color: string;
   clip: ClipKey;
   triggerKey: number;
+  startDelayMs?: number;
 };
 
 const CLIP_PATHS: Record<ClipKey, string> = {
@@ -23,7 +24,14 @@ const CLIP_PATHS: Record<ClipKey, string> = {
   hit: "/mc/3d/starter-hit.glb",
 };
 
-function Fighter({ baseX, facing, color, clip, triggerKey }: FighterProps) {
+function Fighter({
+  baseX,
+  facing,
+  color,
+  clip,
+  triggerKey,
+  startDelayMs = 0,
+}: FighterProps) {
   const baseGltf = useGLTF("/mc/3d/starter-run.glb");
   const clipGltf = useGLTF(CLIP_PATHS[clip]);
 
@@ -32,8 +40,8 @@ function Fighter({ baseX, facing, color, clip, triggerKey }: FighterProps) {
 
   const wrapperRef = useRef<THREE.Group>(null);
   const modelRef = useRef<THREE.Group>(null);
-  const startTimeRef = useRef<number | null>(null);
-  const durationRef = useRef(1);
+  const animationStartTimeRef = useRef<number | null>(null);
+  const clipDurationRef = useRef(1);
 
   const clonedScene = useMemo(() => {
     const cloned = cloneSkinned(scene) as THREE.Group;
@@ -73,47 +81,62 @@ function Fighter({ baseX, facing, color, clip, triggerKey }: FighterProps) {
     const action = actions[clipName];
     if (!action) return;
 
+    let timeoutId: number | null = null;
+
+    action.stop();
     action.reset();
     action.setLoop(THREE.LoopOnce, 1);
     action.clampWhenFinished = true;
     action.time = 0;
-    action.paused = false;
-    action.play();
+    action.paused = true;
 
-    durationRef.current = action.getClip().duration || 1;
-    startTimeRef.current = performance.now();
+    animationStartTimeRef.current = null;
+
+    timeoutId = window.setTimeout(() => {
+      action.reset();
+      action.paused = false;
+      action.play();
+
+      clipDurationRef.current = action.getClip().duration || 1;
+      animationStartTimeRef.current = performance.now();
+    }, startDelayMs);
 
     return () => {
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
       action.stop();
     };
-  }, [actions, names, triggerKey]);
+  }, [actions, names, triggerKey, startDelayMs]);
 
   useFrame(() => {
     if (!wrapperRef.current) return;
-    if (startTimeRef.current == null) {
+
+    const start = animationStartTimeRef.current;
+    if (start == null) {
       wrapperRef.current.position.x = baseX;
       return;
     }
 
-    const elapsed = (performance.now() - startTimeRef.current) / 1000;
-    const duration = durationRef.current || 1;
+    const elapsed = (performance.now() - start) / 1000;
+    const duration = clipDurationRef.current || 1;
     const t = Math.min(elapsed / duration, 1);
 
     let xOffset = 0;
 
     if (clip === "attack") {
-      if (t < 0.55) {
-        xOffset = THREE.MathUtils.lerp(0, 1.0, t / 0.55);
+      if (t < 0.5) {
+        xOffset = THREE.MathUtils.lerp(0, -1.6, t / 0.5);
       } else {
-        xOffset = THREE.MathUtils.lerp(1.0, 0.15, (t - 0.55) / 0.45);
+        xOffset = THREE.MathUtils.lerp(-1.6, -0.25, (t - 0.5) / 0.5);
       }
     }
 
     if (clip === "hit") {
-      if (t < 0.25) {
-        xOffset = THREE.MathUtils.lerp(0, -0.45, t / 0.25);
+      if (t < 0.35) {
+        xOffset = THREE.MathUtils.lerp(0, -1.0, t / 0.35);
       } else {
-        xOffset = THREE.MathUtils.lerp(-0.45, -0.12, (t - 0.25) / 0.75);
+        xOffset = THREE.MathUtils.lerp(-1.0, -0.2, (t - 0.35) / 0.65);
       }
     }
 
@@ -152,8 +175,22 @@ function Arena({ triggerKey }: { triggerKey: number }) {
         <meshStandardMaterial color="#101010" />
       </mesh>
 
-      <Fighter baseX={-2.5} facing="right" color="red" clip="hit" triggerKey={triggerKey} />
-      <Fighter baseX={2.5} facing="left" color="blue" clip="attack" triggerKey={triggerKey} />
+      <Fighter
+        baseX={-2.5}
+        facing="right"
+        color="red"
+        clip="hit"
+        triggerKey={triggerKey}
+        startDelayMs={350}
+      />
+      <Fighter
+        baseX={2.5}
+        facing="left"
+        color="blue"
+        clip="attack"
+        triggerKey={triggerKey}
+        startDelayMs={0}
+      />
     </>
   );
 }
