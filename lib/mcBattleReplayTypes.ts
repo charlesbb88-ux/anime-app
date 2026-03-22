@@ -1,25 +1,20 @@
-export type McBattleSide = "challenger" | "defender";
-
-export type McBattleActionType = "basic_attack";
-
-export type McBattleTimelineEvent = {
-  step: number;
-  actor_side: McBattleSide;
-  target_side: McBattleSide;
-  action_type: McBattleActionType;
-  damage: number;
-  target_hp_after: number;
-};
+import type { McDotReplay } from "@/lib/dot/mcDotReplayTypes";
 
 export type McBattleReplayData = {
-  timeline: McBattleTimelineEvent[];
+  replay_kind: "dot_v1";
+  fighter_side_map: {
+    left: "challenger";
+    right: "defender";
+  };
+  dot_replay: McDotReplay;
 };
 
 export type McBattleResult = {
   winner_user_id: string;
   loser_user_id: string;
-  total_turns: number;
-  finished_by: McBattleActionType;
+  total_hits: number;
+  finished_by: "hp_zero";
+  duration_ms: number;
   final_hp: {
     challenger: number;
     defender: number;

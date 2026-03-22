@@ -8,6 +8,18 @@ import type {
   McDotReplay,
 } from "@/lib/dot/mcDotReplayTypes";
 
+type ReplayFighterConfig = {
+  maxHp: number;
+  attack: number;
+  defense: number;
+  speed: number;
+};
+
+type GenerateMcDotReplayConfig = {
+  left?: ReplayFighterConfig;
+  right?: ReplayFighterConfig;
+};
+
 type SimFighter = {
   side: FighterSide;
   x: number;
@@ -17,6 +29,17 @@ type SimFighter = {
   facing: "left" | "right";
   action: DotAction;
   hp: number;
+
+  maxHp: number;
+  attackStat: number;
+  defenseStat: number;
+  speedStat: number;
+
+  moveSpeedMult: number;
+  airSpeedMult: number;
+  cooldownMult: number;
+  damageMult: number;
+  defenseMult: number;
 
   attackCooldownMs: number;
   attackTimerMs: number;
@@ -37,7 +60,6 @@ const STAGE_MAX_X = STAGE_WIDTH / 2 - 0.45;
 const GROUND_Y = 0;
 
 const GRAVITY_PER_STEP = 0.18;
-const MAX_HP = 100;
 
 const RUN_SPEED_MIN = 0.22;
 const RUN_SPEED_MAX = 0.4;
@@ -92,11 +114,35 @@ function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
 
-function otherSide(side: FighterSide): FighterSide {
-  return side === "left" ? "right" : "left";
+function normalizeStat(value: number, fallback: number) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return clamp(Math.round(n), 1, 500);
 }
 
-function createFighter(side: FighterSide): SimFighter {
+function getDefaultConfig(side: FighterSide): ReplayFighterConfig {
+  return {
+    maxHp: 100,
+    attack: 12,
+    defense: 10,
+    speed: side === "left" ? 11 : 11,
+  };
+}
+
+function createFighter(side: FighterSide, config?: ReplayFighterConfig): SimFighter {
+  const finalConfig = config ?? getDefaultConfig(side);
+
+  const maxHp = clamp(normalizeStat(finalConfig.maxHp, 100), 40, 500);
+  const attackStat = normalizeStat(finalConfig.attack, 12);
+  const defenseStat = normalizeStat(finalConfig.defense, 10);
+  const speedStat = normalizeStat(finalConfig.speed, 10);
+
+  const moveSpeedMult = clamp(0.82 + speedStat / 90, 0.8, 1.6);
+  const airSpeedMult = clamp(0.82 + speedStat / 105, 0.8, 1.5);
+  const cooldownMult = clamp(1.22 - speedStat / 140, 0.5, 1.2);
+  const damageMult = clamp(0.7 + attackStat / 55, 0.65, 3);
+  const defenseMult = clamp(0.7 + defenseStat / 70, 0.7, 3);
+
   return {
     side,
     x: side === "left" ? -4.6 : 4.6,
@@ -105,7 +151,18 @@ function createFighter(side: FighterSide): SimFighter {
     vy: 0,
     facing: side === "left" ? "right" : "left",
     action: "idle",
-    hp: MAX_HP,
+    hp: maxHp,
+
+    maxHp,
+    attackStat,
+    defenseStat,
+    speedStat,
+
+    moveSpeedMult,
+    airSpeedMult,
+    cooldownMult,
+    damageMult,
+    defenseMult,
 
     attackCooldownMs: randInt(120, 260),
     attackTimerMs: 0,
@@ -128,16 +185,12 @@ function setFacing(a: SimFighter, b: SimFighter) {
   b.facing = b.x >= a.x ? "left" : "right";
 }
 
-function pushEvent(
-  events: DotReplayMetaEvent[],
-  event: DotReplayMetaEvent
-) {
+function pushEvent(events: DotReplayMetaEvent[], event: DotReplayMetaEvent) {
   events.push(event);
 }
 
 function getEndgameFactor(nowMs: number) {
   if (nowMs <= ENDGAME_START_MS) return 0;
-
   return clamp((nowMs - ENDGAME_START_MS) / ENDGAME_RAMP_MS, 0, 1);
 }
 
@@ -197,14 +250,17 @@ function startAttack(
 
   attacker.attackTimerMs = randInt(180, 260);
   attacker.attackCooldownMs = Math.round(
-    lerp(760, 260, endgameFactor) - rand(0, 120)
+    (lerp(760, 260, endgameFactor) - rand(0, 120)) * attacker.cooldownMult
   );
-  attacker.attackCooldownMs = Math.max(160, attacker.attackCooldownMs);
+  attacker.attackCooldownMs = Math.max(120, attacker.attackCooldownMs);
   attacker.attackHasHit = false;
   attacker.action = "attack";
 
   const direction = attacker.x <= defender.x ? 1 : -1;
-  attacker.vx = direction * rand(ATTACK_LUNGE_MIN * 1.2, ATTACK_LUNGE_MAX * 1.4);
+  attacker.vx =
+    direction *
+    rand(ATTACK_LUNGE_MIN * 1.2, ATTACK_LUNGE_MAX * 1.4) *
+    attacker.moveSpeedMult;
 
   pushEvent(events, {
     type: "attack",
@@ -226,7 +282,9 @@ function maybeStartAttack(
   if (attacker.hitstunMs > 0) return;
 
   const distance = getDistance(attacker, defender);
-  const inAttackRange = distance <= rand(ATTACK_RANGE_MIN, ATTACK_RANGE_MAX);
+  const rangeBonus = clamp(attacker.speedStat / 160, 0, 0.28);
+  const inAttackRange =
+    distance <= rand(ATTACK_RANGE_MIN, ATTACK_RANGE_MAX) + rangeBonus;
 
   if (!inAttackRange) return;
 
@@ -270,9 +328,15 @@ function applyIntentMotion(
 
   if (self.y > 0.01) {
     if (self.intent === "jump-in" || self.intent === "pressure") {
-      self.vx = direction * rand(AIR_DRIFT_MIN, AIR_DRIFT_MAX);
+      self.vx =
+        direction *
+        rand(AIR_DRIFT_MIN, AIR_DRIFT_MAX) *
+        self.airSpeedMult;
     } else if (self.intent === "retreat") {
-      self.vx = -direction * rand(AIR_DRIFT_MIN, AIR_DRIFT_MAX);
+      self.vx =
+        -direction *
+        rand(AIR_DRIFT_MIN, AIR_DRIFT_MAX) *
+        self.airSpeedMult;
     }
     return;
   }
@@ -280,7 +344,10 @@ function applyIntentMotion(
   switch (self.intent) {
     case "approach": {
       if (distance > 1.1) {
-        self.vx = direction * rand(RUN_SPEED_MIN, RUN_SPEED_MAX);
+        self.vx =
+          direction *
+          rand(RUN_SPEED_MIN, RUN_SPEED_MAX) *
+          self.moveSpeedMult;
         if (self.action !== "run") {
           pushEvent(events, {
             type: "approach",
@@ -298,7 +365,10 @@ function applyIntentMotion(
     }
 
     case "retreat": {
-      self.vx = -direction * rand(RETREAT_SPEED_MIN, RETREAT_SPEED_MAX);
+      self.vx =
+        -direction *
+        rand(RETREAT_SPEED_MIN, RETREAT_SPEED_MAX) *
+        self.moveSpeedMult;
       self.action = "recover";
       pushEvent(events, {
         type: "recover",
@@ -312,7 +382,10 @@ function applyIntentMotion(
     case "jump-in": {
       if (chance(0.55)) {
         self.vy = rand(0.85, 1.25);
-        self.vx = direction * rand(0.16, 0.28);
+        self.vx =
+          direction *
+          rand(0.16, 0.28) *
+          self.airSpeedMult;
         self.action = "jump";
         pushEvent(events, {
           type: "jump",
@@ -321,7 +394,10 @@ function applyIntentMotion(
           endMs: nowMs + randInt(180, 320),
         });
       } else {
-        self.vx = direction * rand(RUN_SPEED_MIN, RUN_SPEED_MAX);
+        self.vx =
+          direction *
+          rand(RUN_SPEED_MIN, RUN_SPEED_MAX) *
+          self.moveSpeedMult;
         self.action = "run";
       }
       break;
@@ -329,11 +405,14 @@ function applyIntentMotion(
 
     case "pressure": {
       if (distance > 1.0) {
-        self.vx = direction * rand(RUN_SPEED_MIN, RUN_SPEED_MAX);
+        self.vx =
+          direction *
+          rand(RUN_SPEED_MIN, RUN_SPEED_MAX) *
+          self.moveSpeedMult;
         self.action = "run";
       } else {
         const tinyShift = chance(0.5) ? 1 : -1;
-        self.vx = tinyShift * rand(0.08, 0.22);
+        self.vx = tinyShift * rand(0.08, 0.22) * self.moveSpeedMult;
         self.action = chance(0.4) ? "run" : "idle";
       }
       break;
@@ -413,7 +492,6 @@ function maybeResolveHit(
   const activeNow = attackProgress >= 0.18 && attackProgress <= 0.62;
 
   if (!activeNow) return;
-
   if (!canAttackConnect(attacker, defender)) return;
 
   attacker.attackHasHit = true;
@@ -423,14 +501,19 @@ function maybeResolveHit(
     lerp(MIN_ENDGAME_DAMAGE_BONUS, MAX_ENDGAME_DAMAGE_BONUS, endgameFactor)
   );
 
-  const damage = randInt(7, 18) + damageBonus;
+  const baseDamage = randInt(7, 18) + damageBonus;
+  const scaledDamage = Math.round(
+    (baseDamage * attacker.damageMult) / defender.defenseMult
+  );
+  const damage = Math.max(1, scaledDamage);
+
   defender.hp = Math.max(0, defender.hp - damage);
   defender.hitstunMs = randInt(220, 380);
   defender.recoverMs = randInt(180, 320);
   defender.action = "hit";
 
   const direction = attacker.x <= defender.x ? 1 : -1;
-  defender.vx = direction * rand(0.28, 0.62);
+  defender.vx = direction * rand(0.28, 0.62) * attacker.moveSpeedMult;
 
   if (chance(0.42)) {
     defender.vy = rand(0.3, 0.85);
@@ -484,9 +567,11 @@ function snapshotFighter(f: SimFighter): DotFighterState {
   };
 }
 
-export function generateMcDotReplay(): McDotReplay {
-  const left = createFighter("left");
-  const right = createFighter("right");
+export function generateMcDotReplay(
+  config?: GenerateMcDotReplayConfig
+): McDotReplay {
+  const left = createFighter("left", config?.left);
+  const right = createFighter("right", config?.right);
 
   const frames: DotReplayFrame[] = [];
   const hitEvents: DotReplayHitEvent[] = [];
