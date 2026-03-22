@@ -7,14 +7,83 @@ import * as THREE from "three";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 
 type ClipKey = "idle" | "run" | "attack" | "hit";
+type FighterSide = "left" | "right";
+
+type Exchange = {
+  attacker: FighterSide;
+  defender: FighterSide;
+
+  attackerClip: ClipKey;
+  defenderClip: ClipKey;
+
+  timing: {
+    startMs: number;
+    impactMs: number;
+    endMs: number;
+  };
+
+  motion: {
+    attacker: {
+      fromX: number;
+      contactX: number;
+      settleX: number;
+    };
+    defender: {
+      fromX: number;
+      hitX: number;
+      settleX: number;
+    };
+  };
+};
+
+const EXCHANGE: Exchange = {
+  attacker: "right",
+  defender: "left",
+
+  attackerClip: "attack",
+  defenderClip: "hit",
+
+  timing: {
+    startMs: 0,
+    impactMs: 350,
+    endMs: 900,
+  },
+
+  motion: {
+    attacker: {
+      fromX: 2.5,
+      contactX: 0.9,
+      settleX: 1.8,
+    },
+    defender: {
+      fromX: -2.5,
+      hitX: -3.0,
+      settleX: -2.7,
+    },
+  },
+};
+
+type FighterMotion = {
+  fromX: number;
+  midX: number;
+  endX: number;
+  midT: number;
+};
+
+type FighterResolvedData = {
+  side: FighterSide;
+  role: "attacker" | "defender";
+  clip: ClipKey;
+  startDelayMs: number;
+  baseX: number;
+  motion: FighterMotion;
+};
 
 type FighterProps = {
-  baseX: number;
+  side: FighterSide;
   facing: "left" | "right";
   color: string;
-  clip: ClipKey;
   triggerKey: number;
-  startDelayMs?: number;
 };
 
 const CLIP_PATHS: Record<ClipKey, string> = {
@@ -24,14 +93,49 @@ const CLIP_PATHS: Record<ClipKey, string> = {
   hit: "/mc/3d/starter-hit.glb",
 };
 
-function Fighter({
-  baseX,
-  facing,
-  color,
-  clip,
-  triggerKey,
-  startDelayMs = 0,
-}: FighterProps) {
+function getResolvedFighterData(exchange: Exchange, side: FighterSide): FighterResolvedData {
+  const durationMs = Math.max(exchange.timing.endMs - exchange.timing.startMs, 1);
+  const midT = THREE.MathUtils.clamp(
+    (exchange.timing.impactMs - exchange.timing.startMs) / durationMs,
+    0,
+    1
+  );
+
+  if (side === exchange.attacker) {
+    return {
+      side,
+      role: "attacker",
+      clip: exchange.attackerClip,
+      startDelayMs: exchange.timing.startMs,
+      baseX: exchange.motion.attacker.fromX,
+      motion: {
+        fromX: exchange.motion.attacker.fromX,
+        midX: exchange.motion.attacker.contactX,
+        endX: exchange.motion.attacker.settleX,
+        midT,
+      },
+    };
+  }
+
+  return {
+    side,
+    role: "defender",
+    clip: exchange.defenderClip,
+    startDelayMs: exchange.timing.impactMs,
+    baseX: exchange.motion.defender.fromX,
+    motion: {
+      fromX: exchange.motion.defender.fromX,
+      midX: exchange.motion.defender.hitX,
+      endX: exchange.motion.defender.settleX,
+      midT,
+    },
+  };
+}
+
+function Fighter({ side, facing, color, triggerKey }: FighterProps) {
+  const resolved = useMemo(() => getResolvedFighterData(EXCHANGE, side), [side]);
+  const { clip, startDelayMs, baseX, motion } = resolved;
+
   const baseGltf = useGLTF("/mc/3d/starter-run.glb");
   const clipGltf = useGLTF(CLIP_PATHS[clip]);
 
@@ -122,25 +226,23 @@ function Fighter({
     const duration = clipDurationRef.current || 1;
     const t = Math.min(elapsed / duration, 1);
 
-    let xOffset = 0;
+    const { fromX, midX, endX, midT } = motion;
 
-    if (clip === "attack") {
-      if (t < 0.5) {
-        xOffset = THREE.MathUtils.lerp(0, -1.6, t / 0.5);
-      } else {
-        xOffset = THREE.MathUtils.lerp(-1.6, -0.25, (t - 0.5) / 0.5);
-      }
+    let x = fromX;
+
+    if (midT <= 0) {
+      x = THREE.MathUtils.lerp(midX, endX, t);
+    } else if (midT >= 1) {
+      x = THREE.MathUtils.lerp(fromX, midX, t);
+    } else if (t < midT) {
+      const localT = t / midT;
+      x = THREE.MathUtils.lerp(fromX, midX, localT);
+    } else {
+      const localT = (t - midT) / (1 - midT);
+      x = THREE.MathUtils.lerp(midX, endX, localT);
     }
 
-    if (clip === "hit") {
-      if (t < 0.35) {
-        xOffset = THREE.MathUtils.lerp(0, -1.0, t / 0.35);
-      } else {
-        xOffset = THREE.MathUtils.lerp(-1.0, -0.2, (t - 0.35) / 0.65);
-      }
-    }
-
-    wrapperRef.current.position.x = baseX + xOffset;
+    wrapperRef.current.position.x = x;
   });
 
   return (
@@ -176,20 +278,17 @@ function Arena({ triggerKey }: { triggerKey: number }) {
       </mesh>
 
       <Fighter
-        baseX={-2.5}
+        side="left"
         facing="right"
         color="red"
-        clip="hit"
         triggerKey={triggerKey}
-        startDelayMs={350}
       />
+
       <Fighter
-        baseX={2.5}
+        side="right"
         facing="left"
         color="blue"
-        clip="attack"
         triggerKey={triggerKey}
-        startDelayMs={0}
       />
     </>
   );
