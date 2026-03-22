@@ -1,9 +1,8 @@
 import type { McBattleFighterSnapshot } from "@/lib/mcBattleTypes";
+import { generateMcDotReplay } from "@/lib/dot/generateMcDotReplay";
 import type {
   McBattleReplayData,
   McBattleResult,
-  McBattleSide,
-  McBattleTimelineEvent,
 } from "@/lib/mcBattleReplayTypes";
 
 type SimulateMcBattleResult = {
@@ -17,92 +16,65 @@ function safeNumber(value: unknown, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function calculateBasicAttackDamage(
-  attacker: McBattleFighterSnapshot,
-  defender: McBattleFighterSnapshot
-) {
-  const attack = safeNumber(attacker.combat_stats.attack, 0);
-  const defense = safeNumber(defender.combat_stats.defense, 0);
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
 
-  return Math.max(1, attack - Math.floor(defense / 2));
+function buildReplayFighterConfig(snapshot: McBattleFighterSnapshot) {
+  const hp = safeNumber(snapshot.combat_stats.hp, 100);
+  const attack = safeNumber(snapshot.combat_stats.attack, 10);
+  const defense = safeNumber(snapshot.combat_stats.defense, 10);
+  const speed = safeNumber(snapshot.combat_stats.speed, 10);
+
+  return {
+    maxHp: clamp(Math.round(hp), 40, 500),
+    attack: clamp(Math.round(attack), 1, 500),
+    defense: clamp(Math.round(defense), 0, 500),
+    speed: clamp(Math.round(speed), 1, 500),
+  };
 }
 
 export function simulateMcBattle(
   challenger: McBattleFighterSnapshot,
   defender: McBattleFighterSnapshot
 ): SimulateMcBattleResult {
-  let challengerHp = safeNumber(challenger.combat_stats.hp, 0);
-  let defenderHp = safeNumber(defender.combat_stats.hp, 0);
+  const replay = generateMcDotReplay({
+    left: buildReplayFighterConfig(challenger),
+    right: buildReplayFighterConfig(defender),
+  });
 
-  const challengerSpeed = safeNumber(challenger.combat_stats.speed, 0);
-  const defenderSpeed = safeNumber(defender.combat_stats.speed, 0);
+  const lastFrame = replay.frames[replay.frames.length - 1];
 
-  const timeline: McBattleTimelineEvent[] = [];
-
-  const firstSide: McBattleSide =
-    challengerSpeed >= defenderSpeed ? "challenger" : "defender";
-
-  let activeSide: McBattleSide = firstSide;
-  let step = 1;
-
-  while (challengerHp > 0 && defenderHp > 0) {
-    const actor = activeSide === "challenger" ? challenger : defender;
-    const target = activeSide === "challenger" ? defender : challenger;
-
-    const targetSide: McBattleSide =
-      activeSide === "challenger" ? "defender" : "challenger";
-
-    const damage = calculateBasicAttackDamage(actor, target);
-
-    if (targetSide === "defender") {
-      defenderHp = Math.max(0, defenderHp - damage);
-
-      timeline.push({
-        step,
-        actor_side: activeSide,
-        target_side: targetSide,
-        action_type: "basic_attack",
-        damage,
-        target_hp_after: defenderHp,
-      });
-    } else {
-      challengerHp = Math.max(0, challengerHp - damage);
-
-      timeline.push({
-        step,
-        actor_side: activeSide,
-        target_side: targetSide,
-        action_type: "basic_attack",
-        damage,
-        target_hp_after: challengerHp,
-      });
-    }
-
-    if (challengerHp <= 0 || defenderHp <= 0) {
-      break;
-    }
-
-    activeSide = activeSide === "challenger" ? "defender" : "challenger";
-    step += 1;
+  if (!lastFrame) {
+    throw new Error("Replay generation failed: no frames were produced.");
   }
 
-  const challengerWon = challengerHp > 0;
+  const challengerFinalHp = lastFrame.fighters.left.hp;
+  const defenderFinalHp = lastFrame.fighters.right.hp;
+
+  const challengerWon = replay.winner === "left";
   const winnerUserId = challengerWon ? challenger.user_id : defender.user_id;
   const loserUserId = challengerWon ? defender.user_id : challenger.user_id;
 
   const battleResult: McBattleResult = {
     winner_user_id: winnerUserId,
     loser_user_id: loserUserId,
-    total_turns: timeline.length,
-    finished_by: "basic_attack",
+    total_hits: replay.hitEvents.length,
+    finished_by: "hp_zero",
+    duration_ms: replay.durationMs,
     final_hp: {
-      challenger: challengerHp,
-      defender: defenderHp,
+      challenger: challengerFinalHp,
+      defender: defenderFinalHp,
     },
   };
 
   const replayData: McBattleReplayData = {
-    timeline,
+    replay_kind: "dot_v1",
+    fighter_side_map: {
+      left: "challenger",
+      right: "defender",
+    },
+    dot_replay: replay,
   };
 
   return {

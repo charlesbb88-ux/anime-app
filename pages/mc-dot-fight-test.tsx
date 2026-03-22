@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { generateMcDotReplay } from "@/lib/dot/generateMcDotReplay";
 import type { DotReplayFrame, FighterSide, McDotReplay } from "@/lib/dot/mcDotReplayTypes";
+import { supabase } from "@/lib/supabaseClient";
 
 const STAGE_HEIGHT_PX = 320;
 const STAGE_WIDTH_PX = 920;
@@ -123,9 +124,8 @@ function Dot({
             }}
         >
             <div
-                className={`relative h-full w-full rounded-full border-2 ${
-                    side === "left" ? "bg-red-500 border-red-200" : "bg-blue-500 border-blue-200"
-                } ${flash ? "ring-4 ring-white/80" : ""}`}
+                className={`relative h-full w-full rounded-full border-2 ${side === "left" ? "bg-red-500 border-red-200" : "bg-blue-500 border-blue-200"
+                    } ${flash ? "ring-4 ring-white/80" : ""}`}
             >
                 <div
                     className="absolute top-1/2 h-[2px] w-4 bg-white"
@@ -146,6 +146,7 @@ function Dot({
 }
 
 export default function McDotFightTestPage() {
+    const [battleRow, setBattleRow] = useState<any | null>(null);
     const [replay, setReplay] = useState<McDotReplay | null>(null);
     const [timeMs, setTimeMs] = useState(0);
     const [cameraX, setCameraX] = useState(0);
@@ -167,17 +168,49 @@ export default function McDotFightTestPage() {
     const hitStopUntilRef = useRef(0);
     const lastTriggeredHitRef = useRef<number | null>(null);
 
-    const buildReplay = () => {
-        const nextReplay = generateMcDotReplay();
-        setReplay(nextReplay);
+    const buildReplay = async () => {
+        const { data, error } = await supabase
+            .from("mc_battles")
+            .select(`
+  id,
+  challenger_user_id,
+  defender_user_id,
+  winner_user_id,
+  battle_result,
+  replay_data
+`)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .single();
+
+        if (error || !data) {
+            console.error("Failed to load battle:", error);
+            setBattleRow(null);
+            setReplay(null);
+            return;
+        }
+
+        setBattleRow(data);
+        setReplay(data.replay_data?.dot_replay ?? null);
+
+        const replay = data.replay_data?.dot_replay;
+
+        if (!replay) {
+            console.error("No dot replay found in battle row");
+            return;
+        }
+
+        // reset everything
         setTimeMs(0);
         cameraXRef.current = 0;
         cameraYRef.current = 0;
         cameraScaleRef.current = 1;
+
         hitStopUntilRef.current = 0;
         lastTriggeredHitRef.current = null;
         playbackTimeRef.current = 0;
         lastNowRef.current = null;
+
         setCameraX(0);
         setCameraY(0);
         setCameraScale(1);
@@ -411,7 +444,7 @@ export default function McDotFightTestPage() {
                         onClick={buildReplay}
                         className="rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-sm hover:bg-white/15"
                     >
-                        Generate New Fight
+                        Load Latest Battle
                     </button>
 
                     <button
@@ -454,6 +487,36 @@ export default function McDotFightTestPage() {
                         Time: <span className="font-semibold">{Math.round(timeMs)} ms</span>
                     </div>
                 </div>
+
+                {battleRow && (
+                    <div className="mb-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-white/80">
+                        <div className="mb-2 text-sm font-medium text-white">Loaded Battle Row</div>
+
+                        <div>Battle ID: {battleRow.id}</div>
+                        <div>Challenger: {battleRow.challenger_user_id}</div>
+                        <div>Defender: {battleRow.defender_user_id}</div>
+                        <div>Winner User ID: {battleRow.winner_user_id}</div>
+
+                        <div className="mt-3 text-sm font-medium text-white">Battle Result</div>
+                        <pre className="mt-1 overflow-auto rounded-lg border border-white/10 bg-black/20 p-3 text-[11px]">
+                            {JSON.stringify(battleRow.battle_result, null, 2)}
+                        </pre>
+
+                        <div className="mt-3 text-sm font-medium text-white">Replay Data Summary</div>
+                        <div>Replay Kind: {battleRow.replay_data?.replay_kind ?? "missing"}</div>
+                        <div>Left Side: {battleRow.replay_data?.fighter_side_map?.left ?? "missing"}</div>
+                        <div>Right Side: {battleRow.replay_data?.fighter_side_map?.right ?? "missing"}</div>
+                        <div>
+                            Frame Count: {battleRow.replay_data?.dot_replay?.frames?.length ?? 0}
+                        </div>
+                        <div>
+                            Hit Event Count: {battleRow.replay_data?.dot_replay?.hitEvents?.length ?? 0}
+                        </div>
+                        <div>
+                            Event Count: {battleRow.replay_data?.dot_replay?.events?.length ?? 0}
+                        </div>
+                    </div>
+                )}
 
                 <div className="mb-4 grid grid-cols-2 gap-4">
                     <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
