@@ -90,6 +90,9 @@ const ENDGAME_RAMP_MS = 10000;
 const MIN_ENDGAME_DAMAGE_BONUS = 1;
 const MAX_ENDGAME_DAMAGE_BONUS = 8;
 
+const ENDING_FALL_MS = 350;
+const ENDING_GROUND_HOLD_MS = 1200;
+
 function rand(min: number, max: number) {
   return Math.random() * (max - min) + min;
 }
@@ -567,6 +570,81 @@ function snapshotFighter(f: SimFighter): DotFighterState {
   };
 }
 
+function pushCurrentFrame(
+  frames: DotReplayFrame[],
+  nowMs: number,
+  left: SimFighter,
+  right: SimFighter
+) {
+  frames.push({
+    t: nowMs,
+    fighters: {
+      left: snapshotFighter(left),
+      right: snapshotFighter(right),
+    },
+  });
+}
+
+function appendEndingSequence(
+  frames: DotReplayFrame[],
+  events: DotReplayMetaEvent[],
+  nowMs: number,
+  winner: FighterSide,
+  left: SimFighter,
+  right: SimFighter
+) {
+  const winnerFighter = winner === "left" ? left : right;
+  const loserFighter = winner === "left" ? right : left;
+
+  winnerFighter.vx = 0;
+  winnerFighter.vy = 0;
+  winnerFighter.intent = "idle";
+  winnerFighter.intentTimerMs = 999999;
+  winnerFighter.attackTimerMs = 0;
+  winnerFighter.hitstunMs = 0;
+  winnerFighter.recoverMs = 0;
+  winnerFighter.action = "idle";
+
+  loserFighter.vx = 0;
+  loserFighter.vy = 0;
+  loserFighter.intent = "idle";
+  loserFighter.intentTimerMs = 999999;
+  loserFighter.attackTimerMs = 0;
+  loserFighter.hitstunMs = 0;
+  loserFighter.recoverMs = 0;
+  loserFighter.y = 0;
+
+  pushEvent(events, {
+    type: "defeat_fall",
+    actor: loserFighter.side,
+    startMs: nowMs,
+    endMs: nowMs + ENDING_FALL_MS,
+  });
+
+  let endMs = nowMs;
+
+  loserFighter.action = "defeat_fall";
+
+  for (let elapsed = 0; elapsed < ENDING_FALL_MS; elapsed += FRAME_MS) {
+    endMs += FRAME_MS;
+    pushCurrentFrame(frames, endMs, left, right);
+  }
+
+  loserFighter.action = "defeat_ground";
+
+  pushEvent(events, {
+    type: "defeat_ground",
+    actor: loserFighter.side,
+    startMs: endMs,
+    endMs: endMs + ENDING_GROUND_HOLD_MS,
+  });
+
+  for (let elapsed = 0; elapsed < ENDING_GROUND_HOLD_MS; elapsed += FRAME_MS) {
+    endMs += FRAME_MS;
+    pushCurrentFrame(frames, endMs, left, right);
+  }
+}
+
 export function generateMcDotReplay(
   config?: GenerateMcDotReplayConfig
 ): McDotReplay {
@@ -661,13 +739,7 @@ export function generateMcDotReplay(
       right.action = "jump";
     }
 
-    frames.push({
-      t: nowMs,
-      fighters: {
-        left: snapshotFighter(left),
-        right: snapshotFighter(right),
-      },
-    });
+    pushCurrentFrame(frames, nowMs, left, right);
 
     nowMs += FRAME_MS;
   }
@@ -678,8 +750,10 @@ export function generateMcDotReplay(
         ? "left"
         : "right"
       : left.hp > right.hp
-        ? "left"
-        : "right";
+      ? "left"
+      : "right";
+
+  appendEndingSequence(frames, events, nowMs, winner, left, right);
 
   return {
     version: 1,

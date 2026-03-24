@@ -74,7 +74,33 @@ export default function McBattleReplayCard({
         currentHp: initialDefenderHp,
     });
 
-    const timeline = replayData?.timeline ?? [];
+    const timeline = useMemo(() => {
+        const hitEvents = replayData?.dot_replay?.hitEvents ?? [];
+        let challengerHp = initialChallengerHp;
+        let defenderHp = initialDefenderHp;
+
+        return hitEvents.map((event, index) => {
+            const targetSide =
+                event.defender === "left" ? "challenger" : "defender";
+
+            if (targetSide === "challenger") {
+                challengerHp = Math.max(0, challengerHp - safeNumber(event.damage, 0));
+            } else {
+                defenderHp = Math.max(0, defenderHp - safeNumber(event.damage, 0));
+            }
+
+            return {
+                step: index + 1,
+                actor_side:
+                    event.attacker === "left" ? "challenger" : "defender",
+                target_side: targetSide,
+                action_type: "hit",
+                damage: safeNumber(event.damage, 0),
+                target_hp_after:
+                    targetSide === "challenger" ? challengerHp : defenderHp,
+            };
+        });
+    }, [replayData, initialChallengerHp, initialDefenderHp]);
     const challengerAvatarLayers = toCharacterAvatarLayers(challengerSnapshot.avatar.layers);
     const defenderAvatarLayers = toCharacterAvatarLayers(defenderSnapshot.avatar.layers);
 

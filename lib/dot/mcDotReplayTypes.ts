@@ -6,7 +6,9 @@ export type DotAction =
   | "jump"
   | "attack"
   | "hit"
-  | "recover";
+  | "recover"
+  | "defeat_fall"
+  | "defeat_ground";
 
 export type DotFighterState = {
   x: number;
@@ -66,6 +68,18 @@ export type DotReplayMetaEvent =
     }
   | {
       type: "recover";
+      startMs: number;
+      endMs: number;
+      actor: FighterSide;
+    }
+  | {
+      type: "defeat_fall";
+      startMs: number;
+      endMs: number;
+      actor: FighterSide;
+    }
+  | {
+      type: "defeat_ground";
       startMs: number;
       endMs: number;
       actor: FighterSide;

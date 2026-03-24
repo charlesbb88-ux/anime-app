@@ -8,7 +8,9 @@ export type DotAction =
   | "jump"
   | "attack"
   | "hit"
-  | "recover";
+  | "recover"
+  | "defeat_fall"
+  | "defeat_ground";
 
 type SpriteAnim = {
   src: string;
@@ -24,6 +26,8 @@ type SpriteSet = {
   attack: SpriteAnim;
   hit: SpriteAnim;
   recover: SpriteAnim;
+  defeat_fall: SpriteAnim;
+  defeat_ground: SpriteAnim;
 };
 
 function mapAction(action: DotAction): keyof SpriteSet {
@@ -38,6 +42,10 @@ function mapAction(action: DotAction): keyof SpriteSet {
       return "hit";
     case "recover":
       return "recover";
+    case "defeat_fall":
+      return "defeat_fall";
+    case "defeat_ground":
+      return "defeat_ground";
     default:
       return "idle";
   }
@@ -72,14 +80,18 @@ export default function ScreenSpriteFighter({
   const anim = spriteSet[animKey];
 
   const [frame, setFrame] = useState(0);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [allLoaded, setAllLoaded] = useState(false);
 
   const animStartRef = useRef<number>(performance.now());
   const currentAnimRef = useRef<keyof SpriteSet>(animKey);
   const rafRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const imageRef = useRef<HTMLImageElement | null>(null);
 
+  // Cache all loaded images by src
+  const imagesRef = useRef<Record<string, HTMLImageElement>>({});
+  const failedRef = useRef<Record<string, boolean>>({});
+
+  // Only reset animation timing when action actually changes
   useEffect(() => {
     if (currentAnimRef.current !== animKey) {
       currentAnimRef.current = animKey;
@@ -88,28 +100,51 @@ export default function ScreenSpriteFighter({
     }
   }, [animKey]);
 
+  // Preload the entire sprite set once
   useEffect(() => {
-    setIsLoaded(false);
+    let cancelled = false;
 
-    const img = new Image();
-    img.src = anim.src;
+    const uniqueSrcs = Array.from(
+      new Set(
+        Object.values(spriteSet).map((entry) => entry.src)
+      )
+    );
 
-    img.onload = () => {
-      imageRef.current = img;
-      setIsLoaded(true);
-    };
+    const loadPromises = uniqueSrcs.map((src) => {
+      return new Promise<void>((resolve) => {
+        if (imagesRef.current[src] || failedRef.current[src]) {
+          resolve();
+          return;
+        }
 
-    img.onerror = () => {
-      console.error("Failed to load sprite:", anim.src);
-      imageRef.current = null;
-      setIsLoaded(false);
-    };
+        const img = new Image();
+        img.src = src;
+
+        img.onload = () => {
+          imagesRef.current[src] = img;
+          resolve();
+        };
+
+        img.onerror = () => {
+          console.error("Failed to load sprite:", src);
+          failedRef.current[src] = true;
+          resolve();
+        };
+      });
+    });
+
+    Promise.all(loadPromises).then(() => {
+      if (!cancelled) {
+        setAllLoaded(true);
+      }
+    });
 
     return () => {
-      imageRef.current = null;
+      cancelled = true;
     };
-  }, [anim.src]);
+  }, [spriteSet]);
 
+  // Frame ticker
   useEffect(() => {
     let mounted = true;
 
@@ -137,11 +172,10 @@ export default function ScreenSpriteFighter({
     };
   }, [anim.frames, anim.fps, anim.loop, anim.src]);
 
+  // Draw current frame
   useEffect(() => {
     const canvas = canvasRef.current;
-    const img = imageRef.current;
-
-    if (!canvas || !img || !isLoaded) return;
+    if (!canvas) return;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -150,6 +184,12 @@ export default function ScreenSpriteFighter({
     canvas.height = renderHeight;
 
     ctx.clearRect(0, 0, renderWidth, renderHeight);
+
+    const img = imagesRef.current[anim.src];
+    if (!img) {
+      return;
+    }
+
     ctx.imageSmoothingEnabled = true;
 
     const sx = frame * sourceFrameWidth;
@@ -195,14 +235,15 @@ export default function ScreenSpriteFighter({
       ctx.restore();
     }
   }, [
+    anim.src,
     frame,
     facing,
     flash,
-    isLoaded,
     renderWidth,
     renderHeight,
     sourceFrameWidth,
     sourceFrameHeight,
+    allLoaded,
   ]);
 
   const left = useMemo(() => screenX - renderWidth / 2, [screenX, renderWidth]);
@@ -210,6 +251,8 @@ export default function ScreenSpriteFighter({
     () => screenY - renderHeight + yOffset,
     [screenY, renderHeight, yOffset]
   );
+
+  const currentImageReady = !!imagesRef.current[anim.src];
 
   return (
     <div
@@ -222,7 +265,7 @@ export default function ScreenSpriteFighter({
         willChange: "left, top",
       }}
     >
-      {!isLoaded ? (
+      {!currentImageReady ? (
         <div
           style={{
             width: "100%",
