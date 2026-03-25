@@ -87,11 +87,9 @@ export default function ScreenSpriteFighter({
   const rafRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Cache all loaded images by src
   const imagesRef = useRef<Record<string, HTMLImageElement>>({});
   const failedRef = useRef<Record<string, boolean>>({});
 
-  // Only reset animation timing when action actually changes
   useEffect(() => {
     if (currentAnimRef.current !== animKey) {
       currentAnimRef.current = animKey;
@@ -100,15 +98,10 @@ export default function ScreenSpriteFighter({
     }
   }, [animKey]);
 
-  // Preload the entire sprite set once
   useEffect(() => {
     let cancelled = false;
 
-    const uniqueSrcs = Array.from(
-      new Set(
-        Object.values(spriteSet).map((entry) => entry.src)
-      )
-    );
+    const uniqueSrcs = Array.from(new Set(Object.values(spriteSet).map((entry) => entry.src)));
 
     const loadPromises = uniqueSrcs.map((src) => {
       return new Promise<void>((resolve) => {
@@ -118,6 +111,7 @@ export default function ScreenSpriteFighter({
         }
 
         const img = new Image();
+        img.decoding = "async";
         img.src = src;
 
         img.onload = () => {
@@ -126,7 +120,6 @@ export default function ScreenSpriteFighter({
         };
 
         img.onerror = () => {
-          console.error("Failed to load sprite:", src);
           failedRef.current[src] = true;
           resolve();
         };
@@ -144,7 +137,6 @@ export default function ScreenSpriteFighter({
     };
   }, [spriteSet]);
 
-  // Frame ticker
   useEffect(() => {
     let mounted = true;
 
@@ -154,9 +146,7 @@ export default function ScreenSpriteFighter({
       const elapsed = performance.now() - animStartRef.current;
       const raw = Math.floor((elapsed / 1000) * anim.fps);
 
-      const next = anim.loop
-        ? raw % anim.frames
-        : Math.min(raw, anim.frames - 1);
+      const next = anim.loop ? raw % anim.frames : Math.min(raw, anim.frames - 1);
 
       setFrame((prev) => (prev === next ? prev : next));
       rafRef.current = requestAnimationFrame(tick);
@@ -172,7 +162,6 @@ export default function ScreenSpriteFighter({
     };
   }, [anim.frames, anim.fps, anim.loop, anim.src]);
 
-  // Draw current frame
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -180,58 +169,55 @@ export default function ScreenSpriteFighter({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    canvas.width = renderWidth;
-    canvas.height = renderHeight;
-
-    ctx.clearRect(0, 0, renderWidth, renderHeight);
-
     const img = imagesRef.current[anim.src];
-    if (!img) {
-      return;
+    if (!img) return;
+
+    const cssWidth = Math.max(1, Math.round(renderWidth));
+    const cssHeight = Math.max(1, Math.round(renderHeight));
+
+    const dpr =
+      typeof window !== "undefined"
+        ? Math.max(1, Math.min(window.devicePixelRatio || 1, 2))
+        : 1;
+
+    const backingWidth = Math.max(1, Math.round(cssWidth * dpr));
+    const backingHeight = Math.max(1, Math.round(cssHeight * dpr));
+
+    if (canvas.width !== backingWidth) {
+      canvas.width = backingWidth;
     }
 
-    ctx.imageSmoothingEnabled = true;
+    if (canvas.height !== backingHeight) {
+      canvas.height = backingHeight;
+    }
 
-    const sx = frame * sourceFrameWidth;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, backingWidth, backingHeight);
+    ctx.scale(dpr, dpr);
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+
+    const sx = Math.round(frame * sourceFrameWidth);
     const sy = 0;
     const sw = sourceFrameWidth;
     const sh = sourceFrameHeight;
 
     if (facing === "left") {
       ctx.save();
-      ctx.translate(renderWidth, 0);
+      ctx.translate(cssWidth, 0);
       ctx.scale(-1, 1);
-      ctx.drawImage(
-        img,
-        sx,
-        sy,
-        sw,
-        sh,
-        0,
-        0,
-        renderWidth,
-        renderHeight
-      );
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cssWidth, cssHeight);
       ctx.restore();
     } else {
-      ctx.drawImage(
-        img,
-        sx,
-        sy,
-        sw,
-        sh,
-        0,
-        0,
-        renderWidth,
-        renderHeight
-      );
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cssWidth, cssHeight);
     }
 
     if (flash) {
       ctx.save();
       ctx.globalCompositeOperation = "screen";
       ctx.fillStyle = "rgba(255,255,255,0.45)";
-      ctx.fillRect(0, 0, renderWidth, renderHeight);
+      ctx.fillRect(0, 0, cssWidth, cssHeight);
       ctx.restore();
     }
   }, [
@@ -246,9 +232,10 @@ export default function ScreenSpriteFighter({
     allLoaded,
   ]);
 
-  const left = useMemo(() => screenX - renderWidth / 2, [screenX, renderWidth]);
+  const left = useMemo(() => Math.round(screenX - renderWidth / 2), [screenX, renderWidth]);
+
   const top = useMemo(
-    () => screenY - renderHeight + yOffset,
+    () => Math.round(screenY - renderHeight + yOffset),
     [screenY, renderHeight, yOffset]
   );
 
@@ -260,9 +247,10 @@ export default function ScreenSpriteFighter({
       style={{
         left,
         top,
-        width: renderWidth,
-        height: renderHeight,
-        willChange: "left, top",
+        width: Math.round(renderWidth),
+        height: Math.round(renderHeight),
+        willChange: "transform",
+        transform: "translateZ(0)",
       }}
     >
       {!currentImageReady ? (
@@ -279,9 +267,10 @@ export default function ScreenSpriteFighter({
           ref={canvasRef}
           style={{
             display: "block",
-            width: renderWidth,
-            height: renderHeight,
+            width: "100%",
+            height: "100%",
             pointerEvents: "none",
+            imageRendering: "auto",
           }}
         />
       )}
