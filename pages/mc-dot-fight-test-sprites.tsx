@@ -15,12 +15,6 @@ const CAMERA_MAX_SCALE = 1.18;
 const CAMERA_LERP = 0.14;
 const CAMERA_VERTICAL_LERP = 0.12;
 
-const HITSTOP_MS = 70;
-const HIT_ZOOM_BOOST = 0.08;
-const HIT_SHAKE_X = 14;
-const HIT_SHAKE_Y = 8;
-const HIT_SHAKE_DECAY_MS = 180;
-
 const CAMERA_EDGE_PADDING = 140;
 const CAMERA_EDGE_SOFT_ZONE = 220;
 
@@ -111,9 +105,6 @@ export default function McDotFightTestPage() {
     const [cameraY, setCameraY] = useState(0);
     const [cameraScale, setCameraScale] = useState(1);
 
-    const [impactZoom, setImpactZoom] = useState(0);
-    const [shakeX, setShakeX] = useState(0);
-    const [shakeY, setShakeY] = useState(0);
     const [playbackKey, setPlaybackKey] = useState(0);
 
     const [viewportScale, setViewportScale] = useState(1);
@@ -126,7 +117,6 @@ export default function McDotFightTestPage() {
     const lastNowRef = useRef<number | null>(null);
     const stageViewportRef = useRef<HTMLDivElement | null>(null);
 
-    const hitStopUntilRef = useRef(0);
     const lastTriggeredHitRef = useRef<number | null>(null);
 
     const stageWidthPx = Math.round(BASE_STAGE_WIDTH_PX * viewportScale);
@@ -187,7 +177,6 @@ export default function McDotFightTestPage() {
         cameraYRef.current = 0;
         cameraScaleRef.current = 1;
 
-        hitStopUntilRef.current = 0;
         lastTriggeredHitRef.current = null;
         playbackTimeRef.current = 0;
         lastNowRef.current = null;
@@ -195,9 +184,6 @@ export default function McDotFightTestPage() {
         setCameraX(0);
         setCameraY(0);
         setCameraScale(1);
-        setImpactZoom(0);
-        setShakeX(0);
-        setShakeY(0);
     };
 
     useEffect(() => {
@@ -287,14 +273,11 @@ export default function McDotFightTestPage() {
             lastNowRef.current = now;
 
             const deltaMs = Math.min(rawDelta, 50);
-            const hitStopActive = now < hitStopUntilRef.current;
 
-            if (!hitStopActive) {
-                playbackTimeRef.current = Math.min(
-                    playbackTimeRef.current + deltaMs,
-                    replay.durationMs
-                );
-            }
+            playbackTimeRef.current = Math.min(
+                playbackTimeRef.current + deltaMs,
+                replay.durationMs
+            );
 
             setTimeMs(playbackTimeRef.current);
 
@@ -339,65 +322,7 @@ export default function McDotFightTestPage() {
         if (lastTriggeredHitRef.current === hit.t) return;
 
         lastTriggeredHitRef.current = hit.t;
-        hitStopUntilRef.current = performance.now() + HITSTOP_MS;
-
-        setImpactZoom(HIT_ZOOM_BOOST);
-
-        const dir = hit.defender === "left" ? -1 : 1;
-        setShakeX(dir * HIT_SHAKE_X * viewportScale);
-        setShakeY(-HIT_SHAKE_Y * viewportScale);
-    }, [replay, timeMs, viewportScale]);
-
-    useEffect(() => {
-        if (!replay) return;
-
-        let rafId: number | null = null;
-        let start: number | null = null;
-
-        const tick = (now: number) => {
-            if (start == null) start = now;
-            const elapsed = now - start;
-            const t = Math.min(elapsed / HIT_SHAKE_DECAY_MS, 1);
-
-            const decay = 1 - t;
-
-            setImpactZoom((prev) => {
-                const next = prev * 0.78;
-                return next < 0.001 ? 0 : next;
-            });
-
-            setShakeX((prev) => {
-                const jitter = (Math.random() * 2 - 1) * 2.5 * viewportScale;
-                const next = prev * 0.72 + jitter * decay;
-                return Math.abs(next) < 0.4 ? 0 : next;
-            });
-
-            setShakeY((prev) => {
-                const jitter = (Math.random() * 2 - 1) * 1.8 * viewportScale;
-                const next = prev * 0.72 + jitter * decay;
-                return Math.abs(next) < 0.4 ? 0 : next;
-            });
-
-            if (
-                decay > 0.01 ||
-                Math.abs(shakeX) > 0.4 ||
-                Math.abs(shakeY) > 0.4 ||
-                impactZoom > 0.001
-            ) {
-                rafId = window.requestAnimationFrame(tick);
-            }
-        };
-
-        if (impactZoom > 0 || shakeX !== 0 || shakeY !== 0) {
-            rafId = window.requestAnimationFrame(tick);
-        }
-
-        return () => {
-            if (rafId != null) {
-                window.cancelAnimationFrame(rafId);
-            }
-        };
-    }, [impactZoom, shakeX, shakeY, replay, viewportScale]);
+    }, [replay, timeMs]);
 
     useEffect(() => {
         if (!frame || !replay) return;
@@ -444,9 +369,9 @@ export default function McDotFightTestPage() {
         const framedMaxY = bothAirborne
             ? fighterMaxY + CAMERA_AIR_BOTTOM_PADDING * viewportScale
             : Math.max(
-                  fighterMaxY + CAMERA_AIR_BOTTOM_PADDING * viewportScale,
-                  groundScreenY + CAMERA_BOTTOM_PADDING * viewportScale
-              );
+                fighterMaxY + CAMERA_AIR_BOTTOM_PADDING * viewportScale,
+                groundScreenY + CAMERA_BOTTOM_PADDING * viewportScale
+            );
 
         const framedWidth = Math.max(220 * viewportScale, framedMaxX - framedMinX);
         const framedHeight = Math.max(160 * viewportScale, framedMaxY - framedMinY);
@@ -517,8 +442,8 @@ export default function McDotFightTestPage() {
     const cameraTranslateX = cameraX;
     const cameraTranslateY = cameraY;
 
-    const backgroundParallaxX = -(cameraTranslateX + shakeX) * BG_PARALLAX_X;
-    const backgroundParallaxY = -(cameraTranslateY + shakeY) * BG_PARALLAX_Y;
+    const backgroundParallaxX = -cameraTranslateX * BG_PARALLAX_X;
+    const backgroundParallaxY = -cameraTranslateY * BG_PARALLAX_Y;
 
     return (
         <div className="min-h-screen bg-[#0a0a0a] text-white">
@@ -537,13 +462,9 @@ export default function McDotFightTestPage() {
                         onClick={() => {
                             playbackTimeRef.current = 0;
                             lastNowRef.current = null;
-                            hitStopUntilRef.current = 0;
                             lastTriggeredHitRef.current = null;
 
                             setTimeMs(0);
-                            setImpactZoom(0);
-                            setShakeX(0);
-                            setShakeY(0);
 
                             cameraXRef.current = 0;
                             cameraYRef.current = 0;
@@ -667,7 +588,6 @@ export default function McDotFightTestPage() {
                                             backgroundRepeat: "no-repeat",
                                             transform: `translateX(${backgroundParallaxX}px) translateY(${backgroundParallaxY}px) scale(${BG_PARALLAX_SCALE})`,
                                             transformOrigin: "center center",
-                                            transition: "transform 50ms linear",
                                         }}
                                     />
                                 </div>
@@ -675,16 +595,14 @@ export default function McDotFightTestPage() {
                                 <div
                                     className="absolute inset-0"
                                     style={{
-                                        transform: `translateX(${cameraTranslateX + shakeX}px) translateY(${cameraTranslateY + shakeY}px)`,
-                                        transition: "transform 50ms linear",
+                                        transform: `translateX(${cameraTranslateX}px) translateY(${cameraTranslateY}px)`,
                                     }}
                                 >
                                     <div
                                         className="absolute inset-0"
                                         style={{
-                                            transform: `scale(${cameraScale + impactZoom})`,
+                                            transform: `scale(${cameraScale})`,
                                             transformOrigin: "center center",
-                                            transition: "transform 50ms linear",
                                         }}
                                     >
                                         <div
@@ -704,28 +622,6 @@ export default function McDotFightTestPage() {
                                             style={{
                                                 bottom: 16 * viewportScale,
                                                 height: Math.max(1, 2 * viewportScale),
-                                            }}
-                                        />
-
-                                        <div
-                                            className="absolute rounded-full bg-white/5"
-                                            style={{
-                                                left: "10%",
-                                                top: "18%",
-                                                width: 96 * viewportScale,
-                                                height: 96 * viewportScale,
-                                                filter: `blur(${40 * viewportScale}px)`,
-                                            }}
-                                        />
-
-                                        <div
-                                            className="absolute rounded-full bg-white/5"
-                                            style={{
-                                                right: "12%",
-                                                top: "16%",
-                                                width: 80 * viewportScale,
-                                                height: 80 * viewportScale,
-                                                filter: `blur(${40 * viewportScale}px)`,
                                             }}
                                         />
 
