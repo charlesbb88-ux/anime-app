@@ -103,8 +103,8 @@ export default function ScreenSpriteFighter({
         (anim) => !!anim?.src && anim.frames > 0 && anim.fps > 0
     );
 
-    const [frame, setFrame] = useState(0);
     const [allLoaded, setAllLoaded] = useState(false);
+    const [tickCount, setTickCount] = useState(0);
 
     const animStartRef = useRef<number>(performance.now());
     const currentAnimRef = useRef<string>("");
@@ -114,20 +114,31 @@ export default function ScreenSpriteFighter({
     const imagesRef = useRef<Record<string, HTMLImageElement>>({});
     const failedRef = useRef<Record<string, boolean>>({});
 
-    useEffect(() => {
-        const identity = [
+    const animIdentity = useMemo(() => {
+        return [
             animKey,
             ...activeLayerAnims.map((anim) =>
                 anim ? `${anim.src}|${anim.frames}|${anim.fps}|${anim.loop ? 1 : 0}` : "missing"
             ),
         ].join("::");
-
-        if (currentAnimRef.current !== identity) {
-            currentAnimRef.current = identity;
-            animStartRef.current = performance.now();
-            setFrame(0);
-        }
     }, [animKey, activeLayerAnims]);
+
+    const frame = useMemo(() => {
+        if (!masterAnim) return 0;
+
+        if (currentAnimRef.current !== animIdentity) {
+            currentAnimRef.current = animIdentity;
+            animStartRef.current = performance.now();
+            return 0;
+        }
+
+        const elapsed = performance.now() - animStartRef.current;
+        const raw = Math.floor((elapsed / 1000) * masterAnim.fps);
+
+        return masterAnim.loop
+            ? raw % masterAnim.frames
+            : Math.min(raw, masterAnim.frames - 1);
+    }, [masterAnim, animIdentity, tickCount]);
 
     useEffect(() => {
         let cancelled = false;
@@ -181,20 +192,7 @@ export default function ScreenSpriteFighter({
         const tick = () => {
             if (!mounted) return;
 
-            if (!masterAnim) {
-                setFrame(0);
-                rafRef.current = requestAnimationFrame(tick);
-                return;
-            }
-
-            const elapsed = performance.now() - animStartRef.current;
-            const raw = Math.floor((elapsed / 1000) * masterAnim.fps);
-
-            const next = masterAnim.loop
-                ? raw % masterAnim.frames
-                : Math.min(raw, masterAnim.frames - 1);
-
-            setFrame((prev) => (prev === next ? prev : next));
+            setTickCount((value) => value + 1);
             rafRef.current = requestAnimationFrame(tick);
         };
 
@@ -206,7 +204,7 @@ export default function ScreenSpriteFighter({
                 cancelAnimationFrame(rafRef.current);
             }
         };
-    }, [masterAnim]);
+    }, []);
 
     useEffect(() => {
         const canvas = canvasRef.current;

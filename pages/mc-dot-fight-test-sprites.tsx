@@ -65,6 +65,7 @@ const PAPER_DOLL_CATALOG_A: McPaperDollCatalog = {
         base_a: FIGHTER_LEFT,
         base_skin_light_01: createSpriteSetFromFolder("/mc/paperdoll/body/base_skin_light_01"),
         base_skin_tan_01: createSpriteSetFromFolder("/mc/paperdoll/body/base_skin_tan_01"),
+        base_skin_brown_01: createSpriteSetFromFolder("/mc/paperdoll/body/base_skin_brown_01"),
         base_skin_dark_01: createSpriteSetFromFolder("/mc/paperdoll/body/base_skin_dark_01"),
     },
     eyes: {},
@@ -82,6 +83,7 @@ const PAPER_DOLL_CATALOG_B: McPaperDollCatalog = {
         base_b: FIGHTER_RIGHT,
         base_skin_light_01: createSpriteSetFromFolder("/mc/paperdoll/body/base_skin_light_01"),
         base_skin_tan_01: createSpriteSetFromFolder("/mc/paperdoll/body/base_skin_tan_01"),
+        base_skin_brown_01: createSpriteSetFromFolder("/mc/paperdoll/body/base_skin_brown_01"),
         base_skin_dark_01: createSpriteSetFromFolder("/mc/paperdoll/body/base_skin_dark_01"),
     },
     eyes: {},
@@ -96,12 +98,12 @@ const PAPER_DOLL_CATALOG_B: McPaperDollCatalog = {
 
 const LEFT_LOADOUT: McPaperDollLoadout = {
     body: "base_skin_light_01",
-    hair: "spiky_black_01",
+    hair: "",
 };
 
 const RIGHT_LOADOUT: McPaperDollLoadout = {
-    body: "base_b",
-    hair: "spiky_black_01",
+    body: "base_skin_dark_01",
+    hair: "",
 };
 
 function getInterpolatedFrame(frames: DotReplayFrame[], t: number): DotReplayFrame | null {
@@ -373,6 +375,28 @@ export default function McDotFightTestPage() {
     const rightShouldRenderOnTop =
         leftAction === "defeat_ground" ||
         (rightAction !== "defeat_ground" && leftAction === "defeat_fall");
+
+    const fighterRenderList = !frame
+        ? []
+        : [
+            {
+                key: "left",
+                side: "left" as const,
+                shouldRenderOnTop: leftShouldRenderOnTop,
+                fighter: frame.fighters.left,
+                layers: leftLayers,
+            },
+            {
+                key: "right",
+                side: "right" as const,
+                shouldRenderOnTop: rightShouldRenderOnTop,
+                fighter: frame.fighters.right,
+                layers: rightLayers,
+            },
+        ].sort((a, b) => {
+            if (a.shouldRenderOnTop === b.shouldRenderOnTop) return 0;
+            return a.shouldRenderOnTop ? 1 : -1;
+        });
 
     useEffect(() => {
         if (!replay) return;
@@ -688,85 +712,26 @@ export default function McDotFightTestPage() {
                                             }}
                                         />
 
-                                        {!leftShouldRenderOnTop && (
+                                        {fighterRenderList.map((item) => (
                                             <ScreenSpriteFighter
-                                                screenX={toScreenX(frame.fighters.left.x, replay.stageWidth)}
-                                                screenY={toScreenY(frame.fighters.left.y)}
-                                                facing={frame.fighters.left.facing}
-                                                action={frame.fighters.left.action}
-                                                layers={leftLayers}
+                                                key={item.key}
+                                                screenX={toScreenX(item.fighter.x, replay.stageWidth)}
+                                                screenY={toScreenY(item.fighter.y)}
+                                                facing={item.fighter.facing}
+                                                action={item.fighter.action}
+                                                layers={item.layers}
                                                 sourceFrameWidth={768}
                                                 sourceFrameHeight={1024}
                                                 renderWidth={renderWidth}
                                                 renderHeight={renderHeight}
                                                 yOffset={
-                                                    frame.fighters.left.action === "defeat_ground"
+                                                    item.fighter.action === "defeat_ground"
                                                         ? defeatGroundYOffset
                                                         : groundedYOffset
                                                 }
                                                 flash={false}
                                             />
-                                        )}
-
-                                        {!rightShouldRenderOnTop && (
-                                            <ScreenSpriteFighter
-                                                screenX={toScreenX(frame.fighters.right.x, replay.stageWidth)}
-                                                screenY={toScreenY(frame.fighters.right.y)}
-                                                facing={frame.fighters.right.facing}
-                                                action={frame.fighters.right.action}
-                                                layers={rightLayers}
-                                                sourceFrameWidth={768}
-                                                sourceFrameHeight={1024}
-                                                renderWidth={renderWidth}
-                                                renderHeight={renderHeight}
-                                                yOffset={
-                                                    frame.fighters.right.action === "defeat_ground"
-                                                        ? defeatGroundYOffset
-                                                        : groundedYOffset
-                                                }
-                                                flash={false}
-                                            />
-                                        )}
-
-                                        {leftShouldRenderOnTop && (
-                                            <ScreenSpriteFighter
-                                                screenX={toScreenX(frame.fighters.left.x, replay.stageWidth)}
-                                                screenY={toScreenY(frame.fighters.left.y)}
-                                                facing={frame.fighters.left.facing}
-                                                action={frame.fighters.left.action}
-                                                layers={leftLayers}
-                                                sourceFrameWidth={768}
-                                                sourceFrameHeight={1024}
-                                                renderWidth={renderWidth}
-                                                renderHeight={renderHeight}
-                                                yOffset={
-                                                    frame.fighters.left.action === "defeat_ground"
-                                                        ? defeatGroundYOffset
-                                                        : groundedYOffset
-                                                }
-                                                flash={false}
-                                            />
-                                        )}
-
-                                        {rightShouldRenderOnTop && (
-                                            <ScreenSpriteFighter
-                                                screenX={toScreenX(frame.fighters.right.x, replay.stageWidth)}
-                                                screenY={toScreenY(frame.fighters.right.y)}
-                                                facing={frame.fighters.right.facing}
-                                                action={frame.fighters.right.action}
-                                                layers={rightLayers}
-                                                sourceFrameWidth={768}
-                                                sourceFrameHeight={1024}
-                                                renderWidth={renderWidth}
-                                                renderHeight={renderHeight}
-                                                yOffset={
-                                                    frame.fighters.right.action === "defeat_ground"
-                                                        ? defeatGroundYOffset
-                                                        : groundedYOffset
-                                                }
-                                                flash={false}
-                                            />
-                                        )}
+                                        ))}
                                     </div>
                                 </div>
                             </div>
