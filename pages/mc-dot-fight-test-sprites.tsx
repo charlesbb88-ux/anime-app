@@ -2,8 +2,17 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ScreenSpriteFighter from "@/components/mc/ScreenSpriteFighter";
+import {
+    buildMcPaperDollLayers,
+    resolveMcPaperDollDefinition,
+} from "@/components/mc/paperdoll/buildMcPaperDollLayers";
+import type {
+    McPaperDollCatalog,
+    McPaperDollLoadout,
+} from "@/components/mc/paperdoll/mcPaperDollTypes";
 import type { DotReplayFrame, McDotReplay } from "@/lib/dot/mcDotReplayTypes";
 import { supabase } from "@/lib/supabaseClient";
+import { createSpriteSetFromFolder } from "@/components/mc/paperdoll/createSpriteSetFromFolder";
 
 const BASE_STAGE_HEIGHT_PX = 320;
 const BASE_STAGE_WIDTH_PX = 920;
@@ -49,6 +58,50 @@ const FIGHTER_RIGHT = {
     recover: { src: "/mc/sprites/b/recover.png", frames: 5, fps: 10, loop: true },
     defeat_fall: { src: "/mc/sprites/b/defeat_fall.png", frames: 5, fps: 10, loop: false },
     defeat_ground: { src: "/mc/sprites/b/defeat_ground.png", frames: 1, fps: 1, loop: false },
+};
+
+const PAPER_DOLL_CATALOG_A: McPaperDollCatalog = {
+    body: {
+        base_a: FIGHTER_LEFT,
+        base_skin_light_01: createSpriteSetFromFolder("/mc/paperdoll/body/base_skin_light_01"),
+        base_skin_tan_01: createSpriteSetFromFolder("/mc/paperdoll/body/base_skin_tan_01"),
+        base_skin_dark_01: createSpriteSetFromFolder("/mc/paperdoll/body/base_skin_dark_01"),
+    },
+    eyes: {},
+    hair: {
+        spiky_black_01: createSpriteSetFromFolder("/mc/paperdoll/hair/spiky_black_01"),
+    },
+    torso: {},
+    bottoms: {},
+    feet: {},
+    hands: {},
+};
+
+const PAPER_DOLL_CATALOG_B: McPaperDollCatalog = {
+    body: {
+        base_b: FIGHTER_RIGHT,
+        base_skin_light_01: createSpriteSetFromFolder("/mc/paperdoll/body/base_skin_light_01"),
+        base_skin_tan_01: createSpriteSetFromFolder("/mc/paperdoll/body/base_skin_tan_01"),
+        base_skin_dark_01: createSpriteSetFromFolder("/mc/paperdoll/body/base_skin_dark_01"),
+    },
+    eyes: {},
+    hair: {
+        spiky_black_01: createSpriteSetFromFolder("/mc/paperdoll/hair/spiky_black_01"),
+    },
+    torso: {},
+    bottoms: {},
+    feet: {},
+    hands: {},
+};
+
+const LEFT_LOADOUT: McPaperDollLoadout = {
+    body: "base_skin_light_01",
+    hair: "spiky_black_01",
+};
+
+const RIGHT_LOADOUT: McPaperDollLoadout = {
+    body: "base_b",
+    hair: "spiky_black_01",
 };
 
 function getInterpolatedFrame(frames: DotReplayFrame[], t: number): DotReplayFrame | null {
@@ -118,6 +171,16 @@ export default function McDotFightTestPage() {
     const stageViewportRef = useRef<HTMLDivElement | null>(null);
 
     const lastTriggeredHitRef = useRef<number | null>(null);
+
+    const leftLayers = useMemo(() => {
+        const definition = resolveMcPaperDollDefinition(PAPER_DOLL_CATALOG_A, LEFT_LOADOUT);
+        return buildMcPaperDollLayers(definition);
+    }, []);
+
+    const rightLayers = useMemo(() => {
+        const definition = resolveMcPaperDollDefinition(PAPER_DOLL_CATALOG_B, RIGHT_LOADOUT);
+        return buildMcPaperDollLayers(definition);
+    }, []);
 
     const stageWidthPx = Math.round(BASE_STAGE_WIDTH_PX * viewportScale);
     const stageHeightPx = Math.round(BASE_STAGE_HEIGHT_PX * viewportScale);
@@ -631,7 +694,7 @@ export default function McDotFightTestPage() {
                                                 screenY={toScreenY(frame.fighters.left.y)}
                                                 facing={frame.fighters.left.facing}
                                                 action={frame.fighters.left.action}
-                                                spriteSet={FIGHTER_LEFT}
+                                                layers={leftLayers}
                                                 sourceFrameWidth={768}
                                                 sourceFrameHeight={1024}
                                                 renderWidth={renderWidth}
@@ -651,7 +714,7 @@ export default function McDotFightTestPage() {
                                                 screenY={toScreenY(frame.fighters.right.y)}
                                                 facing={frame.fighters.right.facing}
                                                 action={frame.fighters.right.action}
-                                                spriteSet={FIGHTER_RIGHT}
+                                                layers={rightLayers}
                                                 sourceFrameWidth={768}
                                                 sourceFrameHeight={1024}
                                                 renderWidth={renderWidth}
@@ -671,7 +734,7 @@ export default function McDotFightTestPage() {
                                                 screenY={toScreenY(frame.fighters.left.y)}
                                                 facing={frame.fighters.left.facing}
                                                 action={frame.fighters.left.action}
-                                                spriteSet={FIGHTER_LEFT}
+                                                layers={leftLayers}
                                                 sourceFrameWidth={768}
                                                 sourceFrameHeight={1024}
                                                 renderWidth={renderWidth}
@@ -691,7 +754,7 @@ export default function McDotFightTestPage() {
                                                 screenY={toScreenY(frame.fighters.right.y)}
                                                 facing={frame.fighters.right.facing}
                                                 action={frame.fighters.right.action}
-                                                spriteSet={FIGHTER_RIGHT}
+                                                layers={rightLayers}
                                                 sourceFrameWidth={768}
                                                 sourceFrameHeight={1024}
                                                 renderWidth={renderWidth}
