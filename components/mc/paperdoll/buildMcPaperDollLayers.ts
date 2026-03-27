@@ -1,4 +1,5 @@
 import type { SpriteSet } from "@/components/mc/ScreenSpriteFighter";
+import { createSpriteSetFromFolder } from "@/components/mc/paperdoll/createSpriteSetFromFolder";
 import type {
   McPaperDollCatalog,
   McPaperDollDefinition,
@@ -9,7 +10,9 @@ export function resolveMcPaperDollDefinition(
   catalog: McPaperDollCatalog,
   loadout: McPaperDollLoadout
 ): McPaperDollDefinition {
-  const body = catalog.body[loadout.body];
+const body = loadout.body
+  ? catalog.body[loadout.body]
+  : createSpriteSetFromFolder("/mc/paperdoll/body/base_male_01");
 
   if (!body) {
     throw new Error(`Missing body sprite set for id "${loadout.body}"`);

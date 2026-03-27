@@ -59,7 +59,7 @@ export function useMcPaperDollEditor() {
     return !saving && !sameLoadout(savedLoadout, draftLoadout);
   }, [saving, savedLoadout, draftLoadout]);
 
-  function setBody(bodyId: string) {
+function setBody(bodyId: string | null) {
     setDraftLoadout((prev) => ({
       ...prev,
       body: bodyId,

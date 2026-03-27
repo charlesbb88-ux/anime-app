@@ -50,8 +50,13 @@ export default function EditMcPage() {
               <McPaperDollOptionSelector
                 title="Skin Color"
                 options={MC_BODY_OPTIONS}
-                selectedId={draftLoadout.body}
+                selectedId={draftLoadout.body ?? "default"}
                 onSelect={(id) => {
+                  if (id === "default") {
+                    setBody(null);
+                    return;
+                  }
+
                   if (!id) return;
                   setBody(id);
                 }}
