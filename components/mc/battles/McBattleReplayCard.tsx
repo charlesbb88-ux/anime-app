@@ -36,7 +36,7 @@ const CAMERA_GROUNDED_EPSILON = 0.06;
 
 const BG_PARALLAX_X = 0.18;
 const BG_PARALLAX_Y = 0.08;
-const BG_PARALLAX_SCALE = 1.08;
+const BG_PARALLAX_SCALE = 1.18;
 
 type Props = {
   battle: McBattleCardRow;
@@ -298,22 +298,22 @@ export default function McBattleReplayCard({
   const fighterRenderList = !frame
     ? []
     : [
-        {
-          key: "left",
-          shouldRenderOnTop: leftShouldRenderOnTop,
-          fighter: frame.fighters.left,
-          layers: leftLayers,
-        },
-        {
-          key: "right",
-          shouldRenderOnTop: rightShouldRenderOnTop,
-          fighter: frame.fighters.right,
-          layers: rightLayers,
-        },
-      ].sort((a, b) => {
-        if (a.shouldRenderOnTop === b.shouldRenderOnTop) return 0;
-        return a.shouldRenderOnTop ? 1 : -1;
-      });
+      {
+        key: "left",
+        shouldRenderOnTop: leftShouldRenderOnTop,
+        fighter: frame.fighters.left,
+        layers: leftLayers,
+      },
+      {
+        key: "right",
+        shouldRenderOnTop: rightShouldRenderOnTop,
+        fighter: frame.fighters.right,
+        layers: rightLayers,
+      },
+    ].sort((a, b) => {
+      if (a.shouldRenderOnTop === b.shouldRenderOnTop) return 0;
+      return a.shouldRenderOnTop ? 1 : -1;
+    });
 
   useEffect(() => {
     if (!replay) return;
@@ -372,9 +372,9 @@ export default function McBattleReplayCard({
     const framedMaxY = bothAirborne
       ? fighterMaxY + CAMERA_AIR_BOTTOM_PADDING * viewportScale
       : Math.max(
-          fighterMaxY + CAMERA_AIR_BOTTOM_PADDING * viewportScale,
-          groundScreenY + CAMERA_BOTTOM_PADDING * viewportScale
-        );
+        fighterMaxY + CAMERA_AIR_BOTTOM_PADDING * viewportScale,
+        groundScreenY + CAMERA_BOTTOM_PADDING * viewportScale
+      );
 
     const framedWidth = Math.max(220 * viewportScale, framedMaxX - framedMinX);
     const framedHeight = Math.max(160 * viewportScale, framedMaxY - framedMinY);
@@ -503,7 +503,7 @@ export default function McBattleReplayCard({
 
       <div
         ref={stageViewportRef}
-        className="relative mx-auto w-full overflow-hidden rounded-2xl bg-[#0f0f0f]"
+        className="relative mx-auto w-full overflow-hidden rounded-xs bg-[#0f0f0f]"
         style={{
           aspectRatio: `${BASE_STAGE_WIDTH_PX} / ${BASE_STAGE_HEIGHT_PX}`,
         }}
@@ -519,10 +519,10 @@ export default function McBattleReplayCard({
             <div
               className="absolute inset-0"
               style={{
-                left: "-4%",
-                top: "-4%",
-                width: "108%",
-                height: "108%",
+                left: "-10%",
+                top: "-10%",
+                width: "120%",
+                height: "120%",
                 backgroundImage: 'url("/mc/backgrounds/arena-bg.png")',
                 backgroundSize: "100% 100%",
                 backgroundPosition: "center",
