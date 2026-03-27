@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
 import ScreenSpriteFighter from "@/components/mc/ScreenSpriteFighter";
 import {
   buildMcPaperDollLayers,
@@ -120,6 +121,13 @@ export default function McBattleReplayCard({
   const [cameraScale, setCameraScale] = useState(1);
   const [playbackKey, setPlaybackKey] = useState(0);
   const [viewportScale, setViewportScale] = useState(1);
+  const [avatars, setAvatars] = useState<{
+    left: string | null;
+    right: string | null;
+  }>({
+    left: null,
+    right: null,
+  });
 
   const rafRef = useRef<number | null>(null);
   const cameraXRef = useRef(0);
@@ -147,6 +155,44 @@ export default function McBattleReplayCard({
     const definition = resolveMcPaperDollDefinition(MC_PAPERDOLL_CATALOG, rightLoadout);
     return buildMcPaperDollLayers(definition);
   }, [rightLoadout]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadAvatars() {
+      if (!battle) return;
+
+      const { challenger_user_id, defender_user_id } = battle;
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, avatar_url")
+        .in("id", [challenger_user_id, defender_user_id]);
+
+      if (error) {
+        console.error("Failed to load avatars", error);
+        return;
+      }
+
+      if (!isMounted) return;
+
+      const map: Record<string, string | null> = {};
+      for (const row of data ?? []) {
+        map[row.id] = row.avatar_url ?? null;
+      }
+
+      setAvatars({
+        left: map[challenger_user_id] ?? null,
+        right: map[defender_user_id] ?? null,
+      });
+    }
+
+    loadAvatars();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [battle]);
 
   const stageWidthPx = Math.round(BASE_STAGE_WIDTH_PX * viewportScale);
   const stageHeightPx = Math.round(BASE_STAGE_HEIGHT_PX * viewportScale);
@@ -283,6 +329,32 @@ export default function McBattleReplayCard({
     if (!replay) return null;
     return getInterpolatedFrame(replay.frames, timeMs);
   }, [replay, timeMs]);
+
+  const leftFighter = frame?.fighters?.left;
+  const rightFighter = frame?.fighters?.right;
+
+  const leftCurrentHp = leftFighter?.hp ?? 0;
+  const rightCurrentHp = rightFighter?.hp ?? 0;
+
+  const leftMaxHp = Math.max(
+    1,
+    battle.challenger_snapshot?.combat_stats?.hp ?? 1
+  );
+
+  const rightMaxHp = Math.max(
+    1,
+    battle.defender_snapshot?.combat_stats?.hp ?? 1
+  );
+
+  const leftHpPercent = Math.max(
+    0,
+    Math.min(100, (leftCurrentHp / leftMaxHp) * 100)
+  );
+
+  const rightHpPercent = Math.max(
+    0,
+    Math.min(100, (rightCurrentHp / rightMaxHp) * 100)
+  );
 
   const leftAction = frame?.fighters.left.action;
   const rightAction = frame?.fighters.right.action;
@@ -586,6 +658,67 @@ export default function McBattleReplayCard({
                   flash={false}
                 />
               ))}
+            </div>
+          </div>
+
+          {/* HUD OVERLAY */}
+          <div className="pointer-events-none absolute bottom-2 left-0 right-0 flex justify-between px-4">
+            {/* LEFT (CHALLENGER) */}
+            <div className="flex items-center gap-2">
+              <div className="h-10 w-10 overflow-hidden bg-black">
+                {avatars.left ? (
+                  <img
+                    src={avatars.left}
+                    className="h-full w-full object-cover"
+                  />
+                ) : null}
+              </div>
+
+              <div className="flex flex-col">
+                <div className="text-xs text-white">
+                  {battle.challenger_snapshot?.username ?? "Player"}
+                </div>
+
+                <div className="h-2 w-32 bg-gray-800">
+                  <div
+                    className="h-full bg-green-500"
+                    style={{ width: `${leftHpPercent}%` }}
+                  />
+                </div>
+
+                <div className="text-[10px] text-white">
+                  {Math.round(leftCurrentHp)} / {leftMaxHp}
+                </div>
+              </div>
+            </div>
+
+            {/* RIGHT (DEFENDER) */}
+            <div className="flex flex-row-reverse items-center gap-2">
+              <div className="h-10 w-10 overflow-hidden bg-black">
+                {avatars.right ? (
+                  <img
+                    src={avatars.right}
+                    className="h-full w-full object-cover"
+                  />
+                ) : null}
+              </div>
+
+              <div className="flex flex-col items-end">
+                <div className="text-xs text-white">
+                  {battle.defender_snapshot?.username ?? "Player"}
+                </div>
+
+                <div className="h-2 w-32 bg-gray-800">
+                  <div
+                    className="h-full bg-green-500"
+                    style={{ width: `${rightHpPercent}%` }}
+                  />
+                </div>
+
+                <div className="text-[10px] text-white">
+                  {Math.round(rightCurrentHp)} / {rightMaxHp}
+                </div>
+              </div>
             </div>
           </div>
         </div>

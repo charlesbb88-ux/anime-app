@@ -19,9 +19,15 @@ export type McBattleCardRow = {
   challenger_snapshot?: {
     username?: string;
     paperdoll?: McPaperDollLoadout | null;
+    combat_stats?: {
+      hp?: number | null;
+    } | null;
   } | null;
   defender_snapshot?: {
     username?: string;
     paperdoll?: McPaperDollLoadout | null;
+    combat_stats?: {
+      hp?: number | null;
+    } | null;
   } | null;
 };
