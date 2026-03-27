@@ -12,6 +12,7 @@ export type McPaperDollOption = {
 export const MC_BODY_OPTIONS: McPaperDollOption[] = [
   { id: "base_skin_light_01", label: "Light" },
   { id: "base_skin_tan_01", label: "Tan" },
+  { id: "base_skin_brown_01", label: "Brown" },
   { id: "base_skin_dark_01", label: "Dark" },
 ];
 
@@ -39,6 +40,9 @@ export const MC_PAPERDOLL_CATALOG: McPaperDollCatalog = {
     ),
     base_skin_tan_01: createSpriteSetFromFolder(
       "/mc/paperdoll/body/base_skin_tan_01"
+    ),
+        base_skin_brown_01: createSpriteSetFromFolder(
+      "/mc/paperdoll/body/base_skin_brown_01"
     ),
     base_skin_dark_01: createSpriteSetFromFolder(
       "/mc/paperdoll/body/base_skin_dark_01"

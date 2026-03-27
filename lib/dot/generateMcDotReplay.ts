@@ -596,22 +596,36 @@ function appendEndingSequence(
   const winnerFighter = winner === "left" ? left : right;
   const loserFighter = winner === "left" ? right : left;
 
-  winnerFighter.vx = 0;
-  winnerFighter.vy = 0;
   winnerFighter.intent = "idle";
   winnerFighter.intentTimerMs = 999999;
   winnerFighter.attackTimerMs = 0;
   winnerFighter.hitstunMs = 0;
   winnerFighter.recoverMs = 0;
-  winnerFighter.action = "idle";
 
-  loserFighter.vx = 0;
-  loserFighter.vy = 0;
   loserFighter.intent = "idle";
   loserFighter.intentTimerMs = 999999;
   loserFighter.attackTimerMs = 0;
   loserFighter.hitstunMs = 0;
   loserFighter.recoverMs = 0;
+
+  // let both fighters naturally fall to ground before ending
+  while (winnerFighter.y > 0 || loserFighter.y > 0) {
+    stepPhysics(winnerFighter);
+    stepPhysics(loserFighter);
+
+    resolveSpacing(winnerFighter, loserFighter);
+    setFacing(winnerFighter, loserFighter);
+
+    nowMs += FRAME_MS;
+    pushCurrentFrame(frames, nowMs, left, right);
+  }
+
+  winnerFighter.vx = 0;
+  winnerFighter.vy = 0;
+  winnerFighter.action = "idle";
+
+  loserFighter.vx = 0;
+  loserFighter.vy = 0;
   loserFighter.y = 0;
 
   pushEvent(events, {
