@@ -1,7 +1,6 @@
 import { supabase } from "@/lib/supabaseClient";
 import { generateTitleFromAffinities } from "@/lib/generateTitle";
 import type { McTitlePartsRow } from "@/lib/titleParts";
-import type { CharacterAvatarLayer } from "@/components/mc/avatarTypes";
 import type { McBattleFighterSnapshot } from "@/lib/mcBattleTypes";
 
 type AccountProgressionRow = {
@@ -69,7 +68,7 @@ export async function buildMcBattleSnapshot(
     { data: baseStatsData, error: baseStatsError },
     { data: combatStatsData, error: combatStatsError },
     { data: profileData, error: profileError },
-    { data: userCharacterData, error: userCharacterError },
+    { data: paperdollData, error: paperdollError },
   ] = await Promise.all([
     supabase.rpc("get_account_progression", { p_user_id: userId }),
     supabase.rpc("get_user_progression_detailed", { p_user_id: userId }),
@@ -77,8 +76,16 @@ export async function buildMcBattleSnapshot(
     supabase.rpc("get_user_combat_stats", { p_user_id: userId }),
     supabase.from("profiles").select("username").eq("id", userId).maybeSingle(),
     supabase
-      .from("user_mc_characters")
-      .select("base_body_id, pose_id")
+      .from("user_mc_paperdoll_loadouts")
+      .select(`
+        body_id,
+        hair_id,
+        torso_id,
+        bottoms_id,
+        feet_id,
+        hands_id,
+        eyes_id
+      `)
       .eq("user_id", userId)
       .maybeSingle(),
   ]);
@@ -88,7 +95,7 @@ export async function buildMcBattleSnapshot(
   if (baseStatsError) throw baseStatsError;
   if (combatStatsError) throw combatStatsError;
   if (profileError) throw profileError;
-  if (userCharacterError) throw userCharacterError;
+  if (paperdollError) throw paperdollError;
 
   const rawAccount = ((accountData as any[] | null) ?? [])[0] ?? null;
 
@@ -187,101 +194,25 @@ export async function buildMcBattleSnapshot(
   const rank = getRankFromLevel(accountLevel);
   const title = titleData.fullTitle;
 
-  let activeBaseBodyId: number | null = null;
-  let activePoseId: number | null = null;
-
-  if (userCharacterData) {
-    activeBaseBodyId = safeNumber(userCharacterData.base_body_id, 0);
-    activePoseId = safeNumber(userCharacterData.pose_id, 0);
-  } else {
-    const { data: defaultBodyData, error: defaultBodyError } = await supabase
-      .from("mc_base_bodies")
-      .select("id")
-      .eq("body_key", "base_neutral_v1")
-      .maybeSingle();
-
-    const { data: defaultPoseData, error: defaultPoseError } = await supabase
-      .from("mc_poses")
-      .select("id")
-      .eq("pose_key", "neutral_front_v1")
-      .maybeSingle();
-
-    if (defaultBodyError) throw defaultBodyError;
-    if (defaultPoseError) throw defaultPoseError;
-
-    activeBaseBodyId = safeNumber(defaultBodyData?.id, 0);
-    activePoseId = safeNumber(defaultPoseData?.id, 0);
-  }
-
-  let avatarLayers: CharacterAvatarLayer[] = [];
-
-  if (activeBaseBodyId && activePoseId) {
-    const { data: equippedRows, error: equippedError } = await supabase
-      .from("user_mc_equipped_assets")
-      .select("slot_key, asset_id")
-      .eq("user_id", userId);
-
-    if (equippedError) throw equippedError;
-
-    const equippedBySlot = new Map<string, number>();
-
-    for (const row of (equippedRows as any[] | null) ?? []) {
-      equippedBySlot.set(String(row.slot_key ?? ""), safeNumber(row.asset_id, 0));
-    }
-
-    const { data: defaultAssetsData, error: defaultAssetsError } = await supabase
-      .from("mc_assets")
-      .select("id, asset_key, slot_key, asset_kind, image_url, shape_data, layer_order")
-      .eq("base_body_id", activeBaseBodyId)
-      .eq("pose_id", activePoseId)
-      .eq("is_default", true)
-      .eq("is_active", true);
-
-    if (defaultAssetsError) throw defaultAssetsError;
-
-    const defaultAssets: CharacterAvatarLayer[] = ((defaultAssetsData as any[] | null) ?? []).map(
-      (row) => ({
-        asset_id: safeNumber(row.id, 0),
-        asset_key: String(row.asset_key ?? ""),
-        slot_key: String(row.slot_key ?? ""),
-        asset_kind: String(row.asset_kind ?? "shape") as "shape" | "image",
-        image_url: row.image_url ? String(row.image_url) : null,
-        shape_data: row.shape_data ?? null,
-        layer_order: safeNumber(row.layer_order, 0),
-      })
-    );
-
-    const equippedAssetIds = Array.from(equippedBySlot.values()).filter((id) => id > 0);
-
-    let equippedAssets: CharacterAvatarLayer[] = [];
-
-    if (equippedAssetIds.length > 0) {
-      const { data: equippedAssetsData, error: equippedAssetsError } = await supabase
-        .from("mc_assets")
-        .select("id, asset_key, slot_key, asset_kind, image_url, shape_data, layer_order")
-        .in("id", equippedAssetIds)
-        .eq("is_active", true);
-
-      if (equippedAssetsError) throw equippedAssetsError;
-
-      equippedAssets = ((equippedAssetsData as any[] | null) ?? []).map((row) => ({
-        asset_id: safeNumber(row.id, 0),
-        asset_key: String(row.asset_key ?? ""),
-        slot_key: String(row.slot_key ?? ""),
-        asset_kind: String(row.asset_kind ?? "shape") as "shape" | "image",
-        image_url: row.image_url ? String(row.image_url) : null,
-        shape_data: row.shape_data ?? null,
-        layer_order: safeNumber(row.layer_order, 0),
-      }));
-    }
-
-    const equippedSlotSet = new Set(equippedAssets.map((asset) => asset.slot_key));
-
-    avatarLayers = [
-      ...defaultAssets.filter((asset) => !equippedSlotSet.has(asset.slot_key)),
-      ...equippedAssets,
-    ].sort((a, b) => a.layer_order - b.layer_order);
-  }
+  const paperdoll = paperdollData
+    ? {
+        body: paperdollData.body_id,
+        hair: paperdollData.hair_id,
+        torso: paperdollData.torso_id,
+        bottoms: paperdollData.bottoms_id,
+        feet: paperdollData.feet_id,
+        hands: paperdollData.hands_id,
+        eyes: paperdollData.eyes_id,
+      }
+    : {
+        body: "base_skin_light_01",
+        hair: null,
+        torso: null,
+        bottoms: null,
+        feet: null,
+        hands: null,
+        eyes: null,
+      };
 
   const baseStatsByKey = {
     strength: 0,
@@ -329,11 +260,7 @@ export async function buildMcBattleSnapshot(
     title,
     base_stats: baseStatsByKey,
     combat_stats: combatStatsByKey,
-    avatar: {
-      base_body_id: activeBaseBodyId,
-      pose_id: activePoseId,
-      layers: avatarLayers,
-    },
+    paperdoll,
     equipped_abilities: [],
   };
 }

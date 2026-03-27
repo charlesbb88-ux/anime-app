@@ -18,18 +18,14 @@ export type McBattleCombatStats = {
   speed: number;
 };
 
-export type McBattleAvatarSnapshot = {
-  base_body_id: number | null;
-  pose_id: number | null;
-  layers: {
-    asset_id: number;
-    asset_key: string;
-    slot_key: string;
-    asset_kind: "shape" | "image";
-    image_url: string | null;
-    shape_data: unknown | null;
-    layer_order: number;
-  }[];
+export type McBattlePaperDollSnapshot = {
+  body: string;
+  eyes: string | null;
+  hair: string | null;
+  torso: string | null;
+  bottoms: string | null;
+  feet: string | null;
+  hands: string | null;
 };
 
 export type McBattleEquippedAbilitySnapshot = {
@@ -46,6 +42,6 @@ export type McBattleFighterSnapshot = {
   title: string;
   base_stats: McBattleBaseStats;
   combat_stats: McBattleCombatStats;
-  avatar: McBattleAvatarSnapshot;
+  paperdoll: McBattlePaperDollSnapshot;
   equipped_abilities: McBattleEquippedAbilitySnapshot[];
 };
