@@ -205,7 +205,7 @@ export async function buildMcBattleSnapshot(
         eyes: paperdollData.eyes_id,
       }
     : {
-        body: "base_skin_light_01",
+        body: "base_male_01",
         hair: null,
         torso: null,
         bottoms: null,

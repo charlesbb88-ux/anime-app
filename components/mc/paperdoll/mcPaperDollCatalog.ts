@@ -20,8 +20,8 @@ export const MC_HAIR_OPTIONS: McPaperDollOption[] = [
 ];
 
 export const DEFAULT_MC_PAPERDOLL_LOADOUT: McPaperDollLoadout = {
-  body: "base_skin_light_01",
-  hair: "spiky_black_01",
+  body: "base_male_01",
+  hair: null,
   torso: null,
   bottoms: null,
   feet: null,
@@ -31,6 +31,9 @@ export const DEFAULT_MC_PAPERDOLL_LOADOUT: McPaperDollLoadout = {
 
 export const MC_PAPERDOLL_CATALOG: McPaperDollCatalog = {
   body: {
+    base_male_01: createSpriteSetFromFolder(
+    "/mc/paperdoll/body/base_male_01"
+  ),
     base_skin_light_01: createSpriteSetFromFolder(
       "/mc/paperdoll/body/base_skin_light_01"
     ),
