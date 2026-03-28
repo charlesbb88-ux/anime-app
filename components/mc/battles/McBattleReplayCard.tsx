@@ -14,13 +14,14 @@ import {
 import type { McPaperDollLoadout } from "@/components/mc/paperdoll/mcPaperDollTypes";
 import type { DotReplayFrame } from "@/lib/dot/mcDotReplayTypes";
 import type { McBattleCardRow } from "@/components/mc/battles/mcBattleTypes";
+import McBattleHud from "@/components/mc/battles/McBattleHud";
 
 const BASE_STAGE_HEIGHT_PX = 320;
 const BASE_STAGE_WIDTH_PX = 920;
 const FRAME_MS = 1000 / 60;
 
-const CAMERA_MIN_SCALE_DESKTOP = 0.68;
-const CAMERA_MIN_SCALE_MOBILE = 0.42;
+const CAMERA_MIN_SCALE_DESKTOP = 0.60;
+const CAMERA_MIN_SCALE_MOBILE = 0.38;
 const CAMERA_MAX_SCALE = 1.18;
 const CAMERA_LERP = 0.14;
 const CAMERA_VERTICAL_LERP = 0.12;
@@ -29,15 +30,43 @@ const CAMERA_EDGE_PADDING = 140;
 const CAMERA_EDGE_SOFT_ZONE = 220;
 
 const CAMERA_SIDE_PADDING = 120;
-const CAMERA_TOP_PADDING = 80;
+const CAMERA_TOP_PADDING = 110;
 const CAMERA_BOTTOM_PADDING = 74;
-const CAMERA_AIR_BOTTOM_PADDING = 26;
+const CAMERA_AIR_BOTTOM_PADDING = 40;
+const CAMERA_ONE_AIRBORNE_BOTTOM_PADDING = 134;
+
+const CAMERA_CLOSE_RANGE_WORLD_DISTANCE = 260;
+const CAMERA_CLOSE_SIDE_PADDING_MIN = 0;
+const CAMERA_CLOSE_FIGHTER_HALF_WIDTH_MIN = 8;
+const CAMERA_CLOSE_ZOOM_BONUS = 1.45;
 
 const CAMERA_GROUNDED_EPSILON = 0.06;
 
 const BG_PARALLAX_X = 0.18;
 const BG_PARALLAX_Y = 0.08;
 const BG_PARALLAX_SCALE = 1.18;
+
+/**
+ * Positive = push the entire visible fight scene DOWN.
+ */
+const WORLD_RENDER_Y_OFFSET_PX = 22;
+
+/**
+ * Visual platform placement.
+ * More negative = lower.
+ */
+const PLATFORM_BOTTOM_PX = -185;
+
+/**
+ * Decorative white floor guide line.
+ */
+const FLOOR_LINE_BOTTOM_PX = 16;
+
+/**
+ * Camera diagnostics
+ */
+const DEBUG_CAMERA = false;
+const DEBUG_CAMERA_LOG_INTERVAL_MS = 180;
 
 type Props = {
   battle: McBattleCardRow;
@@ -91,6 +120,10 @@ function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
 
+function round2(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
 function normalizePaperdollLoadout(value: unknown): McPaperDollLoadout {
   const raw = (value ?? {}) as Partial<McPaperDollLoadout>;
 
@@ -137,6 +170,7 @@ export default function McBattleReplayCard({
   const lastNowRef = useRef<number | null>(null);
   const stageViewportRef = useRef<HTMLDivElement | null>(null);
   const lastTriggeredHitRef = useRef<number | null>(null);
+  const lastDebugLogAtRef = useRef<number>(0);
 
   const leftLoadout = useMemo(() => {
     return normalizePaperdollLoadout(battle?.challenger_snapshot?.paperdoll);
@@ -209,6 +243,8 @@ export default function McBattleReplayCard({
   const renderHeight = Math.round(173 * viewportScale * fighterScaleMultiplier);
   const groundedYOffset = Math.round(8 * viewportScale * fighterScaleMultiplier);
   const defeatGroundYOffset = Math.round(28 * viewportScale * fighterScaleMultiplier);
+
+  const worldRenderYOffset = Math.round(WORLD_RENDER_Y_OFFSET_PX * viewportScale);
 
   const toScreenX = (x: number, worldStageWidth: number) => {
     const normalized = (x + worldStageWidth / 2) / worldStageWidth;
@@ -370,22 +406,22 @@ export default function McBattleReplayCard({
   const fighterRenderList = !frame
     ? []
     : [
-      {
-        key: "left",
-        shouldRenderOnTop: leftShouldRenderOnTop,
-        fighter: frame.fighters.left,
-        layers: leftLayers,
-      },
-      {
-        key: "right",
-        shouldRenderOnTop: rightShouldRenderOnTop,
-        fighter: frame.fighters.right,
-        layers: rightLayers,
-      },
-    ].sort((a, b) => {
-      if (a.shouldRenderOnTop === b.shouldRenderOnTop) return 0;
-      return a.shouldRenderOnTop ? 1 : -1;
-    });
+        {
+          key: "left",
+          shouldRenderOnTop: leftShouldRenderOnTop,
+          fighter: frame.fighters.left,
+          layers: leftLayers,
+        },
+        {
+          key: "right",
+          shouldRenderOnTop: rightShouldRenderOnTop,
+          fighter: frame.fighters.right,
+          layers: rightLayers,
+        },
+      ].sort((a, b) => {
+        if (a.shouldRenderOnTop === b.shouldRenderOnTop) return 0;
+        return a.shouldRenderOnTop ? 1 : -1;
+      });
 
   useEffect(() => {
     if (!replay) return;
@@ -413,48 +449,88 @@ export default function McBattleReplayCard({
     const rightGrounded = frame.fighters.right.y <= CAMERA_GROUNDED_EPSILON;
     const someoneGrounded = leftGrounded || rightGrounded;
     const bothAirborne = !someoneGrounded;
+    const oneAirborne = leftGrounded !== rightGrounded;
 
-    const fighterHalfWidth = 48 * viewportScale;
+    const fighterDistanceWorld = Math.abs(
+      frame.fighters.left.x - frame.fighters.right.x
+    );
+
+    const closeRangeT = clamp(
+      1 - fighterDistanceWorld / CAMERA_CLOSE_RANGE_WORLD_DISTANCE,
+      0,
+      1
+    );
+
+    const baseFighterHalfWidth = 48 * viewportScale;
+    const dynamicFighterHalfWidth = lerp(
+      baseFighterHalfWidth,
+      CAMERA_CLOSE_FIGHTER_HALF_WIDTH_MIN * viewportScale,
+      closeRangeT
+    );
+
     const fighterHeight = 96 * viewportScale;
 
-    const fighterMinX = Math.min(leftPxX, rightPxX) - fighterHalfWidth;
-    const fighterMaxX = Math.max(leftPxX, rightPxX) + fighterHalfWidth;
+    const fighterMinX = Math.min(leftPxX, rightPxX) - dynamicFighterHalfWidth;
+    const fighterMaxX = Math.max(leftPxX, rightPxX) + dynamicFighterHalfWidth;
 
     const fighterMinY = Math.min(leftPxY, rightPxY) - fighterHeight;
     const fighterMaxY = Math.max(leftPxY, rightPxY);
 
-    let framedMinX = fighterMinX - CAMERA_SIDE_PADDING * viewportScale;
-    let framedMaxX = fighterMaxX + CAMERA_SIDE_PADDING * viewportScale;
+    const dynamicSidePadding = lerp(
+      CAMERA_SIDE_PADDING * viewportScale,
+      CAMERA_CLOSE_SIDE_PADDING_MIN * viewportScale,
+      closeRangeT
+    );
+
+    let framedMinX = fighterMinX - dynamicSidePadding;
+    let framedMaxX = fighterMaxX + dynamicSidePadding;
 
     const leftDistToEdge = fighterMinX;
     const rightDistToEdge = stageWidthPx - fighterMaxX;
 
+    let leftEdgeExtra = 0;
+    let rightEdgeExtra = 0;
+
     if (leftDistToEdge < CAMERA_EDGE_SOFT_ZONE * viewportScale) {
       const t = 1 - leftDistToEdge / (CAMERA_EDGE_SOFT_ZONE * viewportScale);
-      framedMinX -= CAMERA_EDGE_PADDING * viewportScale * t;
+      leftEdgeExtra = CAMERA_EDGE_PADDING * viewportScale * t;
+      framedMinX -= leftEdgeExtra;
     }
 
     if (rightDistToEdge < CAMERA_EDGE_SOFT_ZONE * viewportScale) {
       const t = 1 - rightDistToEdge / (CAMERA_EDGE_SOFT_ZONE * viewportScale);
-      framedMaxX += CAMERA_EDGE_PADDING * viewportScale * t;
+      rightEdgeExtra = CAMERA_EDGE_PADDING * viewportScale * t;
+      framedMaxX += rightEdgeExtra;
     }
 
     const framedMinY = fighterMinY - CAMERA_TOP_PADDING * viewportScale;
 
+    const airBiasMaxY = fighterMaxY + CAMERA_AIR_BOTTOM_PADDING * viewportScale;
+    const groundBiasMaxY = groundScreenY + CAMERA_BOTTOM_PADDING * viewportScale;
+    const oneAirborneMaxY = Math.max(
+      fighterMaxY + CAMERA_ONE_AIRBORNE_BOTTOM_PADDING * viewportScale,
+      lerp(airBiasMaxY, groundBiasMaxY, 0.55)
+    );
+
     const framedMaxY = bothAirborne
-      ? fighterMaxY + CAMERA_AIR_BOTTOM_PADDING * viewportScale
-      : Math.max(
-        fighterMaxY + CAMERA_AIR_BOTTOM_PADDING * viewportScale,
-        groundScreenY + CAMERA_BOTTOM_PADDING * viewportScale
-      );
+      ? airBiasMaxY
+      : oneAirborne
+        ? oneAirborneMaxY
+        : Math.max(airBiasMaxY, groundBiasMaxY);
 
     const framedWidth = Math.max(220 * viewportScale, framedMaxX - framedMinX);
     const framedHeight = Math.max(160 * viewportScale, framedMaxY - framedMinY);
 
-    const rawTargetScale = Math.min(
-      stageWidthPx / framedWidth,
-      stageHeightPx / framedHeight
+    const widthScaleCandidate = stageWidthPx / framedWidth;
+    const heightScaleCandidate = stageHeightPx / framedHeight;
+
+    const rawTargetScaleBase = Math.min(
+      widthScaleCandidate,
+      heightScaleCandidate
     );
+
+    const rawTargetScale =
+      rawTargetScaleBase * lerp(1, CAMERA_CLOSE_ZOOM_BONUS, closeRangeT);
 
     const edgeDistance = Math.min(leftDistToEdge, rightDistToEdge);
     const edgeT = clamp(
@@ -490,6 +566,133 @@ export default function McBattleReplayCard({
       cameraScaleRef.current +
       (targetScale - cameraScaleRef.current) * CAMERA_LERP;
 
+    if (DEBUG_CAMERA) {
+      const now = performance.now();
+      if (now - lastDebugLogAtRef.current >= DEBUG_CAMERA_LOG_INTERVAL_MS) {
+        lastDebugLogAtRef.current = now;
+
+        let limiter = "equal";
+        if (widthScaleCandidate < heightScaleCandidate - 0.0001) {
+          limiter = "width";
+        } else if (heightScaleCandidate < widthScaleCandidate - 0.0001) {
+          limiter = "height";
+        }
+
+        let clampReason = "none";
+        if (rawTargetScale < cameraMinScale - 0.0001) {
+          clampReason = "minScale";
+        } else if (rawTargetScale > CAMERA_MAX_SCALE + 0.0001) {
+          clampReason = "maxScale";
+        }
+
+        console.log("[McBattleReplayCard camera]", {
+          timeMs: round2(timeMs),
+          viewportScale: round2(viewportScale),
+          stage: {
+            width: stageWidthPx,
+            height: stageHeightPx,
+            centerX: round2(stageCenterX),
+            centerY: round2(stageCenterY),
+            groundScreenY: round2(groundScreenY),
+            worldRenderYOffset,
+          },
+          fightersWorld: {
+            left: {
+              x: round2(frame.fighters.left.x),
+              y: round2(frame.fighters.left.y),
+              action: frame.fighters.left.action,
+            },
+            right: {
+              x: round2(frame.fighters.right.x),
+              y: round2(frame.fighters.right.y),
+              action: frame.fighters.right.action,
+            },
+          },
+          fightersScreen: {
+            left: {
+              x: round2(leftPxX),
+              y: round2(leftPxY),
+            },
+            right: {
+              x: round2(rightPxX),
+              y: round2(rightPxY),
+            },
+          },
+          states: {
+            leftGrounded,
+            rightGrounded,
+            oneAirborne,
+            bothAirborne,
+            someoneGrounded,
+            isNarrowScreen,
+          },
+          closeRange: {
+            fighterDistanceWorld: round2(fighterDistanceWorld),
+            closeRangeT: round2(closeRangeT),
+            dynamicFighterHalfWidth: round2(dynamicFighterHalfWidth),
+            dynamicSidePadding: round2(dynamicSidePadding),
+            rawTargetScaleBase: round2(rawTargetScaleBase),
+          },
+          bounds: {
+            fighterMinX: round2(fighterMinX),
+            fighterMaxX: round2(fighterMaxX),
+            fighterMinY: round2(fighterMinY),
+            fighterMaxY: round2(fighterMaxY),
+            framedMinX: round2(framedMinX),
+            framedMaxX: round2(framedMaxX),
+            framedMinY: round2(framedMinY),
+            framedMaxY: round2(framedMaxY),
+            framedWidth: round2(framedWidth),
+            framedHeight: round2(framedHeight),
+          },
+          padding: {
+            side: round2(CAMERA_SIDE_PADDING * viewportScale),
+            top: round2(CAMERA_TOP_PADDING * viewportScale),
+            bottom: round2(CAMERA_BOTTOM_PADDING * viewportScale),
+            airBottom: round2(CAMERA_AIR_BOTTOM_PADDING * viewportScale),
+            oneAirborneBottom: round2(
+              CAMERA_ONE_AIRBORNE_BOTTOM_PADDING * viewportScale
+            ),
+            edgePadding: round2(CAMERA_EDGE_PADDING * viewportScale),
+            edgeSoftZone: round2(CAMERA_EDGE_SOFT_ZONE * viewportScale),
+            leftEdgeExtra: round2(leftEdgeExtra),
+            rightEdgeExtra: round2(rightEdgeExtra),
+          },
+          edge: {
+            leftDistToEdge: round2(leftDistToEdge),
+            rightDistToEdge: round2(rightDistToEdge),
+            edgeDistance: round2(edgeDistance),
+            edgeT: round2(edgeT),
+          },
+          scale: {
+            widthScaleCandidate: round2(widthScaleCandidate),
+            heightScaleCandidate: round2(heightScaleCandidate),
+            rawTargetScale: round2(rawTargetScale),
+            cameraMinScale: round2(cameraMinScale),
+            cameraMaxScale: round2(CAMERA_MAX_SCALE),
+            targetScale: round2(targetScale),
+            currentScale: round2(cameraScaleRef.current),
+            nextScale: round2(nextCameraScale),
+            limiter,
+            clampReason,
+          },
+          bias: {
+            airBiasMaxY: round2(airBiasMaxY),
+            groundBiasMaxY: round2(groundBiasMaxY),
+            oneAirborneMaxY: round2(oneAirborneMaxY),
+          },
+          camera: {
+            targetCameraX: round2(targetCameraX),
+            targetCameraY: round2(targetCameraY),
+            currentCameraX: round2(cameraXRef.current),
+            currentCameraY: round2(cameraYRef.current),
+            nextCameraX: round2(nextCameraX),
+            nextCameraY: round2(nextCameraY),
+          },
+        });
+      }
+    }
+
     cameraXRef.current = nextCameraX;
     cameraYRef.current = nextCameraY;
     cameraScaleRef.current = nextCameraScale;
@@ -500,11 +703,14 @@ export default function McBattleReplayCard({
   }, [
     frame,
     replay,
+    timeMs,
     viewportScale,
     stageWidthPx,
     stageHeightPx,
     groundScreenY,
     cameraMinScaleBase,
+    worldRenderYOffset,
+    isNarrowScreen,
   ]);
 
   const cameraTranslateX = cameraX;
@@ -548,6 +754,7 @@ export default function McBattleReplayCard({
             playbackTimeRef.current = 0;
             lastNowRef.current = null;
             lastTriggeredHitRef.current = null;
+            lastDebugLogAtRef.current = 0;
 
             setTimeMs(0);
 
@@ -608,7 +815,7 @@ export default function McBattleReplayCard({
           <div
             className="absolute inset-0"
             style={{
-              transform: `translateX(${cameraTranslateX}px) translateY(${cameraTranslateY}px)`,
+              transform: `translateX(${cameraTranslateX}px) translateY(${cameraTranslateY + worldRenderYOffset}px)`,
             }}
           >
             <div
@@ -621,7 +828,7 @@ export default function McBattleReplayCard({
               <div
                 className="absolute left-0 right-0 pointer-events-none"
                 style={{
-                  bottom: -185 * viewportScale,
+                  bottom: PLATFORM_BOTTOM_PX * viewportScale,
                   height: stageHeightPx,
                   backgroundImage: 'url("/mc/backgrounds/arena-platform.png")',
                   backgroundSize: "100% 100%",
@@ -633,7 +840,7 @@ export default function McBattleReplayCard({
               <div
                 className="absolute inset-x-0 bg-white/20"
                 style={{
-                  bottom: 16 * viewportScale,
+                  bottom: FLOOR_LINE_BOTTOM_PX * viewportScale,
                   height: Math.max(1, 2 * viewportScale),
                 }}
               />
@@ -661,66 +868,22 @@ export default function McBattleReplayCard({
             </div>
           </div>
 
-          {/* HUD OVERLAY */}
-          <div className="pointer-events-none absolute bottom-2 left-0 right-0 flex justify-between px-4">
-            {/* LEFT (CHALLENGER) */}
-            <div className="flex items-center gap-2">
-              <div className="h-10 w-10 overflow-hidden bg-black">
-                {avatars.left ? (
-                  <img
-                    src={avatars.left}
-                    className="h-full w-full object-cover"
-                  />
-                ) : null}
-              </div>
-
-              <div className="flex flex-col">
-                <div className="text-xs text-white">
-                  {battle.challenger_snapshot?.username ?? "Player"}
-                </div>
-
-                <div className="h-2 w-32 bg-gray-800">
-                  <div
-                    className="h-full bg-green-500"
-                    style={{ width: `${leftHpPercent}%` }}
-                  />
-                </div>
-
-                <div className="text-[10px] text-white">
-                  {Math.round(leftCurrentHp)} / {leftMaxHp}
-                </div>
-              </div>
-            </div>
-
-            {/* RIGHT (DEFENDER) */}
-            <div className="flex flex-row-reverse items-center gap-2">
-              <div className="h-10 w-10 overflow-hidden bg-black">
-                {avatars.right ? (
-                  <img
-                    src={avatars.right}
-                    className="h-full w-full object-cover"
-                  />
-                ) : null}
-              </div>
-
-              <div className="flex flex-col items-end">
-                <div className="text-xs text-white">
-                  {battle.defender_snapshot?.username ?? "Player"}
-                </div>
-
-                <div className="h-2 w-32 bg-gray-800">
-                  <div
-                    className="h-full bg-green-500"
-                    style={{ width: `${rightHpPercent}%` }}
-                  />
-                </div>
-
-                <div className="text-[10px] text-white">
-                  {Math.round(rightCurrentHp)} / {rightMaxHp}
-                </div>
-              </div>
-            </div>
-          </div>
+          <McBattleHud
+            left={{
+              username: battle.challenger_snapshot?.username ?? "Player",
+              avatarUrl: avatars.left,
+              currentHp: leftCurrentHp,
+              maxHp: leftMaxHp,
+              hpPercent: leftHpPercent,
+            }}
+            right={{
+              username: battle.defender_snapshot?.username ?? "Player",
+              avatarUrl: avatars.right,
+              currentHp: rightCurrentHp,
+              maxHp: rightMaxHp,
+              hpPercent: rightHpPercent,
+            }}
+          />
         </div>
       </div>
     </div>
