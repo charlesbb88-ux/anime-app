@@ -18,7 +18,7 @@ function safeNumber(value: unknown, fallback = 0) {
 }
 
 export default function AffinitiesCard({ affinities }: Props) {
-  const topAffinities = affinities.slice(0, 5);
+  const topAffinities = affinities.slice(0, 4);
 
   return (
     <div className="rounded-md border border-white/10 bg-black px-4 py-2">

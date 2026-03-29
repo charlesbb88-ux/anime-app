@@ -16,6 +16,7 @@ import type {
 } from "@/components/mc/avatarTypes";
 import CharacterLoadoutEditor from "@/components/mc/CharacterLoadoutEditor";
 import MCLayoutSkeleton from "@/components/mc/MCLayoutSkeleton";
+import McBattleFeed from "@/components/mc/battles/McBattleFeed";
 
 type Props = {
   userId: string;
@@ -515,7 +516,7 @@ export default function MCLayout({ userId }: Props) {
         ) : (
           <>
             <div className="grid gap-4 lg:grid-cols-[320px_minmax(320px,1fr)_320px]">
-              <div className="order-2 flex flex-col gap-6 lg:order-none lg:col-start-1">
+              <div className="order-2 flex flex-col gap-2 lg:order-none lg:col-start-1">
                 <ProfileCard
                   accountLevel={accountLevel}
                   accountXp={accountXp}
@@ -539,10 +540,28 @@ export default function MCLayout({ userId }: Props) {
                 />
               </div>
 
-              <div className="order-3 flex flex-col gap-6 lg:order-none lg:col-start-3">
+              <div className="order-3 flex flex-col gap-2 lg:order-none lg:col-start-3">
                 <AbilitiesCard />
                 <CombatStatsCard stats={combatStats} />
                 <AffinitiesCard affinities={affinities} />
+              </div>
+              <div className="mt-8">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold">Battles</h2>
+
+                  <a
+                    href={`/${username}/battles`}
+                    className="text-sm text-blue-400 hover:underline"
+                  >
+                    View all
+                  </a>
+                </div>
+
+                <McBattleFeed
+                  userId={userId}
+                  initialLimit={3}
+                  previewMode
+                />
               </div>
             </div>
             {viewerId === userId ? (

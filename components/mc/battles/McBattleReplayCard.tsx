@@ -47,25 +47,10 @@ const BG_PARALLAX_X = 0.18;
 const BG_PARALLAX_Y = 0.08;
 const BG_PARALLAX_SCALE = 1.18;
 
-/**
- * Positive = push the entire visible fight scene DOWN.
- */
 const WORLD_RENDER_Y_OFFSET_PX = 22;
-
-/**
- * Visual platform placement.
- * More negative = lower.
- */
 const PLATFORM_BOTTOM_PX = -185;
-
-/**
- * Decorative white floor guide line.
- */
 const FLOOR_LINE_BOTTOM_PX = 16;
 
-/**
- * Camera diagnostics
- */
 const DEBUG_CAMERA = false;
 const DEBUG_CAMERA_LOG_INTERVAL_MS = 180;
 
@@ -73,6 +58,7 @@ type Props = {
   battle: McBattleCardRow;
   title?: string;
   compact?: boolean;
+  isActive?: boolean;
 };
 
 function getInterpolatedFrame(frames: DotReplayFrame[], t: number): DotReplayFrame | null {
@@ -142,10 +128,7 @@ function normalizePaperdollLoadout(value: unknown): McPaperDollLoadout {
   };
 }
 
-function areLoadoutsVisuallyIdentical(
-  a: McPaperDollLoadout,
-  b: McPaperDollLoadout
-) {
+function areLoadoutsVisuallyIdentical(a: McPaperDollLoadout, b: McPaperDollLoadout) {
   return (
     a.body === b.body &&
     a.hair === b.hair &&
@@ -161,6 +144,7 @@ export default function McBattleReplayCard({
   battle,
   title,
   compact = false,
+  isActive = true,
 }: Props) {
   const replay = battle.replay_data?.dot_replay ?? null;
 
@@ -342,14 +326,16 @@ export default function McBattleReplayCard({
 
     if (rafRef.current != null) {
       window.cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     }
 
-    playbackTimeRef.current = 0;
-    lastNowRef.current = null;
-    setTimeMs(0);
+    if (!isActive) {
+      lastNowRef.current = null;
+      return;
+    }
 
     const tick = (now: number) => {
-      if (!replay) return;
+      if (!replay || !isActive) return;
 
       if (lastNowRef.current == null) {
         lastNowRef.current = now;
@@ -360,16 +346,16 @@ export default function McBattleReplayCard({
 
       const deltaMs = Math.min(rawDelta, 50);
 
-      playbackTimeRef.current = Math.min(
-        playbackTimeRef.current + deltaMs,
-        replay.durationMs
-      );
+      playbackTimeRef.current += deltaMs;
+
+      if (playbackTimeRef.current >= replay.durationMs) {
+        playbackTimeRef.current = 0;
+        lastTriggeredHitRef.current = null;
+        lastDebugLogAtRef.current = 0;
+      }
 
       setTimeMs(playbackTimeRef.current);
-
-      if (playbackTimeRef.current < replay.durationMs) {
-        rafRef.current = window.requestAnimationFrame(tick);
-      }
+      rafRef.current = window.requestAnimationFrame(tick);
     };
 
     rafRef.current = window.requestAnimationFrame(tick);
@@ -377,9 +363,10 @@ export default function McBattleReplayCard({
     return () => {
       if (rafRef.current != null) {
         window.cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
       }
     };
-  }, [replay, playbackKey]);
+  }, [replay, playbackKey, isActive]);
 
   const frame = useMemo(() => {
     if (!replay) return null;
@@ -392,25 +379,11 @@ export default function McBattleReplayCard({
   const leftCurrentHp = leftFighter?.hp ?? 0;
   const rightCurrentHp = rightFighter?.hp ?? 0;
 
-  const leftMaxHp = Math.max(
-    1,
-    battle.challenger_snapshot?.combat_stats?.hp ?? 1
-  );
+  const leftMaxHp = Math.max(1, battle.challenger_snapshot?.combat_stats?.hp ?? 1);
+  const rightMaxHp = Math.max(1, battle.defender_snapshot?.combat_stats?.hp ?? 1);
 
-  const rightMaxHp = Math.max(
-    1,
-    battle.defender_snapshot?.combat_stats?.hp ?? 1
-  );
-
-  const leftHpPercent = Math.max(
-    0,
-    Math.min(100, (leftCurrentHp / leftMaxHp) * 100)
-  );
-
-  const rightHpPercent = Math.max(
-    0,
-    Math.min(100, (rightCurrentHp / rightMaxHp) * 100)
-  );
+  const leftHpPercent = Math.max(0, Math.min(100, (leftCurrentHp / leftMaxHp) * 100));
+  const rightHpPercent = Math.max(0, Math.min(100, (rightCurrentHp / rightMaxHp) * 100));
 
   const leftAction = frame?.fighters.left.action;
   const rightAction = frame?.fighters.right.action;
@@ -471,9 +444,7 @@ export default function McBattleReplayCard({
     const bothAirborne = !someoneGrounded;
     const oneAirborne = leftGrounded !== rightGrounded;
 
-    const fighterDistanceWorld = Math.abs(
-      frame.fighters.left.x - frame.fighters.right.x
-    );
+    const fighterDistanceWorld = Math.abs(frame.fighters.left.x - frame.fighters.right.x);
 
     const closeRangeT = clamp(
       1 - fighterDistanceWorld / CAMERA_CLOSE_RANGE_WORLD_DISTANCE,
@@ -544,10 +515,7 @@ export default function McBattleReplayCard({
     const widthScaleCandidate = stageWidthPx / framedWidth;
     const heightScaleCandidate = stageHeightPx / framedHeight;
 
-    const rawTargetScaleBase = Math.min(
-      widthScaleCandidate,
-      heightScaleCandidate
-    );
+    const rawTargetScaleBase = Math.min(widthScaleCandidate, heightScaleCandidate);
 
     const rawTargetScale =
       rawTargetScaleBase * lerp(1, CAMERA_CLOSE_ZOOM_BONUS, closeRangeT);
@@ -579,12 +547,10 @@ export default function McBattleReplayCard({
       cameraXRef.current + (targetCameraX - cameraXRef.current) * CAMERA_LERP;
 
     const nextCameraY =
-      cameraYRef.current +
-      (targetCameraY - cameraYRef.current) * CAMERA_VERTICAL_LERP;
+      cameraYRef.current + (targetCameraY - cameraYRef.current) * CAMERA_VERTICAL_LERP;
 
     const nextCameraScale =
-      cameraScaleRef.current +
-      (targetScale - cameraScaleRef.current) * CAMERA_LERP;
+      cameraScaleRef.current + (targetScale - cameraScaleRef.current) * CAMERA_LERP;
 
     if (DEBUG_CAMERA) {
       const now = performance.now();
@@ -670,9 +636,7 @@ export default function McBattleReplayCard({
             top: round2(CAMERA_TOP_PADDING * viewportScale),
             bottom: round2(CAMERA_BOTTOM_PADDING * viewportScale),
             airBottom: round2(CAMERA_AIR_BOTTOM_PADDING * viewportScale),
-            oneAirborneBottom: round2(
-              CAMERA_ONE_AIRBORNE_BOTTOM_PADDING * viewportScale
-            ),
+            oneAirborneBottom: round2(CAMERA_ONE_AIRBORNE_BOTTOM_PADDING * viewportScale),
             edgePadding: round2(CAMERA_EDGE_PADDING * viewportScale),
             edgeSoftZone: round2(CAMERA_EDGE_SOFT_ZONE * viewportScale),
             leftEdgeExtra: round2(leftEdgeExtra),
@@ -795,8 +759,11 @@ export default function McBattleReplayCard({
       </div>
 
       {!compact && (
-        <div className="mb-3 text-xs text-white/50">
-          {challengerName} vs {defenderName} • {replay.durationMs} ms
+        <div className="mb-3 flex items-center justify-between gap-3 text-xs text-white/50">
+          <div>
+            {challengerName} vs {defenderName} • {replay.durationMs} ms
+          </div>
+          <div>{isActive ? "Playing" : "Paused"}</div>
         </div>
       )}
 
@@ -883,6 +850,7 @@ export default function McBattleReplayCard({
                       : groundedYOffset
                   }
                   flash={false}
+                  isActive={isActive}
                 />
               ))}
 
