@@ -15,6 +15,7 @@ import type { McPaperDollLoadout } from "@/components/mc/paperdoll/mcPaperDollTy
 import type { DotReplayFrame } from "@/lib/dot/mcDotReplayTypes";
 import type { McBattleCardRow } from "@/components/mc/battles/mcBattleTypes";
 import McBattleHud from "@/components/mc/battles/McBattleHud";
+import McBattleFighterIndicators from "@/components/mc/battles/McBattleFighterIndicators";
 
 const BASE_STAGE_HEIGHT_PX = 320;
 const BASE_STAGE_WIDTH_PX = 920;
@@ -141,6 +142,21 @@ function normalizePaperdollLoadout(value: unknown): McPaperDollLoadout {
   };
 }
 
+function areLoadoutsVisuallyIdentical(
+  a: McPaperDollLoadout,
+  b: McPaperDollLoadout
+) {
+  return (
+    a.body === b.body &&
+    a.hair === b.hair &&
+    a.torso === b.torso &&
+    a.bottoms === b.bottoms &&
+    a.feet === b.feet &&
+    a.hands === b.hands &&
+    a.eyes === b.eyes
+  );
+}
+
 export default function McBattleReplayCard({
   battle,
   title,
@@ -179,6 +195,10 @@ export default function McBattleReplayCard({
   const rightLoadout = useMemo(() => {
     return normalizePaperdollLoadout(battle?.defender_snapshot?.paperdoll);
   }, [battle]);
+
+  const shouldShowSameLoadoutIndicators = useMemo(() => {
+    return areLoadoutsVisuallyIdentical(leftLoadout, rightLoadout);
+  }, [leftLoadout, rightLoadout]);
 
   const leftLayers = useMemo(() => {
     const definition = resolveMcPaperDollDefinition(MC_PAPERDOLL_CATALOG, leftLoadout);
@@ -406,22 +426,22 @@ export default function McBattleReplayCard({
   const fighterRenderList = !frame
     ? []
     : [
-        {
-          key: "left",
-          shouldRenderOnTop: leftShouldRenderOnTop,
-          fighter: frame.fighters.left,
-          layers: leftLayers,
-        },
-        {
-          key: "right",
-          shouldRenderOnTop: rightShouldRenderOnTop,
-          fighter: frame.fighters.right,
-          layers: rightLayers,
-        },
-      ].sort((a, b) => {
-        if (a.shouldRenderOnTop === b.shouldRenderOnTop) return 0;
-        return a.shouldRenderOnTop ? 1 : -1;
-      });
+      {
+        key: "left",
+        shouldRenderOnTop: leftShouldRenderOnTop,
+        fighter: frame.fighters.left,
+        layers: leftLayers,
+      },
+      {
+        key: "right",
+        shouldRenderOnTop: rightShouldRenderOnTop,
+        fighter: frame.fighters.right,
+        layers: rightLayers,
+      },
+    ].sort((a, b) => {
+      if (a.shouldRenderOnTop === b.shouldRenderOnTop) return 0;
+      return a.shouldRenderOnTop ? 1 : -1;
+    });
 
   useEffect(() => {
     if (!replay) return;
@@ -865,6 +885,26 @@ export default function McBattleReplayCard({
                   flash={false}
                 />
               ))}
+
+              {shouldShowSameLoadoutIndicators && frame ? (
+                <McBattleFighterIndicators
+                  left={{
+                    avatarUrl: avatars.left,
+                    username: challengerName,
+                    fighter: frame.fighters.left,
+                    align: "left",
+                  }}
+                  right={{
+                    avatarUrl: avatars.right,
+                    username: defenderName,
+                    fighter: frame.fighters.right,
+                    align: "right",
+                  }}
+                  stageWidth={replay.stageWidth}
+                  toScreenX={toScreenX}
+                  toScreenY={toScreenY}
+                />
+              ) : null}
             </div>
           </div>
 
