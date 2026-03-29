@@ -721,7 +721,7 @@ export default function McBattleReplayCard({
   }
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+    <div className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-4">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-semibold text-white">
@@ -769,7 +769,7 @@ export default function McBattleReplayCard({
 
       <div
         ref={stageViewportRef}
-        className="relative mx-auto w-full overflow-hidden rounded-xs bg-[#0f0f0f]"
+        className="relative mx-auto block min-w-0 max-w-full w-full overflow-hidden rounded-xs bg-[#0f0f0f]"
         style={{
           aspectRatio: `${BASE_STAGE_WIDTH_PX} / ${BASE_STAGE_HEIGHT_PX}`,
         }}

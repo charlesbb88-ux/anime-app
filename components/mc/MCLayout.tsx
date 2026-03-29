@@ -545,7 +545,7 @@ export default function MCLayout({ userId }: Props) {
                 <CombatStatsCard stats={combatStats} />
                 <AffinitiesCard affinities={affinities} />
               </div>
-              <div className="mt-8">
+              <div className="order-4 mt-8 lg:col-span-3 min-w-0">
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-lg font-semibold">Battles</h2>
 
