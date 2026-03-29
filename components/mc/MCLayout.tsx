@@ -564,13 +564,6 @@ export default function MCLayout({ userId }: Props) {
                 />
               </div>
             </div>
-            {viewerId === userId ? (
-              <CharacterLoadoutEditor
-                groups={loadoutOptions}
-                savingSlotKey={savingSlotKey}
-                onEquip={handleEquipAsset}
-              />
-            ) : null}
           </>
         )}
       </div>

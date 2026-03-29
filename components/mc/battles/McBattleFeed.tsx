@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getUserBattles } from "@/lib/mcBattleFeedService";
 import McBattleFeedItem from "./McBattleFeedItem";
 import McBattleFeedSkeleton from "./McBattleFeedSkeleton";
@@ -25,11 +25,59 @@ export default function McBattleFeed({
   const [error, setError] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const [activeBattleId, setActiveBattleId] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
 
   const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const measureRafRef = useRef<number | null>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
 
-  async function loadInitial() {
+  const scheduleMeasure = useCallback(() => {
+    if (typeof window === "undefined") return;
+
+    if (measureRafRef.current != null) return;
+
+    measureRafRef.current = window.requestAnimationFrame(() => {
+      measureRafRef.current = null;
+
+      const viewportHeight = window.innerHeight;
+      const viewportCenterY = viewportHeight / 2;
+
+      let bestId: string | null = null;
+      let bestDistance = Number.POSITIVE_INFINITY;
+      let visibleCount = 0;
+
+      for (const battle of battles) {
+        const el = itemRefs.current[battle.id];
+        if (!el) continue;
+
+        const rect = el.getBoundingClientRect();
+        const isVisible = rect.bottom > 0 && rect.top < viewportHeight;
+
+        if (!isVisible) continue;
+
+        visibleCount += 1;
+
+        const cardCenterY = rect.top + rect.height / 2;
+        const distance = Math.abs(cardCenterY - viewportCenterY);
+
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestId = battle.id;
+        }
+      }
+
+      if (bestId) {
+        setActiveBattleId((prev) => (prev === bestId ? prev : bestId));
+        return;
+      }
+
+      if (visibleCount === 0) {
+        setActiveBattleId((prev) => prev);
+      }
+    });
+  }, [battles]);
+
+  const loadInitial = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -42,14 +90,18 @@ export default function McBattleFeed({
 
       setBattles(data);
       setOffset(data.length);
+      setHasMore(data.length === initialLimit);
+      setActiveBattleId(data[0]?.id ?? null);
     } catch (e: any) {
       setError(e?.message ?? "Failed to load battles.");
     } finally {
       setLoading(false);
     }
-  }
+  }, [userId, initialLimit]);
 
-  async function loadMore() {
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+
     try {
       setLoadingMore(true);
       setError(null);
@@ -62,16 +114,35 @@ export default function McBattleFeed({
 
       setBattles((prev) => [...prev, ...data]);
       setOffset((prev) => prev + data.length);
+      setHasMore(data.length === pageSize);
     } catch (e: any) {
       setError(e?.message ?? "Failed to load more battles.");
     } finally {
       setLoadingMore(false);
     }
-  }
+  }, [userId, pageSize, offset, loadingMore, hasMore]);
+
+  const handleNodeChange = useCallback(
+    (battleId: string, node: HTMLDivElement | null) => {
+      itemRefs.current[battleId] = node;
+      scheduleMeasure();
+    },
+    [scheduleMeasure]
+  );
 
   useEffect(() => {
     loadInitial();
-  }, [userId]);
+  }, [loadInitial]);
+
+  useEffect(() => {
+    const currentIds = new Set(battles.map((battle) => battle.id));
+
+    for (const battleId of Object.keys(itemRefs.current)) {
+      if (!currentIds.has(battleId)) {
+        delete itemRefs.current[battleId];
+      }
+    }
+  }, [battles]);
 
   useEffect(() => {
     if (!battles.length) {
@@ -79,59 +150,62 @@ export default function McBattleFeed({
       return;
     }
 
-    function measureActiveCard() {
-      measureRafRef.current = null;
+    const run = () => {
+      scheduleMeasure();
+    };
 
-      const viewportCenterY = window.innerHeight / 2;
+    run();
 
-      let bestId: string | null = null;
-      let bestDistance = Number.POSITIVE_INFINITY;
+    const t1 = window.setTimeout(run, 0);
+    const t2 = window.setTimeout(run, 80);
+    const t3 = window.setTimeout(run, 180);
 
-      for (const battle of battles) {
-        const el = itemRefs.current[battle.id];
-        if (!el) continue;
-
-        const rect = el.getBoundingClientRect();
-        const isVisible = rect.bottom > 0 && rect.top < window.innerHeight;
-
-        if (!isVisible) continue;
-
-        const cardCenterY = rect.top + rect.height / 2;
-        const distance = Math.abs(cardCenterY - viewportCenterY);
-
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          bestId = battle.id;
-        }
-      }
-
-      if (!bestId && battles.length > 0) {
-        bestId = battles[0].id;
-      }
-
-      setActiveBattleId((prev) => (prev === bestId ? prev : bestId));
-    }
-
-    function requestMeasure() {
-      if (measureRafRef.current != null) return;
-      measureRafRef.current = window.requestAnimationFrame(measureActiveCard);
-    }
-
-    requestMeasure();
-
-    window.addEventListener("scroll", requestMeasure, { passive: true });
-    window.addEventListener("resize", requestMeasure);
+    window.addEventListener("scroll", run, { passive: true });
+    window.addEventListener("resize", run);
 
     return () => {
-      window.removeEventListener("scroll", requestMeasure);
-      window.removeEventListener("resize", requestMeasure);
+      window.removeEventListener("scroll", run);
+      window.removeEventListener("resize", run);
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      window.clearTimeout(t3);
 
       if (measureRafRef.current != null) {
         window.cancelAnimationFrame(measureRafRef.current);
         measureRafRef.current = null;
       }
     };
-  }, [battles]);
+  }, [battles, scheduleMeasure]);
+
+  useEffect(() => {
+    if (previewMode) return;
+    if (!hasMore) return;
+    if (loading) return;
+
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry?.isIntersecting) return;
+        if (loadingMore) return;
+
+        loadMore();
+      },
+      {
+        root: null,
+        rootMargin: "800px 0px",
+        threshold: 0,
+      }
+    );
+
+    observer.observe(sentinel);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [previewMode, hasMore, loading, loadingMore, loadMore]);
 
   if (loading) {
     return <McBattleFeedSkeleton count={initialLimit} />;
@@ -160,23 +234,16 @@ export default function McBattleFeed({
           key={battle.id}
           battle={battle}
           isActive={battle.id === activeBattleId}
-          registerNode={(node) => {
-            itemRefs.current[battle.id] = node;
-          }}
+          onNodeChange={handleNodeChange}
         />
       ))}
 
-      {!previewMode && (
-        <div className="flex justify-center pt-4">
-          <button
-            type="button"
-            onClick={loadMore}
-            disabled={loadingMore}
-            className="rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-sm hover:bg-white/15 disabled:opacity-50"
-          >
-            {loadingMore ? "Loading..." : "Load more"}
-          </button>
-        </div>
+      {!previewMode && hasMore && (
+        <div ref={loadMoreSentinelRef} className="h-8 w-full" />
+      )}
+
+      {!previewMode && loadingMore && (
+        <McBattleFeedSkeleton count={2} />
       )}
     </div>
   );
