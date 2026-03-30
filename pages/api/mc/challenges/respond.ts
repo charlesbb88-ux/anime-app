@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { createMcBattle } from "@/lib/createMcBattle";
+import { createMcBattleServer } from "@/lib/createMcBattle";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 type ApiResponse =
@@ -156,10 +156,10 @@ export default async function handler(
       });
     }
 
-    const battle = await createMcBattle(
-      challenge.challenger_user_id,
-      challenge.defender_user_id
-    );
+const battle = await createMcBattleServer(
+  challenge.challenger_user_id,
+  challenge.defender_user_id
+);
 
     const { data: updatedRow, error: updateError } = await supabaseAdmin
       .from("mc_challenges")

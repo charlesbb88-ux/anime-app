@@ -19,6 +19,7 @@ import MCLayoutSkeleton from "@/components/mc/MCLayoutSkeleton";
 import McBattleFeed from "@/components/mc/battles/McBattleFeed";
 import { useMcBattleRecord } from "@/hooks/useMcBattleRecord";
 import McBattleRecordCard from "@/components/mc/McBattleRecordCard";
+import ChallengeButton from "@/components/mc/challenges/ChallengeButton";
 
 type Props = {
   userId: string;
@@ -538,6 +539,14 @@ export default function MCLayout({ userId }: Props) {
               </div>
 
               <div className="order-1 lg:order-none lg:col-start-2 flex flex-col gap-2">
+                <div className="flex justify-end">
+                  {viewerId !== userId && (
+                    <ChallengeButton
+                      defenderUserId={userId}
+                      defenderUsername={username}
+                    />
+                  )}
+                </div>
                 <CharacterPanel
                   username={username}
                   title={fullTitle}
