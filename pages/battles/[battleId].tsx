@@ -1,29 +1,17 @@
 "use client";
 
 import type { NextPage } from "next";
-import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
 import McBattleReplayCard from "@/components/mc/battles/McBattleReplayCard";
 import type { McBattleCardRow } from "@/components/mc/battles/mcBattleTypes";
 import { getMcBattleById } from "@/lib/getMcBattleById";
+import { useMcBattleUserMetaMap } from "@/hooks/useMcBattleUserMetaMap";
 
 function getFirstQueryParam(param: string | string[] | undefined) {
   if (typeof param === "string") return param;
   if (Array.isArray(param)) return param[0] ?? "";
   return "";
-}
-
-function formatBattleDate(value?: string) {
-  if (!value) return "";
-  const date = new Date(value);
-  const time = date.getTime();
-
-  if (!Number.isFinite(time)) {
-    return "";
-  }
-
-  return date.toLocaleString();
 }
 
 const McBattleDetailPage: NextPage = () => {
@@ -77,15 +65,22 @@ const McBattleDetailPage: NextPage = () => {
     };
   }, [router.isReady, battleId]);
 
-  const challengerName = battle?.challenger_snapshot?.username ?? "Challenger";
-  const defenderName = battle?.defender_snapshot?.username ?? "Defender";
+  const battleUserIds = useMemo(() => {
+    if (!battle) return [];
+
+    return Array.from(
+      new Set([battle.challenger_user_id, battle.defender_user_id].filter(Boolean))
+    );
+  }, [battle]);
+
+  const {
+    metaMap: fighterMetaMap,
+    error: fighterMetaError,
+  } = useMcBattleUserMetaMap(battleUserIds);
 
   return (
     <main className="min-h-screen text-black">
-      <div className="mx-auto max-w-5xl px-4 pt-5 pb-8">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        </div>
-
+      <div className="mx-auto max-w-5xl px-4 pb-8 pt-5">
         {loading ? (
           <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-10 text-sm text-white/65">
             Loading battle...
@@ -100,7 +95,17 @@ const McBattleDetailPage: NextPage = () => {
           </div>
         ) : (
           <div className="space-y-4">
-            <McBattleReplayCard battle={battle} isActive />
+            {fighterMetaError ? (
+              <div className="rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-sm text-yellow-200">
+                Failed to load some fighter profile info. Battle still loaded.
+              </div>
+            ) : null}
+
+            <McBattleReplayCard
+              battle={battle}
+              isActive
+              fighterMetaMap={fighterMetaMap}
+            />
           </div>
         )}
       </div>
