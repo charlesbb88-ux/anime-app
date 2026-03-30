@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import McBattleReplayCard from "@/components/mc/McBattleReplayCard";
+import McBattleReplayCard from "@/components/mc/McBattleReplayCardOld";
 
 export default function McBattleReplayTestPage() {
   const [battleId, setBattleId] = useState("");
