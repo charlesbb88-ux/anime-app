@@ -233,6 +233,7 @@ export default function Header({ transparent = false }: { transparent?: boolean 
     ? [
       { label: "Posts", href: baseProfilePath },
       { label: "MC", href: `${baseProfilePath}/mc` },
+      { label: "Battles", href: `${baseProfilePath}/battles` },
       { label: "Completions", href: `${baseProfilePath}/completions` },
       { label: "Watchlist", href: `${baseProfilePath}/watchlist` },
       { label: "Activity", href: `${baseProfilePath}/activity` },
