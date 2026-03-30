@@ -38,9 +38,8 @@ function FighterDetailsBlock({
   return (
     <a
       href={href}
-      className={`flex items-start gap-2 rounded-md p-1 transition hover:bg-black/5 ${
-        isRight ? "justify-end" : "justify-start"
-      }`}
+      className={`flex items-start gap-2 rounded-md p-1 transition hover:bg-black/5 ${isRight ? "justify-end" : "justify-start"
+        }`}
     >
       {!isRight && (
         <div className="h-18 w-18 shrink-0 overflow-hidden rounded-full border border-black bg-black/5">
@@ -156,14 +155,18 @@ export default function McBattleReplayCard({
         <button
           type="button"
           onClick={() => setDetailsOpen((prev) => !prev)}
-          className="flex w-full items-center justify-center gap-1 pb-1 text-sm text-black transition hover:text-black"
+          className="
+  flex w-full items-center justify-center gap-1
+  pb-0.5 text-xs           /* mobile = smaller */
+  sm:pb-1 sm:text-sm       /* desktop = normal */
+  text-black transition hover:text-black
+"
         >
           <span>Details</span>
 
           <span
-            className={`transition-transform duration-200 ${
-              detailsOpen ? "rotate-180" : ""
-            }`}
+            className={`transition-transform duration-200 ${detailsOpen ? "rotate-180" : ""
+              }`}
           >
             ▾
           </span>
