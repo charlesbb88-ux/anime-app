@@ -1,9 +1,11 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import CharacterAvatar from "@/components/mc/CharacterAvatar";
 import type { CharacterAvatarLayer } from "@/components/mc/avatarTypes";
 import type { GeneratedTitle } from "@/lib/generateTitle";
 import CharacterRigAvatarToggle from "@/components/mc/CharacterRigAvatarToggle";
+
 type Props = {
   username: string;
   title: string;
@@ -20,12 +22,43 @@ export default function CharacterPanel({
   avatarLayers = [],
 }: Props) {
   const hasAvatar = avatarLayers.length > 0;
+  const [showTitlePopup, setShowTitlePopup] = useState(false);
+  const popupContentRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!showTitlePopup) return;
+
+    function handlePointerDown(event: MouseEvent | TouchEvent) {
+      const target = event.target as Node | null;
+
+      if (popupContentRef.current && target && popupContentRef.current.contains(target)) {
+        return;
+      }
+
+      setShowTitlePopup(false);
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setShowTitlePopup(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [showTitlePopup]);
 
   return (
     <div className="h-full rounded-md border border-white/10 bg-black p-3">
       <div className="flex h-full flex-col">
-        <div className="flex items-start justify-between gap-4">
-        </div>
+        <div className="flex items-start justify-between gap-4"></div>
 
         <div className="flex flex-1 items-start justify-center">
           <div className="flex w-full max-w-md flex-col items-center">
@@ -49,32 +82,62 @@ export default function CharacterPanel({
 
             <div className="mt-2 text-center">
               <div className="text-xl font-semibold">{username}</div>
-              <div className="mt-1 text-base text-white/70">{title}</div>
+
+              {titleDebug ? (
+                <button
+                  type="button"
+                  onClick={() => setShowTitlePopup(true)}
+                  className="mt-1 text-base text-white/70 underline underline-offset-4 transition hover:text-white"
+                >
+                  {title}
+                </button>
+              ) : (
+                <div className="mt-1 text-base text-white/70">{title}</div>
+              )}
+
               <div className="mt-2 text-sm text-white/45">{rank}</div>
             </div>
-            {titleDebug && (
-              <div className="mt-4 rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-white/70">
-                <div>
-                  <span className="text-white/40">Class Tag:</span>{" "}
-                  {titleDebug.classTag ?? "—"} ({titleDebug.classBand ?? "—"})
-                </div>
-                <div className="mt-1">
-                  <span className="text-white/40">Prefix Tag:</span>{" "}
-                  {titleDebug.prefixTag ?? "—"} ({titleDebug.prefixBand ?? "—"})
-                </div>
-                <div className="mt-1">
-                  <span className="text-white/40">Domain Tag:</span>{" "}
-                  {titleDebug.domainTag ?? "—"} ({titleDebug.domainBand ?? "—"})
-                </div>
-                <div className="mt-2 border-t border-white/10 pt-2">
-                  <span className="text-white/40">Short Title:</span>{" "}
-                  {titleDebug.shortTitle}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>
+
+      {showTitlePopup && titleDebug && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" />
+
+          <div
+            ref={popupContentRef}
+            className="relative z-10 w-full max-w-md rounded-2xl border border-white/10 bg-[#111] p-4 text-sm text-white shadow-2xl"
+          >
+            <div className="text-lg font-semibold">Why this title?</div>
+            <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-white/70">
+              <div>
+                <span className="text-white/40">Prefix Tag:</span>{" "}
+                {titleDebug.prefixTag ?? "—"}{" "}
+                {titleDebug.prefixLevel != null
+                  ? `(Level ${titleDebug.prefixLevel})`
+                  : ""}
+              </div>
+
+              <div className="mt-1">
+                <span className="text-white/40">Class Tag:</span>{" "}
+                {titleDebug.classTag ?? "—"}{" "}
+                {titleDebug.classLevel != null
+                  ? `(Level ${titleDebug.classLevel})`
+                  : ""}
+              </div>
+
+              <div className="mt-1">
+                <span className="text-white/40">Domain Tag:</span>{" "}
+                {titleDebug.domainTag ?? "—"}{" "}
+                {titleDebug.domainLevel != null
+                  ? `(Level ${titleDebug.domainLevel})`
+                  : ""}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

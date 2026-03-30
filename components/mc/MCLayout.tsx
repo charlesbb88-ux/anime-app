@@ -534,6 +534,17 @@ export default function MCLayout({ userId }: Props) {
                   title={shortTitle}
                   rank={rank}
                 />
+                <StatsCard stats={baseStats} />
+              </div>
+
+              <div className="order-1 lg:order-none lg:col-start-2 flex flex-col gap-2">
+                <CharacterPanel
+                  username={username}
+                  title={fullTitle}
+                  rank={rank}
+                  titleDebug={titleData}
+                  avatarLayers={avatarLayers}
+                />
 
                 {battleRecordLoading ? (
                   <div className="rounded-md border border-white/10 bg-black px-4 py-3 text-white/60">
@@ -546,18 +557,6 @@ export default function MCLayout({ userId }: Props) {
                 ) : battleRecord ? (
                   <McBattleRecordCard record={battleRecord} />
                 ) : null}
-
-                <StatsCard stats={baseStats} />
-              </div>
-
-              <div className="order-1 lg:order-none lg:col-start-2">
-                <CharacterPanel
-                  username={username}
-                  title={fullTitle}
-                  rank={rank}
-                  titleDebug={titleData}
-                  avatarLayers={avatarLayers}
-                />
               </div>
 
               <div className="order-3 flex flex-col gap-2 lg:order-none lg:col-start-3">

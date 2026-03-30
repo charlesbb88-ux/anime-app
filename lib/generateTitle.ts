@@ -11,6 +11,9 @@ export type GeneratedTitle = {
   prefixTag: string | null;
   classTag: string | null;
   domainTag: string | null;
+  prefixLevel: number | null;
+  classLevel: number | null;
+  domainLevel: number | null;
   prefixBand: "low" | "mid" | "high" | null;
   classBand: "low" | "mid" | "high" | null;
   domainBand: "low" | "mid" | "high" | null;
@@ -46,6 +49,9 @@ export function generateTitleFromAffinities(
       prefixTag: null,
       classTag: null,
       domainTag: null,
+      prefixLevel: null,
+      classLevel: null,
+      domainLevel: null,
       prefixBand: null,
       classBand: null,
       domainBand: null,
@@ -79,6 +85,9 @@ export function generateTitleFromAffinities(
     prefixTag: prefixSource.tagName,
     classTag: classSource.tagName,
     domainTag: domainSource.tagName,
+    prefixLevel: prefixSource.tagLevel,
+    classLevel: classSource.tagLevel,
+    domainLevel: domainSource.tagLevel,
     prefixBand,
     classBand,
     domainBand,
