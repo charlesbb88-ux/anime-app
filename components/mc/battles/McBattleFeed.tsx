@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getUserBattles } from "@/lib/mcBattleFeedService";
 import McBattleFeedItem from "./McBattleFeedItem";
 import McBattleFeedSkeleton from "./McBattleFeedSkeleton";
 import type { McBattleCardRow } from "./mcBattleTypes";
+import { useMcBattleUserMetaMap } from "@/hooks/useMcBattleUserMetaMap";
 
 type Props = {
   userId: string;
@@ -30,6 +31,23 @@ export default function McBattleFeed({
   const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const measureRafRef = useRef<number | null>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+
+  const battleUserIds = useMemo(() => {
+    return Array.from(
+      new Set(
+        battles.flatMap((battle) => [
+          battle.challenger_user_id,
+          battle.defender_user_id,
+        ])
+      )
+    );
+  }, [battles]);
+
+  const {
+    metaMap: fighterMetaMap,
+    loading: fighterMetaLoading,
+    error: fighterMetaError,
+  } = useMcBattleUserMetaMap(battleUserIds);
 
   const scheduleMeasure = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -229,12 +247,19 @@ export default function McBattleFeed({
 
   return (
     <div className="space-y-4">
+      {fighterMetaError && (
+        <div className="rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-sm text-yellow-200">
+          Failed to load some fighter profile info. Battles still loaded.
+        </div>
+      )}
+
       {battles.map((battle) => (
         <McBattleFeedItem
           key={battle.id}
           battle={battle}
           isActive={battle.id === activeBattleId}
           onNodeChange={handleNodeChange}
+          fighterMetaMap={fighterMetaMap}
         />
       ))}
 
@@ -242,9 +267,7 @@ export default function McBattleFeed({
         <div ref={loadMoreSentinelRef} className="h-8 w-full" />
       )}
 
-      {!previewMode && loadingMore && (
-        <McBattleFeedSkeleton count={2} />
-      )}
+      {!previewMode && loadingMore && <McBattleFeedSkeleton count={2} />}
     </div>
   );
 }

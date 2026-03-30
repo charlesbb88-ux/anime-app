@@ -1,41 +1,101 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
-import { useMcBattleRecord } from "@/hooks/useMcBattleRecord";
+import { useMemo, useState } from "react";
 import type { McBattleCardRow } from "@/components/mc/battles/mcBattleTypes";
 import McBattleReplayStage from "@/components/mc/battles/McBattleReplayStage";
+import {
+  useMcBattleUserMetaMap,
+  type McBattleUserMetaMap,
+} from "@/hooks/useMcBattleUserMetaMap";
 
 type Props = {
   battle: McBattleCardRow;
   title?: string;
   compact?: boolean;
   isActive?: boolean;
+  fighterMetaMap?: McBattleUserMetaMap;
 };
 
-type AccountMini = {
+function FighterHeaderBlock({
+  align,
+  username,
+  avatarUrl,
+  wins,
+  losses,
+  level,
+  xp,
+  title,
+}: {
+  align: "left" | "right";
+  username: string;
+  avatarUrl: string | null;
+  wins: number;
+  losses: number;
   level: number;
   xp: number;
-};
+  title: string;
+}) {
+  const isRight = align === "right";
+  const href = `/${username}`;
 
-function safeNumber(value: unknown, fallback = 0) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-}
+  return (
+    <a
+      href={href}
+      className={`flex items-start gap-2 rounded-md p-1 transition hover:bg-black/5 ${
+        isRight ? "justify-end" : "justify-start"
+      }`}
+    >
+      {!isRight && (
+        <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full border border-black bg-black/5">
+          {avatarUrl ? (
+            <img
+              src={avatarUrl}
+              alt={username}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-black/60">
+              {username.slice(0, 1).toUpperCase()}
+            </div>
+          )}
+        </div>
+      )}
 
-async function getAccountMini(userId: string): Promise<AccountMini> {
-  const { data, error } = await supabase.rpc("get_account_progression", {
-    p_user_id: userId,
-  });
+      <div className={isRight ? "text-right" : "text-left"}>
+        <div className="text-sm font-semibold leading-tight text-black">
+          {username}
+        </div>
 
-  if (error) throw error;
+        <div className="mt-0.5 text-xs leading-tight text-black/70">
+          {wins}-{losses}
+        </div>
 
-  const row = ((data as any[]) ?? [])[0] ?? null;
+        <div className="mt-0.5 text-xs leading-tight text-black/70">
+          Level {level} • XP {xp}
+        </div>
 
-  return {
-    level: safeNumber(row?.account_level, 1),
-    xp: safeNumber(row?.account_xp, 0),
-  };
+        <div className="mt-0.5 text-xs leading-tight text-black/55">
+          {title}
+        </div>
+      </div>
+
+      {isRight && (
+        <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full border border-black bg-black/5">
+          {avatarUrl ? (
+            <img
+              src={avatarUrl}
+              alt={username}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-black/60">
+              {username.slice(0, 1).toUpperCase()}
+            </div>
+          )}
+        </div>
+      )}
+    </a>
+  );
 }
 
 export default function McBattleReplayCard({
@@ -43,123 +103,79 @@ export default function McBattleReplayCard({
   title,
   compact = false,
   isActive = true,
+  fighterMetaMap,
 }: Props) {
   const [replayNonce, setReplayNonce] = useState(0);
 
   const challengerId = battle.challenger_user_id;
   const defenderId = battle.defender_user_id;
 
-  const challengerName =
-    battle.challenger_snapshot?.username ?? "Challenger";
-  const defenderName =
-    battle.defender_snapshot?.username ?? "Defender";
+  const fallbackNames = useMemo(
+    () => ({
+      challenger: battle.challenger_snapshot?.username ?? "Challenger",
+      defender: battle.defender_snapshot?.username ?? "Defender",
+    }),
+    [battle]
+  );
 
-  const winnerName =
-    battle.winner_user_id === challengerId
-      ? challengerName
-      : battle.winner_user_id === defenderId
-      ? defenderName
-      : "Unknown";
+  const shouldUseFallbackHook = !fighterMetaMap;
 
-  // =========================
-  // RECORDS
-  // =========================
-  const { record: challengerRecord } = useMcBattleRecord(challengerId);
-  const { record: defenderRecord } = useMcBattleRecord(defenderId);
+  const { metaMap: localMetaMap } = useMcBattleUserMetaMap(
+    shouldUseFallbackHook ? [challengerId, defenderId] : []
+  );
 
-  // =========================
-  // LEVEL + XP
-  // =========================
-  const [challengerAccount, setChallengerAccount] =
-    useState<AccountMini | null>(null);
-  const [defenderAccount, setDefenderAccount] =
-    useState<AccountMini | null>(null);
+  const resolvedMetaMap = fighterMetaMap ?? localMetaMap;
 
-  useEffect(() => {
-    let cancelled = false;
+  const challengerMeta = resolvedMetaMap[challengerId];
+  const defenderMeta = resolvedMetaMap[defenderId];
 
-    async function load() {
-      try {
-        const [c, d] = await Promise.all([
-          getAccountMini(challengerId),
-          getAccountMini(defenderId),
-        ]);
-
-        if (!cancelled) {
-          setChallengerAccount(c);
-          setDefenderAccount(d);
-        }
-      } catch (e) {
-        // fail silently for now
-      }
-    }
-
-    load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [challengerId, defenderId]);
+  const challengerName = challengerMeta?.username ?? fallbackNames.challenger;
+  const defenderName = defenderMeta?.username ?? fallbackNames.defender;
 
   return (
-    <div className="min-w-0 overflow-hidden rounded-sm border border-black bg-white p-2">
-      {/* HEADER */}
-      <div className="mb-2 flex items-start justify-between gap-3">
-        <div className="text-sm font-semibold text-black">
-          {title ?? `${challengerName} vs ${defenderName}`}
+    <div className="min-w-0 overflow-hidden rounded-sm border border-black bg-white p-1">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-black">
+            {title ?? `${challengerName} vs ${defenderName}`}
+          </div>
         </div>
 
         <button
           type="button"
-          onClick={() => setReplayNonce((prev) => prev + 1)}
-          className="rounded-xl border border-black/10 px-2 py-1 text-xs hover:bg-black/5"
+          onClick={() => {
+            setReplayNonce((prev) => prev + 1);
+          }}
+          className="rounded-xl border border-black/10 bg-white px-2 py-1 text-xs text-black hover:bg-black/5"
         >
           Replay
         </button>
       </div>
 
-      {/* USER INFO ROW */}
-      <div className="mb-2 grid grid-cols-2 gap-3 text-xs text-black">
-        {/* LEFT (CHALLENGER) */}
-        <div>
-          <div className="font-semibold">{challengerName}</div>
+      <div className="mb-3 grid grid-cols-2 gap-3">
+        <FighterHeaderBlock
+          align="left"
+          username={challengerName}
+          avatarUrl={challengerMeta?.avatarUrl ?? null}
+          wins={challengerMeta?.wins ?? 0}
+          losses={challengerMeta?.losses ?? 0}
+          level={challengerMeta?.level ?? 1}
+          xp={challengerMeta?.xp ?? 0}
+          title={challengerMeta?.title ?? "Unranked Wanderer"}
+        />
 
-          <div className="text-black/70">
-            W {challengerRecord?.wins ?? 0} / L{" "}
-            {challengerRecord?.losses ?? 0}
-          </div>
-
-          <div className="text-black/70">
-            Lv {challengerAccount?.level ?? "-"} • XP{" "}
-            {challengerAccount?.xp ?? "-"}
-          </div>
-
-          <div className="text-black/50">
-            Title: Wanderer
-          </div>
-        </div>
-
-        {/* RIGHT (DEFENDER) */}
-        <div className="text-right">
-          <div className="font-semibold">{defenderName}</div>
-
-          <div className="text-black/70">
-            W {defenderRecord?.wins ?? 0} / L{" "}
-            {defenderRecord?.losses ?? 0}
-          </div>
-
-          <div className="text-black/70">
-            Lv {defenderAccount?.level ?? "-"} • XP{" "}
-            {defenderAccount?.xp ?? "-"}
-          </div>
-
-          <div className="text-black/50">
-            Title: Wanderer
-          </div>
-        </div>
+        <FighterHeaderBlock
+          align="right"
+          username={defenderName}
+          avatarUrl={defenderMeta?.avatarUrl ?? null}
+          wins={defenderMeta?.wins ?? 0}
+          losses={defenderMeta?.losses ?? 0}
+          level={defenderMeta?.level ?? 1}
+          xp={defenderMeta?.xp ?? 0}
+          title={defenderMeta?.title ?? "Unranked Wanderer"}
+        />
       </div>
 
-      {/* STAGE */}
       <McBattleReplayStage
         battle={battle}
         isActive={isActive}
