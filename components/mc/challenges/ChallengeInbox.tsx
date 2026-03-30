@@ -91,14 +91,14 @@ function ChallengeRow({
     const watching = loadingAction === `${rowActionPrefix}:watch`;
 
     return (
-        <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-4">
+        <div className="rounded-2xl border border-black bg-white/30 px-4 py-4">
             <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                    <div className="text-sm font-semibold text-white">
+                    <div className="text-sm font-semibold text-black">
                         @{otherUser?.username ?? "Unknown user"}
                     </div>
 
-                    <div className="mt-1 text-xs uppercase tracking-[0.18em] text-white/40">
+                    <div className="mt-1 text-xs uppercase tracking-[0.18em] text-black/40">
                         {mode === "received"
                             ? "Received"
                             : mode === "sent"
@@ -106,7 +106,7 @@ function ChallengeRow({
                                 : "Ready to watch"}
                     </div>
 
-                    <div className="mt-2 text-sm text-white/65">
+                    <div className="mt-2 text-sm text-black/65">
                         {mode === "received" ? (
                             <>Expires {formatRelativeDate(challenge.expires_at)}</>
                         ) : null}
@@ -136,7 +136,7 @@ function ChallengeRow({
                         className="h-10 w-10 rounded-full object-cover"
                     />
                 ) : (
-                    <div className="h-10 w-10 rounded-full border border-white/10 bg-white/5" />
+                    <div className="h-10 w-10 rounded-full border border-black bg-black/5" />
                 )}
             </div>
 
@@ -147,7 +147,7 @@ function ChallengeRow({
                             type="button"
                             onClick={() => onAccept(challenge.id)}
                             disabled={accepting || rejecting || canceling}
-                            className="rounded-xl border border-white/10 bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="rounded-xl border border-black bg-black px-4 py-2 text-sm font-semibold text-white transition hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             {accepting ? "Accepting..." : "Accept"}
                         </button>
@@ -156,7 +156,7 @@ function ChallengeRow({
                             type="button"
                             onClick={() => onReject(challenge.id)}
                             disabled={accepting || rejecting || canceling}
-                            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="rounded-xl border border-black bg-black/5 px-4 py-2 text-sm font-medium text-black transition hover:bg-black/10 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             {rejecting ? "Rejecting..." : "Reject"}
                         </button>
@@ -168,7 +168,7 @@ function ChallengeRow({
                         type="button"
                         onClick={() => onCancel(challenge.id)}
                         disabled={canceling}
-                        className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="rounded-xl border border-black bg-black/5 px-4 py-2 text-sm font-medium text-black transition hover:bg-black/10 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                         {canceling ? "Canceling..." : "Cancel challenge"}
                     </button>
@@ -179,7 +179,7 @@ function ChallengeRow({
                         type="button"
                         onClick={() => onWatch(challenge.id, challenge.battle_id!)}
                         disabled={watching}
-                        className="rounded-xl border border-white/10 bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="rounded-xl border border-black bg-black px-4 py-2 text-sm font-semibold text-white transition hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                         {watching ? "Opening..." : "Watch battle"}
                     </button>
@@ -306,27 +306,15 @@ export default function ChallengeInbox({ className = "" }: Props) {
     return (
         <div
             className={
-                className || "rounded-2xl border border-white/10 bg-black px-4 py-4"
+                className || "rounded-sm border border-black bg-white px-4 py-4"
             }
         >
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <div className="text-xs uppercase tracking-[0.2em] text-white/45">
-                        Battles
-                    </div>
-                    <h2 className="mt-1 text-xl font-semibold text-white">
+                    <h2 className="mt-1 text-xl font-semibold text-black">
                         Battle inbox
                     </h2>
                 </div>
-
-                <button
-                    type="button"
-                    onClick={() => loadInbox("refresh")}
-                    disabled={refreshing || loading}
-                    className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                    {refreshing ? "Refreshing..." : "Refresh"}
-                </button>
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
@@ -334,8 +322,8 @@ export default function ChallengeInbox({ className = "" }: Props) {
                     type="button"
                     onClick={() => setTab("received")}
                     className={`rounded-xl px-4 py-2 text-sm font-medium transition ${tab === "received"
-                            ? "bg-white text-black"
-                            : "border border-white/10 bg-white/5 text-white hover:bg-white/10"
+                        ? "bg-black text-white"
+                        : "border border-black bg-black/5 text-black hover:bg-black/10"
                         }`}
                 >
                     Received {receivedCount > 0 ? `(${receivedCount})` : ""}
@@ -345,8 +333,8 @@ export default function ChallengeInbox({ className = "" }: Props) {
                     type="button"
                     onClick={() => setTab("sent")}
                     className={`rounded-xl px-4 py-2 text-sm font-medium transition ${tab === "sent"
-                            ? "bg-white text-black"
-                            : "border border-white/10 bg-white/5 text-white hover:bg-white/10"
+                        ? "bg-black text-white"
+                        : "border border-black bg-black/5 text-black hover:bg-black/10"
                         }`}
                 >
                     Sent {sentCount > 0 ? `(${sentCount})` : ""}
@@ -356,8 +344,8 @@ export default function ChallengeInbox({ className = "" }: Props) {
                     type="button"
                     onClick={() => setTab("ready")}
                     className={`rounded-xl px-4 py-2 text-sm font-medium transition ${tab === "ready"
-                            ? "bg-white text-black"
-                            : "border border-white/10 bg-white/5 text-white hover:bg-white/10"
+                        ? "bg-black text-white"
+                        : "border border-black bg-black/5 text-black hover:bg-black/10"
                         }`}
                 >
                     Ready to watch {readyCount > 0 ? `(${readyCount})` : ""}
@@ -365,83 +353,85 @@ export default function ChallengeInbox({ className = "" }: Props) {
             </div>
 
             {error ? (
-                <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/90 px-3 py-2 text-sm text-red-800">
                     {error}
                 </div>
             ) : null}
 
             {loading ? (
-                <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-8 text-sm text-white/60">
+                <div className="mt-4 rounded-2xl border border-black bg-black/5 px-4 py-8 text-sm text-black/60">
                     Loading battle inbox...
                 </div>
-            ) : (() => {
-                const hasSentUpdates = tab === "sent" && (data?.updates?.length ?? 0) > 0;
-                const hasAnyVisibleContent = rows.length > 0 || hasSentUpdates;
+            ) : (
+                (() => {
+                    const hasSentUpdates = tab === "sent" && (data?.updates?.length ?? 0) > 0;
+                    const hasAnyVisibleContent = rows.length > 0 || hasSentUpdates;
 
-                if (!hasAnyVisibleContent) {
+                    if (!hasAnyVisibleContent) {
+                        return (
+                            <div className="mt-4 rounded-2xl border border-black bg-black/5 px-4 py-8 text-sm text-black/60">
+                                {sectionEmptyText(tab)}
+                            </div>
+                        );
+                    }
+
                     return (
-                        <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-8 text-sm text-white/60">
-                            {sectionEmptyText(tab)}
-                        </div>
-                    );
-                }
+                        <div className="mt-4 space-y-3">
+                            {rows.map((challenge) => (
+                                <ChallengeRow
+                                    key={challenge.id}
+                                    challenge={challenge}
+                                    mode={tab}
+                                    loadingAction={loadingAction}
+                                    onAccept={handleAccept}
+                                    onReject={handleReject}
+                                    onCancel={handleCancel}
+                                    onWatch={handleWatch}
+                                />
+                            ))}
 
-                return (
-                    <div className="mt-4 space-y-3">
-                        {rows.map((challenge) => (
-                            <ChallengeRow
-                                key={challenge.id}
-                                challenge={challenge}
-                                mode={tab}
-                                loadingAction={loadingAction}
-                                onAccept={handleAccept}
-                                onReject={handleReject}
-                                onCancel={handleCancel}
-                                onWatch={handleWatch}
-                            />
-                        ))}
+                            {tab === "sent" && data?.updates?.length ? (
+                                <div className="mt-6">
+                                    <div className="mb-2 text-xs uppercase tracking-[0.2em] text-black/45">
+                                        Recent updates
+                                    </div>
 
-                        {tab === "sent" && data?.updates?.length ? (
-                            <div className="mt-6">
-                                <div className="mb-2 text-xs uppercase tracking-[0.2em] text-white/45">
-                                    Recent updates
-                                </div>
+                                    <div className="space-y-3">
+                                        {data.updates.slice(0, 5).map((challenge) => {
+                                            const otherUser = challenge.defender;
 
-                                <div className="space-y-3">
-                                    {data.updates.slice(0, 5).map((challenge) => {
-                                        const otherUser = challenge.defender;
+                                            return (
+                                                <div
+                                                    key={challenge.id}
+                                                    className="rounded-2xl border border-black bg-white/20 px-4 py-3"
+                                                >
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <div>
+                                                            <div className="text-sm font-medium text-black">
+                                                                @{otherUser?.username ?? "Unknown user"}
+                                                            </div>
 
-                                        return (
-                                            <div
-                                                key={challenge.id}
-                                                className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3"
-                                            >
-                                                <div className="flex items-center justify-between gap-3">
-                                                    <div>
-                                                        <div className="text-sm font-medium text-white">
-                                                            @{otherUser?.username ?? "Unknown user"}
+                                                            <div className="mt-1 text-sm text-black/60">
+                                                                {getUpdateLabel(challenge.status)}
+                                                            </div>
                                                         </div>
 
-                                                        <div className="mt-1 text-sm text-white/60">
-                                                            {getUpdateLabel(challenge.status)}
+                                                        <div className="text-xs text-black/40">
+                                                            {formatRelativeDate(
+                                                                challenge.responded_at ?? challenge.updated_at
+                                                            )}
                                                         </div>
-                                                    </div>
-
-                                                    <div className="text-xs text-white/40">
-                                                        {formatRelativeDate(
-                                                            challenge.responded_at ?? challenge.updated_at
-                                                        )}
                                                     </div>
                                                 </div>
-                                            </div>
-                                        );
-                                    })}
+                                            );
+                                        })}
+                                    </div>
                                 </div>
-                            </div>
-                        ) : null}
-                    </div>
-                );
-            })()}
+                            ) : null}
+                        </div>
+                    );
+                })()
+            )}
         </div>
     );
 }
