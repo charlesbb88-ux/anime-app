@@ -20,6 +20,8 @@ import McBattleFeed from "@/components/mc/battles/McBattleFeed";
 import { useMcBattleRecord } from "@/hooks/useMcBattleRecord";
 import McBattleRecordCard from "@/components/mc/McBattleRecordCard";
 import ChallengeButton from "@/components/mc/challenges/ChallengeButton";
+import Link from "next/link";
+import { useChallengeBadgeCount } from "@/components/mc/challenges/useChallengeBadgeCount";
 
 type Props = {
   userId: string;
@@ -447,6 +449,8 @@ export default function MCLayout({ userId }: Props) {
     error: battleRecordError,
   } = useMcBattleRecord(userId);
 
+  const { count: battleInboxCount } = useChallengeBadgeCount();
+
   async function handleEquipAsset(slotKey: string, assetId: number) {
     if (!viewerId || viewerId !== userId) return;
 
@@ -539,14 +543,6 @@ export default function MCLayout({ userId }: Props) {
               </div>
 
               <div className="order-1 lg:order-none lg:col-start-2 flex flex-col gap-2">
-                <div className="flex justify-end">
-                  {viewerId !== userId && (
-                    <ChallengeButton
-                      defenderUserId={userId}
-                      defenderUsername={username}
-                    />
-                  )}
-                </div>
                 <CharacterPanel
                   username={username}
                   title={fullTitle}
@@ -554,6 +550,32 @@ export default function MCLayout({ userId }: Props) {
                   titleDebug={titleData}
                   avatarLayers={avatarLayers}
                 />
+
+                {viewerId && viewerId === userId ? (
+                  <div className="flex justify-end">
+                    <Link
+                      href="/battles"
+                      className="relative inline-flex rounded-xl border border-white/10 bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/90"
+                    >
+                      <span>Battle inbox</span>
+
+                      {battleInboxCount > 0 ? (
+                        <span className="absolute -right-2 -top-2 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
+                          {battleInboxCount}
+                        </span>
+                      ) : null}
+                    </Link>
+                  </div>
+                ) : null}
+
+                {viewerId && viewerId !== userId ? (
+                  <div className="flex justify-end">
+                    <ChallengeButton
+                      defenderUserId={userId}
+                      defenderUsername={username}
+                    />
+                  </div>
+                ) : null}
 
                 {battleRecordLoading ? (
                   <div className="rounded-md border border-white/10 bg-black px-4 py-3 text-white/60">

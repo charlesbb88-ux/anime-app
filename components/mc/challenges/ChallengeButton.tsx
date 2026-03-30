@@ -1,7 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { createChallenge, getCurrentUserId } from "@/lib/mcChallenges";
+import { useEffect, useMemo, useState } from "react";
+import {
+  createChallenge,
+  getCurrentUserId,
+  hasPendingOutgoingChallenge,
+} from "@/lib/mcChallenges";
 import ChallengeConfirmModal from "@/components/mc/challenges/ChallengeConfirmModal";
 
 type Props = {
@@ -22,36 +26,66 @@ export default function ChallengeButton({
   label = "Challenge",
 }: Props) {
   const [open, setOpen] = useState(false);
-  const [checkingSelf, setCheckingSelf] = useState(false);
+  const [initializing, setInitializing] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSelf, setIsSelf] = useState(false);
+  const [hasPending, setHasPending] = useState(false);
   const [sent, setSent] = useState(false);
 
   const buttonDisabled = useMemo(() => {
-    return disabled || loading || checkingSelf || isSelf || sent;
-  }, [disabled, loading, checkingSelf, isSelf, sent]);
+    return disabled || initializing || loading || isSelf || hasPending || sent;
+  }, [disabled, initializing, loading, isSelf, hasPending, sent]);
 
-  async function handleOpen() {
-    setError(null);
-    setCheckingSelf(true);
+  useEffect(() => {
+    let cancelled = false;
 
-    try {
-      const currentUserId = await getCurrentUserId();
-      const selfTarget = currentUserId === defenderUserId;
-      setIsSelf(selfTarget);
+    async function loadState() {
+      try {
+        setInitializing(true);
+        setError(null);
 
-      if (selfTarget) {
-        setError("You cannot challenge yourself.");
-        return;
+        const currentUserId = await getCurrentUserId();
+
+        if (cancelled) return;
+
+        const selfTarget = currentUserId === defenderUserId;
+        setIsSelf(selfTarget);
+
+        if (selfTarget) {
+          setHasPending(false);
+          setInitializing(false);
+          return;
+        }
+
+        const pending = await hasPendingOutgoingChallenge(defenderUserId);
+
+        if (cancelled) return;
+
+        setHasPending(pending);
+        setInitializing(false);
+      } catch (e: any) {
+        if (cancelled) return;
+        setError(e?.message ?? "Failed to load challenge state.");
+        setInitializing(false);
       }
-
-      setOpen(true);
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to check current user.");
-    } finally {
-      setCheckingSelf(false);
     }
+
+    loadState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [defenderUserId]);
+
+  function handleOpen() {
+    setError(null);
+
+    if (buttonDisabled) {
+      return;
+    }
+
+    setOpen(true);
   }
 
   async function handleConfirm() {
@@ -61,6 +95,7 @@ export default function ChallengeButton({
     try {
       await createChallenge(defenderUserId);
       setSent(true);
+      setHasPending(true);
       setOpen(false);
       onCreated?.();
     } catch (e: any) {
@@ -68,6 +103,13 @@ export default function ChallengeButton({
     } finally {
       setLoading(false);
     }
+  }
+
+  function getButtonText() {
+    if (initializing) return "Loading...";
+    if (isSelf) return "Cannot challenge yourself";
+    if (sent || hasPending) return "Challenge pending";
+    return label;
   }
 
   return (
@@ -82,13 +124,7 @@ export default function ChallengeButton({
             "rounded-xl border border-white/10 bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
           }
         >
-          {checkingSelf
-            ? "Checking..."
-            : sent
-              ? "Challenge sent"
-              : isSelf
-                ? "Cannot challenge yourself"
-                : label}
+          {getButtonText()}
         </button>
 
         {error && !open ? (
