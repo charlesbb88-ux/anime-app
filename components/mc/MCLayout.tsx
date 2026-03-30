@@ -552,10 +552,10 @@ export default function MCLayout({ userId }: Props) {
                 />
 
                 {viewerId && viewerId === userId ? (
-                  <div className="flex justify-end">
+                  <div className="w-full">
                     <Link
                       href="/battles"
-                      className="relative inline-flex rounded-xl border border-white/10 bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/90"
+                      className="relative inline-flex w-full items-center justify-center rounded-sm border border-black/50 bg-white px-4 py-1 text-sm font-semibold text-black transition hover:bg-white/90"
                     >
                       <span>Battle inbox</span>
 
@@ -569,10 +569,11 @@ export default function MCLayout({ userId }: Props) {
                 ) : null}
 
                 {viewerId && viewerId !== userId ? (
-                  <div className="flex justify-end">
+                  <div className="w-full">
                     <ChallengeButton
                       defenderUserId={userId}
                       defenderUsername={username}
+                      className="w-full rounded-sm border border-red-600 bg-red-500 px-4 py-1 text-sm font-semibold text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
                     />
                   </div>
                 ) : null}
