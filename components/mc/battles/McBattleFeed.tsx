@@ -14,6 +14,80 @@ type Props = {
   previewMode?: boolean;
 };
 
+type VisibleCandidate = {
+  id: string;
+  rect: DOMRect;
+  centerY: number;
+  distanceToViewportCenter: number;
+};
+
+function getBestAutoplayBattleId(
+  battles: McBattleCardRow[],
+  itemRefs: Record<string, HTMLDivElement | null>
+) {
+  if (typeof window === "undefined") return null;
+
+  const viewportHeight = window.innerHeight;
+  const viewportCenterY = viewportHeight / 2;
+  const isMobile = window.matchMedia("(max-width: 768px)").matches;
+
+  const bandTop = viewportHeight * (isMobile ? 0.15 : 0.25);
+  const bandBottom = viewportHeight * (isMobile ? 0.85 : 0.75);
+
+  const visible: VisibleCandidate[] = [];
+
+  for (const battle of battles) {
+    const el = itemRefs[battle.id];
+    if (!el) continue;
+
+    const rect = el.getBoundingClientRect();
+    const isVisible = rect.bottom > 0 && rect.top < viewportHeight;
+
+    if (!isVisible) continue;
+
+    const centerY = rect.top + rect.height / 2;
+
+    visible.push({
+      id: battle.id,
+      rect,
+      centerY,
+      distanceToViewportCenter: Math.abs(centerY - viewportCenterY),
+    });
+  }
+
+  if (visible.length === 0) return null;
+
+  const inBand = visible.filter(
+    (item) => item.centerY >= bandTop && item.centerY <= bandBottom
+  );
+
+  if (inBand.length > 0) {
+    inBand.sort(
+      (a, b) => a.distanceToViewportCenter - b.distanceToViewportCenter
+    );
+    return inBand[0].id;
+  }
+
+  const scrollTop = window.scrollY || window.pageYOffset || 0;
+  const docHeight = document.documentElement.scrollHeight;
+  const viewportBottom = scrollTop + viewportHeight;
+  const nearTop = scrollTop <= 24;
+  const nearBottom = viewportBottom >= docHeight - 24;
+
+  if (nearTop) {
+    visible.sort((a, b) => a.rect.top - b.rect.top);
+    return visible[0].id;
+  }
+
+  if (nearBottom) {
+    visible.sort((a, b) => b.rect.bottom - a.rect.bottom);
+    return visible[0].id;
+  }
+
+  visible.sort((a, b) => a.distanceToViewportCenter - b.distanceToViewportCenter);
+  return visible[0].id;
+}
+
 export default function McBattleFeed({
   userId,
   initialLimit,
@@ -27,10 +101,14 @@ export default function McBattleFeed({
   const [offset, setOffset] = useState(0);
   const [activeBattleId, setActiveBattleId] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
+  const [manualActiveBattleId, setManualActiveBattleId] = useState<string | null>(
+    null
+  );
 
   const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const measureRafRef = useRef<number | null>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  const manualActiveBattleIdRef = useRef<string | null>(null);
 
   const battleUserIds = useMemo(() => {
     return Array.from(
@@ -45,52 +123,28 @@ export default function McBattleFeed({
 
   const {
     metaMap: fighterMetaMap,
-    loading: fighterMetaLoading,
     error: fighterMetaError,
   } = useMcBattleUserMetaMap(battleUserIds);
 
+  useEffect(() => {
+    manualActiveBattleIdRef.current = manualActiveBattleId;
+  }, [manualActiveBattleId]);
+
   const scheduleMeasure = useCallback(() => {
     if (typeof window === "undefined") return;
-
     if (measureRafRef.current != null) return;
 
     measureRafRef.current = window.requestAnimationFrame(() => {
       measureRafRef.current = null;
 
-      const viewportHeight = window.innerHeight;
-      const viewportCenterY = viewportHeight / 2;
-
-      let bestId: string | null = null;
-      let bestDistance = Number.POSITIVE_INFINITY;
-      let visibleCount = 0;
-
-      for (const battle of battles) {
-        const el = itemRefs.current[battle.id];
-        if (!el) continue;
-
-        const rect = el.getBoundingClientRect();
-        const isVisible = rect.bottom > 0 && rect.top < viewportHeight;
-
-        if (!isVisible) continue;
-
-        visibleCount += 1;
-
-        const cardCenterY = rect.top + rect.height / 2;
-        const distance = Math.abs(cardCenterY - viewportCenterY);
-
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          bestId = battle.id;
-        }
-      }
-
-      if (bestId) {
-        setActiveBattleId((prev) => (prev === bestId ? prev : bestId));
+      if (manualActiveBattleIdRef.current) {
         return;
       }
 
-      if (visibleCount === 0) {
-        setActiveBattleId((prev) => prev);
+      const bestId = getBestAutoplayBattleId(battles, itemRefs.current);
+
+      if (bestId) {
+        setActiveBattleId((prev) => (prev === bestId ? prev : bestId));
       }
     });
   }, [battles]);
@@ -109,6 +163,7 @@ export default function McBattleFeed({
       setBattles(data);
       setOffset(data.length);
       setHasMore(data.length === initialLimit);
+      setManualActiveBattleId(null);
       setActiveBattleId(data[0]?.id ?? null);
     } catch (e: any) {
       setError(e?.message ?? "Failed to load battles.");
@@ -148,6 +203,12 @@ export default function McBattleFeed({
     [scheduleMeasure]
   );
 
+  const handleSelectBattle = useCallback((battleId: string) => {
+    manualActiveBattleIdRef.current = battleId;
+    setManualActiveBattleId(battleId);
+    setActiveBattleId(battleId);
+  }, []);
+
   useEffect(() => {
     loadInitial();
   }, [loadInitial]);
@@ -160,15 +221,34 @@ export default function McBattleFeed({
         delete itemRefs.current[battleId];
       }
     }
+
+    setManualActiveBattleId((prev) => {
+      if (!prev) return prev;
+      return currentIds.has(prev) ? prev : null;
+    });
+
+    setActiveBattleId((prev) => {
+      if (!prev) return battles[0]?.id ?? null;
+      return currentIds.has(prev) ? prev : battles[0]?.id ?? null;
+    });
   }, [battles]);
 
   useEffect(() => {
     if (!battles.length) {
+      setManualActiveBattleId(null);
       setActiveBattleId(null);
       return;
     }
 
     const run = () => {
+      scheduleMeasure();
+    };
+
+    const clearManualOverrideAndResumeAutoplay = () => {
+      if (!manualActiveBattleIdRef.current) return;
+
+      manualActiveBattleIdRef.current = null;
+      setManualActiveBattleId(null);
       scheduleMeasure();
     };
 
@@ -180,10 +260,26 @@ export default function McBattleFeed({
 
     window.addEventListener("scroll", run, { passive: true });
     window.addEventListener("resize", run);
+    window.addEventListener("wheel", clearManualOverrideAndResumeAutoplay, {
+      passive: true,
+    });
+    window.addEventListener("touchmove", clearManualOverrideAndResumeAutoplay, {
+      passive: true,
+    });
+    window.addEventListener("keydown", clearManualOverrideAndResumeAutoplay);
 
     return () => {
       window.removeEventListener("scroll", run);
       window.removeEventListener("resize", run);
+      window.removeEventListener("wheel", clearManualOverrideAndResumeAutoplay);
+      window.removeEventListener(
+        "touchmove",
+        clearManualOverrideAndResumeAutoplay
+      );
+      window.removeEventListener(
+        "keydown",
+        clearManualOverrideAndResumeAutoplay
+      );
       window.clearTimeout(t1);
       window.clearTimeout(t2);
       window.clearTimeout(t3);
@@ -259,6 +355,7 @@ export default function McBattleFeed({
           battle={battle}
           isActive={battle.id === activeBattleId}
           onNodeChange={handleNodeChange}
+          onSelect={handleSelectBattle}
           fighterMetaMap={fighterMetaMap}
         />
       ))}
