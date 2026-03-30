@@ -10,7 +10,7 @@ export type McPaperDollOption = {
 };
 
 export const MC_BODY_OPTIONS: McPaperDollOption[] = [
-  { id: "default", label: "Default" },
+  { id: "base_male_01", label: "Base" },
   { id: "base_skin_light_01", label: "Light" },
   { id: "base_skin_tan_01", label: "Tan" },
   { id: "base_skin_brown_01", label: "Brown" },
@@ -22,7 +22,7 @@ export const MC_HAIR_OPTIONS: McPaperDollOption[] = [
 ];
 
 export const DEFAULT_MC_PAPERDOLL_LOADOUT: McPaperDollLoadout = {
-  body: null,
+  body: "base_male_01",
   hair: null,
   torso: null,
   bottoms: null,

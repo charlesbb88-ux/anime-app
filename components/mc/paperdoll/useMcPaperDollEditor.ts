@@ -59,12 +59,12 @@ export function useMcPaperDollEditor() {
     return !saving && !sameLoadout(savedLoadout, draftLoadout);
   }, [saving, savedLoadout, draftLoadout]);
 
-function setBody(bodyId: string | null) {
-    setDraftLoadout((prev) => ({
-      ...prev,
-      body: bodyId,
-    }));
-  }
+function setBody(bodyId: string) {
+  setDraftLoadout((prev) => ({
+    ...prev,
+    body: bodyId,
+  }));
+}
 
   function setHair(hairId: string | null) {
     setDraftLoadout((prev) => ({

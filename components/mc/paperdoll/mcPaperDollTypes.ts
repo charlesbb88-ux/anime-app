@@ -20,7 +20,7 @@ export type McPaperDollDefinition = {
 };
 
 export type McPaperDollLoadout = {
-  body: string | null;
+body: string;
   eyes?: string | null;
   hair?: string | null;
   torso?: string | null;
