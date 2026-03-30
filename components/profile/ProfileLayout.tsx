@@ -25,7 +25,8 @@ type Props = {
   | "library"
   | "activity"
   | "completions"
-  | "mc";
+  | "mc"
+  | "battles";
 
   maxWidthClassName?: string;
 };

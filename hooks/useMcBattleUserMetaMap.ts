@@ -46,6 +46,16 @@ function safeNumber(value: unknown, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function normalizeUserIds(userIds: string[]) {
+  return Array.from(
+    new Set(
+      userIds
+        .map((id) => String(id ?? "").trim())
+        .filter(Boolean)
+    )
+  ).sort();
+}
+
 async function getTitlePartRows(tagIds: number[]): Promise<McTitlePartsRow[]> {
   if (tagIds.length === 0) return [];
 
@@ -87,33 +97,44 @@ async function getTitlePartRows(tagIds: number[]): Promise<McTitlePartsRow[]> {
 
 export function useMcBattleUserMetaMap(userIds: string[]) {
   const [metaMap, setMetaMap] = useState<McBattleUserMetaMap>({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const stableUserIds = useMemo(() => {
-    return Array.from(new Set(userIds.filter(Boolean))).sort();
-  }, [userIds]);
+    return normalizeUserIds(userIds);
+  }, [userIds.join("|")]);
+
+  const userIdsKey = useMemo(() => {
+    return stableUserIds.join("|");
+  }, [stableUserIds]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       if (stableUserIds.length === 0) {
-        setMetaMap({});
-        setLoading(false);
-        setError(null);
+        if (!cancelled) {
+          setMetaMap({});
+          setLoading(false);
+          setError(null);
+        }
         return;
       }
 
       try {
-        setLoading(true);
-        setError(null);
+        if (!cancelled) {
+          setLoading(true);
+          setError(null);
+        }
 
-        const { data, error } = await supabase.rpc("get_mc_battle_user_meta", {
-          p_user_ids: stableUserIds,
-        });
+        const { data, error: rpcError } = await supabase.rpc(
+          "get_mc_battle_user_meta",
+          {
+            p_user_ids: stableUserIds,
+          }
+        );
 
-        if (error) throw error;
+        if (rpcError) throw rpcError;
 
         const rows = (data as RawMetaRow[] | null) ?? [];
 
@@ -131,7 +152,8 @@ export function useMcBattleUserMetaMap(userIds: string[]) {
         >();
 
         for (const row of rows) {
-          const userId = String(row.user_id);
+          const userId = String(row.user_id ?? "").trim();
+          if (!userId) continue;
 
           if (!baseMap.has(userId)) {
             baseMap.set(userId, {
@@ -178,6 +200,7 @@ export function useMcBattleUserMetaMap(userIds: string[]) {
               (affinityMap.get(userId) ?? [])
                 .slice(0, 3)
                 .map((tag) => tag.tag_id)
+                .filter((tagId) => Number.isFinite(tagId) && tagId > 0)
             )
           )
         );
@@ -208,11 +231,12 @@ export function useMcBattleUserMetaMap(userIds: string[]) {
 
         if (!cancelled) {
           setMetaMap(nextMetaMap);
+          setError(null);
         }
       } catch (e: any) {
         if (!cancelled) {
-          setError(e?.message ?? "Failed to load battle user meta.");
           setMetaMap({});
+          setError(e?.message ?? "Failed to load battle user meta.");
         }
       } finally {
         if (!cancelled) {
@@ -226,7 +250,7 @@ export function useMcBattleUserMetaMap(userIds: string[]) {
     return () => {
       cancelled = true;
     };
-  }, [stableUserIds]);
+  }, [userIdsKey, stableUserIds]);
 
   return { metaMap, loading, error };
 }

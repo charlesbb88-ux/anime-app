@@ -1,4 +1,3 @@
-// components/profile/ProfileTopNav.tsx
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useMemo, useRef } from "react";
@@ -14,10 +13,16 @@ type Props = {
     | "journal"
     | "library"
     | "completions"
-    | "mc";
+    | "mc"
+    | "battles";
 };
 
-export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: Props) {
+export default function ProfileTopNav({
+  username,
+  avatarUrl,
+  bio,
+  activeTab,
+}: Props) {
   const router = useRouter();
 
   const navRef = useRef<HTMLElement | null>(null);
@@ -32,7 +37,9 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
 
   function tabClass(isActive: boolean) {
     return `pb-.5 ${
-      isActive ? "border-b-2 border-black text-black" : "text-slate-500 hover:text-black"
+      isActive
+        ? "border-b-2 border-black text-black"
+        : "text-slate-500 hover:text-black"
     }`;
   }
 
@@ -52,7 +59,8 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
         seg === "journal" ||
         seg === "library" ||
         seg === "completions" ||
-        seg === "mc"
+        seg === "mc" ||
+        seg === "battles"
       ) {
         return seg;
       }
@@ -61,7 +69,6 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
     return "posts";
   }, [activeTab, router.asPath, baseProfilePath]);
 
-  // Center the active tab on mobile so the scroll position doesn't always reset to the left.
   useEffect(() => {
     if (!navRef.current || !activeTabRef.current) return;
 
@@ -82,19 +89,25 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
       <div className="flex items-start justify-between gap-6">
         <Link
           href={baseProfilePath}
-          className="flex items-center gap-3 min-w-0"
+          className="flex min-w-0 items-center gap-3"
           aria-label={`Go to @${username}'s profile`}
         >
-          <div className="w-10 h-10 rounded-full bg-black ring-1 ring-black flex items-center justify-center overflow-hidden shrink-0">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-black ring-1 ring-black">
             {avatarUrl ? (
-              <img src={avatarUrl} alt={username} className="w-full h-full object-cover" />
+              <img
+                src={avatarUrl}
+                alt={username}
+                className="h-full w-full object-cover"
+              />
             ) : (
-              <span className="text-sm font-semibold text-slate-200">{avatarInitial}</span>
+              <span className="text-sm font-semibold text-slate-200">
+                {avatarInitial}
+              </span>
             )}
           </div>
 
           <div className="min-w-0">
-            <div className="text-base font-semibold text-slate-900 truncate mt-4 hover:underline">
+            <div className="mt-4 truncate text-base font-semibold text-slate-900 hover:underline">
               @{username}
             </div>
           </div>
@@ -104,7 +117,7 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
           ref={navRef}
           className="mt-4 min-w-0 flex-1 overflow-x-auto whitespace-nowrap [-webkit-overflow-scrolling:touch] scrollbar-hide md:flex-none md:overflow-visible"
         >
-          <div className="flex gap-6 text-sm font-medium w-max md:w-auto">
+          <div className="flex w-max gap-6 text-sm font-medium md:w-auto">
             <Link
               href={baseProfilePath}
               ref={currentTab === "posts" ? activeTabRef : null}
@@ -119,6 +132,14 @@ export default function ProfileTopNav({ username, avatarUrl, bio, activeTab }: P
               className={tabClass(currentTab === "mc")}
             >
               MC
+            </Link>
+
+            <Link
+              href={`${baseProfilePath}/battles`}
+              ref={currentTab === "battles" ? activeTabRef : null}
+              className={tabClass(currentTab === "battles")}
+            >
+              Battles
             </Link>
 
             <Link

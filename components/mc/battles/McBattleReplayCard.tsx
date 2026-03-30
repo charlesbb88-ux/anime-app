@@ -3,10 +3,7 @@
 import { useMemo, useState, useRef, useEffect } from "react";
 import type { McBattleCardRow } from "@/components/mc/battles/mcBattleTypes";
 import McBattleReplayStage from "@/components/mc/battles/McBattleReplayStage";
-import {
-  useMcBattleUserMetaMap,
-  type McBattleUserMetaMap,
-} from "@/hooks/useMcBattleUserMetaMap";
+import type { McBattleUserMetaMap } from "@/hooks/useMcBattleUserMetaMap";
 
 type Props = {
   battle: McBattleCardRow;
@@ -41,8 +38,9 @@ function FighterDetailsBlock({
   return (
     <a
       href={href}
-      className={`flex items-start gap-2 rounded-md p-1 transition hover:bg-black/5 ${isRight ? "justify-end" : "justify-start"
-        }`}
+      className={`flex items-start gap-2 rounded-md p-1 transition hover:bg-black/5 ${
+        isRight ? "justify-end" : "justify-start"
+      }`}
     >
       {!isRight && (
         <div className="h-18 w-18 shrink-0 overflow-hidden rounded-full border border-black bg-black/5">
@@ -63,11 +61,13 @@ function FighterDetailsBlock({
       <div className={isRight ? "text-right" : "text-left"}>
         <div className="text-lg font-medium text-black">{username}</div>
         <div className="text-sm text-black/60">{title}</div>
+
         <div className="text-sm">
           <span className="text-green-500">{wins}W</span>
           <span className="mx-1 text-black/30">•</span>
           <span className="text-red-500">{losses}L</span>
         </div>
+
         <div className="text-sm text-black/60">
           Lvl {level} • {xp} XP
         </div>
@@ -133,16 +133,9 @@ export default function McBattleReplayCard({
     [battle]
   );
 
-  const shouldUseFallbackHook = !fighterMetaMap;
-
-  const { metaMap: localMetaMap } = useMcBattleUserMetaMap(
-    shouldUseFallbackHook ? [challengerId, defenderId] : []
-  );
-
-  const resolvedMetaMap = fighterMetaMap ?? localMetaMap;
-
-  const challengerMeta = resolvedMetaMap[challengerId];
-  const defenderMeta = resolvedMetaMap[defenderId];
+  // ✅ ONLY USE PARENT META MAP
+  const challengerMeta = fighterMetaMap?.[challengerId];
+  const defenderMeta = fighterMetaMap?.[defenderId];
 
   const challengerName = challengerMeta?.username ?? fallbackNames.challenger;
   const defenderName = defenderMeta?.username ?? fallbackNames.defender;
@@ -168,8 +161,9 @@ export default function McBattleReplayCard({
           <span>Details</span>
 
           <span
-            className={`transition-transform duration-200 ${detailsOpen ? "rotate-180" : ""
-              }`}
+            className={`transition-transform duration-200 ${
+              detailsOpen ? "rotate-180" : ""
+            }`}
           >
             ▾
           </span>
