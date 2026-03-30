@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import type { McBattleCardRow } from "@/components/mc/battles/mcBattleTypes";
 import McBattleReplayStage from "@/components/mc/battles/McBattleReplayStage";
 import {
@@ -16,7 +16,7 @@ type Props = {
   fighterMetaMap?: McBattleUserMetaMap;
 };
 
-function FighterHeaderBlock({
+function FighterDetailsBlock({
   align,
   username,
   avatarUrl,
@@ -41,12 +41,11 @@ function FighterHeaderBlock({
   return (
     <a
       href={href}
-      className={`flex items-start gap-2 rounded-md p-1 transition hover:bg-black/5 ${
-        isRight ? "justify-end" : "justify-start"
-      }`}
+      className={`flex items-start gap-2 rounded-md p-1 transition hover:bg-black/5 ${isRight ? "justify-end" : "justify-start"
+        }`}
     >
       {!isRight && (
-        <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full border border-black bg-black/5">
+        <div className="h-18 w-18 shrink-0 overflow-hidden rounded-full border border-black bg-black/5">
           {avatarUrl ? (
             <img
               src={avatarUrl}
@@ -62,25 +61,20 @@ function FighterHeaderBlock({
       )}
 
       <div className={isRight ? "text-right" : "text-left"}>
-        <div className="text-sm font-semibold leading-tight text-black">
-          {username}
+        <div className="text-lg font-medium text-black">{username}</div>
+        <div className="text-sm text-black/60">{title}</div>
+        <div className="text-sm">
+          <span className="text-green-500">{wins}W</span>
+          <span className="mx-1 text-black/30">•</span>
+          <span className="text-red-500">{losses}L</span>
         </div>
-
-        <div className="mt-0.5 text-xs leading-tight text-black/70">
-          {wins}-{losses}
-        </div>
-
-        <div className="mt-0.5 text-xs leading-tight text-black/70">
-          Level {level} • XP {xp}
-        </div>
-
-        <div className="mt-0.5 text-xs leading-tight text-black/55">
-          {title}
+        <div className="text-sm text-black/60">
+          Lvl {level} • {xp} XP
         </div>
       </div>
 
       {isRight && (
-        <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full border border-black bg-black/5">
+        <div className="h-18 w-18 shrink-0 overflow-hidden rounded-full border border-black bg-black/5">
           {avatarUrl ? (
             <img
               src={avatarUrl}
@@ -100,12 +94,33 @@ function FighterHeaderBlock({
 
 export default function McBattleReplayCard({
   battle,
-  title,
   compact = false,
   isActive = true,
   fighterMetaMap,
 }: Props) {
   const [replayNonce, setReplayNonce] = useState(0);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // ✅ CLOSE ON OUTSIDE CLICK
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (!dropdownRef.current) return;
+
+      if (!dropdownRef.current.contains(event.target as Node)) {
+        setDetailsOpen(false);
+      }
+    }
+
+    if (detailsOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [detailsOpen]);
 
   const challengerId = battle.challenger_user_id;
   const defenderId = battle.defender_user_id;
@@ -133,54 +148,59 @@ export default function McBattleReplayCard({
   const defenderName = defenderMeta?.username ?? fallbackNames.defender;
 
   return (
-    <div className="min-w-0 overflow-hidden rounded-sm border border-black bg-white p-1">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-black">
-            {title ?? `${challengerName} vs ${defenderName}`}
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => {
-            setReplayNonce((prev) => prev + 1);
-          }}
-          className="rounded-xl border border-black/10 bg-white px-2 py-1 text-xs text-black hover:bg-black/5"
-        >
-          Replay
-        </button>
-      </div>
-
-      <div className="mb-3 grid grid-cols-2 gap-3">
-        <FighterHeaderBlock
-          align="left"
-          username={challengerName}
-          avatarUrl={challengerMeta?.avatarUrl ?? null}
-          wins={challengerMeta?.wins ?? 0}
-          losses={challengerMeta?.losses ?? 0}
-          level={challengerMeta?.level ?? 1}
-          xp={challengerMeta?.xp ?? 0}
-          title={challengerMeta?.title ?? "Unranked Wanderer"}
-        />
-
-        <FighterHeaderBlock
-          align="right"
-          username={defenderName}
-          avatarUrl={defenderMeta?.avatarUrl ?? null}
-          wins={defenderMeta?.wins ?? 0}
-          losses={defenderMeta?.losses ?? 0}
-          level={defenderMeta?.level ?? 1}
-          xp={defenderMeta?.xp ?? 0}
-          title={defenderMeta?.title ?? "Unranked Wanderer"}
-        />
-      </div>
-
+    <div
+      ref={dropdownRef}
+      className="min-w-0 overflow-hidden rounded-sm border border-black bg-white p-1"
+    >
       <McBattleReplayStage
         battle={battle}
         isActive={isActive}
         replayNonce={replayNonce}
       />
+
+      {/* minimalist toggle */}
+      <div className="mt-2">
+        <button
+          type="button"
+          onClick={() => setDetailsOpen((prev) => !prev)}
+          className="flex w-full items-center justify-center gap-1 pb-1 text-sm text-black transition hover:text-black"
+        >
+          <span>Details</span>
+
+          <span
+            className={`transition-transform duration-200 ${detailsOpen ? "rotate-180" : ""
+              }`}
+          >
+            ▾
+          </span>
+        </button>
+
+        {detailsOpen && (
+          <div className="mt-2 grid grid-cols-2 gap-3">
+            <FighterDetailsBlock
+              align="left"
+              username={challengerName}
+              avatarUrl={challengerMeta?.avatarUrl ?? null}
+              wins={challengerMeta?.wins ?? 0}
+              losses={challengerMeta?.losses ?? 0}
+              level={challengerMeta?.level ?? 1}
+              xp={challengerMeta?.xp ?? 0}
+              title={challengerMeta?.title ?? "Unranked Wanderer"}
+            />
+
+            <FighterDetailsBlock
+              align="right"
+              username={defenderName}
+              avatarUrl={defenderMeta?.avatarUrl ?? null}
+              wins={defenderMeta?.wins ?? 0}
+              losses={defenderMeta?.losses ?? 0}
+              level={defenderMeta?.level ?? 1}
+              xp={defenderMeta?.xp ?? 0}
+              title={defenderMeta?.title ?? "Unranked Wanderer"}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
