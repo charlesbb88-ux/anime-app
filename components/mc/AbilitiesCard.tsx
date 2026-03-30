@@ -20,16 +20,16 @@ export default function AbilitiesCard() {
   const allPlaceholders = abilities.every(isPlaceholderAbility);
 
   return (
-    <div className="rounded-md border border-white/10 bg-black px-4 py-2">
-      <div className="text-xs uppercase tracking-[0.2em] text-white/45">
+    <div className="rounded-md border-2 border-black bg-white px-4 py-2 text-black">
+      <div className="text-xs uppercase tracking-[0.2em] font-bold text-black">
         Abilities
       </div>
 
       <div className="mt-2 space-y-3">
         {allPlaceholders ? (
           // 🔥 If everything is placeholder → show ONE clean message
-          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-center">
-            <div className="text-sm font-medium text-white/40 italic">
+          <div className="rounded-2xl border border-black bg-white/20 px-4 py-3 text-center">
+            <div className="text-sm font-medium italic text-black/40">
               Coming soon
             </div>
           </div>
@@ -40,9 +40,9 @@ export default function AbilitiesCard() {
             .map((ability, index) => (
               <div
                 key={`${ability}-${index}`}
-                className="rounded-2xl border border-white/10 bg-black/20 px-4 py-2"
+                className="rounded-2xl border border-black bg-white/20 px-4 py-2"
               >
-                <div className="text-sm font-medium">{ability}</div>
+                <div className="text-sm font-medium text-black">{ability}</div>
               </div>
             ))
         )}

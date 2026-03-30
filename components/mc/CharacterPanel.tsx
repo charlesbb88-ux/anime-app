@@ -56,7 +56,7 @@ export default function CharacterPanel({
   }, [showTitlePopup]);
 
   return (
-    <div className="h-full rounded-md border border-white/10 bg-black p-3">
+    <div className="h-full rounded-md border border-black border-2 bg-white p-3">
       <div className="flex h-full flex-col">
         <div className="flex items-start justify-between gap-4"></div>
 
@@ -65,15 +65,15 @@ export default function CharacterPanel({
             {hasAvatar ? (
               <CharacterRigAvatarToggle />
             ) : (
-              <div className="flex h-[420px] w-full items-center justify-center rounded-[2rem] border border-dashed border-white/15 bg-black/20">
+              <div className="flex h-[420px] w-full items-center justify-center rounded-[2rem] border border-dashed border-black/15 bg-white/20">
                 <div className="text-center">
-                  <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full border border-white/15 bg-white/5 text-3xl">
+                  <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full border border-black/15 bg-black/5 text-3xl">
                     ?
                   </div>
                   <div className="mt-4 text-lg font-semibold">
                     Character Portrait
                   </div>
-                  <div className="mt-1 text-sm text-white/45">
+                  <div className="mt-1 text-sm text-black/45">
                     Avatar / generated character goes here
                   </div>
                 </div>
@@ -81,21 +81,21 @@ export default function CharacterPanel({
             )}
 
             <div className="mt-2 text-center">
-              <div className="text-xl font-semibold">{username}</div>
+              <div className="text-3xl font-bold text-black">{username}</div>
 
               {titleDebug ? (
                 <button
                   type="button"
                   onClick={() => setShowTitlePopup(true)}
-                  className="mt-1 text-base text-white/70 underline underline-offset-4 transition hover:text-white"
+                  className="mt-1 text-base text-black/90 underline font-semibold underline-offset-4 transition hover:text-black"
                 >
                   {title}
                 </button>
               ) : (
-                <div className="mt-1 text-base text-white/70">{title}</div>
+                <div className="mt-1 text-base text-black/70">{title}</div>
               )}
 
-              <div className="mt-2 text-sm text-white/45">{rank}</div>
+              <div className="mt-2 text-md font-bold text-black/80">{rank}</div>
             </div>
           </div>
         </div>
@@ -103,16 +103,16 @@ export default function CharacterPanel({
 
       {showTitlePopup && titleDebug && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" />
+          <div className="absolute inset-0 bg-white/60" />
 
           <div
             ref={popupContentRef}
-            className="relative z-10 w-full max-w-md rounded-2xl border border-white/10 bg-[#111] p-4 text-sm text-white shadow-2xl"
+            className="relative z-10 w-full max-w-md rounded-2xl border border-black bg-[#eeeeF1] p-4 text-sm text-black shadow-2xl"
           >
             <div className="text-lg font-semibold">Why this title?</div>
-            <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-white/70">
+            <div className="mt-3 rounded-xl border border-black/10 bg-white p-3 text-sm text-black">
               <div>
-                <span className="text-white/40">Prefix Tag:</span>{" "}
+                <span className="text-black/80 font-semibold">Prefix Tag:</span>{" "}
                 {titleDebug.prefixTag ?? "—"}{" "}
                 {titleDebug.prefixLevel != null
                   ? `(Level ${titleDebug.prefixLevel})`
@@ -120,7 +120,7 @@ export default function CharacterPanel({
               </div>
 
               <div className="mt-1">
-                <span className="text-white/40">Class Tag:</span>{" "}
+                <span className="text-black/80 font-semibold">Class Tag:</span>{" "}
                 {titleDebug.classTag ?? "—"}{" "}
                 {titleDebug.classLevel != null
                   ? `(Level ${titleDebug.classLevel})`
@@ -128,7 +128,7 @@ export default function CharacterPanel({
               </div>
 
               <div className="mt-1">
-                <span className="text-white/40">Domain Tag:</span>{" "}
+                <span className="text-black/80 font-semibold">Domain Tag:</span>{" "}
                 {titleDebug.domainTag ?? "—"}{" "}
                 {titleDebug.domainLevel != null
                   ? `(Level ${titleDebug.domainLevel})`

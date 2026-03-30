@@ -57,11 +57,11 @@ export default function ChallengeConfirmModal({
         type="button"
         aria-label="Close modal"
         onClick={onClose}
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        className="absolute inset-0 bg-white/70 backdrop-blur-sm"
       />
 
-      <div className="relative z-[101] w-full max-w-md rounded-2xl border border-white/10 bg-[#0b0b0b] p-5 text-white shadow-2xl">
-        <div className="text-xs uppercase tracking-[0.22em] text-white/45">
+      <div className="relative z-[101] w-full max-w-md rounded-2xl border-2 border-black bg-white p-5 text-black shadow-2xl">
+        <div className="text-xs font-bold uppercase tracking-[0.22em] text-black">
           Challenge
         </div>
 
@@ -69,7 +69,7 @@ export default function ChallengeConfirmModal({
           Challenge @{targetUsername}?
         </h2>
 
-        <p className="mt-3 text-sm leading-6 text-white/70">
+        <p className="mt-3 text-sm leading-6 text-black/70">
           This will send a battle challenge to @{targetUsername}. It will stay
           pending until they accept, reject, cancel, or it expires.
         </p>
@@ -85,7 +85,7 @@ export default function ChallengeConfirmModal({
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white/85 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-xl border border-black bg-white/20 px-4 py-2 text-sm font-medium text-black transition hover:bg-white/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Cancel
           </button>
@@ -94,7 +94,7 @@ export default function ChallengeConfirmModal({
             type="button"
             onClick={onConfirm}
             disabled={loading}
-            className="rounded-xl border border-white/10 bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-xl border border-black bg-black px-4 py-2 text-sm font-semibold text-white transition hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? "Sending..." : "Send challenge"}
           </button>

@@ -57,7 +57,7 @@ function RigNode({ origin, animate, delay = 0, children }: RigNodeProps) {
 
 export default function CharacterRigAvatar({ isZoomed = true }: Props) {
     return (
-        <div className="relative h-[560px] w-full max-w-[420px] overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.12),rgba(255,255,255,0.02)_35%,rgba(0,0,0,0.18)_70%)]">
+        <div className="relative h-[560px] w-full max-w-[420px] overflow-hidden rounded-[2rem] border border-black border-2 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.12),rgba(255,255,255,0.02)_35%,rgba(0,0,0,0.18)_70%)]">
             <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.04),transparent_30%,rgba(0,0,0,0.18))]" />
 
             <div
