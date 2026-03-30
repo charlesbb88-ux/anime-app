@@ -341,7 +341,7 @@ function LibraryBody({ profileId }: { profileId: string }) {
 
               {loadingMore ? <div className="py-4 text-xs text-slate-600">Loading more…</div> : null}
               {!loadingLibrary && !loadingMore && items.length > 0 && !hasMore ? (
-                <div className="py-4 text-xs text-slate-500">That’s everything.</div>
+                <div className="py-4 text-xs text-slate-500"></div>
               ) : null}
             </>
           )}
