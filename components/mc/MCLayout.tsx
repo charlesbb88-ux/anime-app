@@ -17,6 +17,8 @@ import type {
 import CharacterLoadoutEditor from "@/components/mc/CharacterLoadoutEditor";
 import MCLayoutSkeleton from "@/components/mc/MCLayoutSkeleton";
 import McBattleFeed from "@/components/mc/battles/McBattleFeed";
+import { useMcBattleRecord } from "@/hooks/useMcBattleRecord";
+import McBattleRecordCard from "@/components/mc/McBattleRecordCard";
 
 type Props = {
   userId: string;
@@ -438,6 +440,12 @@ export default function MCLayout({ userId }: Props) {
   const shortTitle = titleData.shortTitle;
   const fullTitle = titleData.fullTitle;
 
+  const {
+    record: battleRecord,
+    loading: battleRecordLoading,
+    error: battleRecordError,
+  } = useMcBattleRecord(userId);
+
   async function handleEquipAsset(slotKey: string, assetId: number) {
     if (!viewerId || viewerId !== userId) return;
 
@@ -526,6 +534,18 @@ export default function MCLayout({ userId }: Props) {
                   title={shortTitle}
                   rank={rank}
                 />
+
+                {battleRecordLoading ? (
+                  <div className="rounded-md border border-white/10 bg-black px-4 py-3 text-white/60">
+                    Loading battle record...
+                  </div>
+                ) : battleRecordError ? (
+                  <div className="rounded-md border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-200">
+                    {battleRecordError}
+                  </div>
+                ) : battleRecord ? (
+                  <McBattleRecordCard record={battleRecord} />
+                ) : null}
 
                 <StatsCard stats={baseStats} />
               </div>

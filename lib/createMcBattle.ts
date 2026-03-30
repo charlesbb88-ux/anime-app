@@ -1,7 +1,3 @@
-import { supabase } from "@/lib/supabaseClient";
-import { buildMcBattleSnapshot } from "@/lib/buildMcBattleSnapshot";
-import { simulateMcBattle } from "@/lib/simulateMcBattle";
-
 type CreateMcBattleResult = {
   id: string;
   challenger_user_id: string;
@@ -30,47 +26,22 @@ export async function createMcBattle(
     throw new Error("Challenger and defender cannot be the same user.");
   }
 
-  const challengerSnapshot = await buildMcBattleSnapshot(challengerUserId);
-  const defenderSnapshot = await buildMcBattleSnapshot(defenderUserId);
+  const response = await fetch("/api/mc/create-battle", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      challengerUserId,
+      defenderUserId,
+    }),
+  });
 
-  const sim = simulateMcBattle(challengerSnapshot, defenderSnapshot);
+  const payload = await response.json();
 
-  const rngSeed = crypto.randomUUID();
-
-  const { data, error } = await supabase
-    .from("mc_battles")
-    .insert({
-      challenger_user_id: challengerUserId,
-      defender_user_id: defenderUserId,
-      status: "resolved",
-      winner_user_id: sim.winnerUserId,
-      ruleset_version: 1,
-      replay_version: 1,
-      rng_seed: rngSeed,
-      challenger_snapshot: challengerSnapshot,
-      defender_snapshot: defenderSnapshot,
-      battle_result: sim.battleResult,
-      replay_data: sim.replayData,
-      resolved_at: new Date().toISOString(),
-    })
-    .select(
-      `
-      id,
-      challenger_user_id,
-      defender_user_id,
-      status,
-      winner_user_id,
-      battle_result,
-      replay_data,
-      created_at,
-      resolved_at
-    `
-    )
-    .single();
-
-  if (error) {
-    throw error;
+  if (!response.ok) {
+    throw new Error(payload?.error ?? "Failed to create battle.");
   }
 
-  return data as CreateMcBattleResult;
+  return payload as CreateMcBattleResult;
 }
