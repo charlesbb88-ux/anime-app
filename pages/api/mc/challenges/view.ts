@@ -30,36 +30,41 @@ export default async function handler(
       return res.status(400).json({ error: "Missing actor user id." });
     }
 
-    // fetch challenge
     const { data: challenge, error: fetchError } = await supabaseAdmin
       .from("mc_challenges")
       .select("challenger_user_id, defender_user_id")
       .eq("id", challengeId)
       .single();
 
-    if (fetchError) throw fetchError;
+    if (fetchError) {
+      throw fetchError;
+    }
 
     if (!challenge) {
       return res.status(404).json({ error: "Challenge not found." });
     }
 
-    // verify ownership
-    if (
-      challenge.challenger_user_id !== actorUserId &&
-      challenge.defender_user_id !== actorUserId
-    ) {
+    const isChallenger = challenge.challenger_user_id === actorUserId;
+    const isDefender = challenge.defender_user_id === actorUserId;
+
+    if (!isChallenger && !isDefender) {
       return res.status(403).json({ error: "Not allowed." });
     }
 
-    // update viewed_at
+    const now = new Date().toISOString();
+
+    const updatePayload = isChallenger
+      ? { challenger_viewed_at: now }
+      : { defender_viewed_at: now };
+
     const { error: updateError } = await supabaseAdmin
       .from("mc_challenges")
-      .update({
-        viewed_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq("id", challengeId);
 
-    if (updateError) throw updateError;
+    if (updateError) {
+      throw updateError;
+    }
 
     return res.status(200).json({ success: true });
   } catch (e: any) {

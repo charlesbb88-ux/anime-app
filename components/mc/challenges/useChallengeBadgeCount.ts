@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getChallengeInbox } from "@/lib/mcChallenges";
 
 export function useChallengeBadgeCount() {
@@ -8,7 +8,7 @@ export function useChallengeBadgeCount() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     try {
       setError(null);
       setLoading(true);
@@ -19,11 +19,35 @@ export function useChallengeBadgeCount() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     refresh();
-  }, []);
+
+    function handleFocus() {
+      refresh();
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        refresh();
+      }
+    }
+
+    function handlePageShow() {
+      refresh();
+    }
+
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("pageshow", handlePageShow);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("pageshow", handlePageShow);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refresh]);
 
   return {
     count,

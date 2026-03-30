@@ -21,6 +21,8 @@ export type McChallengeRow = {
   canceled_at: string | null;
   expired_at: string | null;
   viewed_at: string | null;
+  challenger_viewed_at: string | null;
+  defender_viewed_at: string | null;
 };
 
 export type McChallengeProfile = {
@@ -63,10 +65,15 @@ type RawMcChallengeRow = McChallengeRow & {
 };
 
 function isExpiredPending(row: Pick<McChallengeRow, "status" | "expires_at">) {
-  return row.status === "pending" && new Date(row.expires_at).getTime() < Date.now();
+  return (
+    row.status === "pending" &&
+    new Date(row.expires_at).getTime() < Date.now()
+  );
 }
 
-function normalizeJoinedProfile(value: RawJoinedProfile): McChallengeProfile | null {
+function normalizeJoinedProfile(
+  value: RawJoinedProfile
+): McChallengeProfile | null {
   if (!value) return null;
   if (Array.isArray(value)) {
     return value[0] ?? null;
@@ -88,6 +95,8 @@ function normalizeChallenge(row: RawMcChallengeRow): McChallengeWithProfiles {
     canceled_at: row.canceled_at,
     expired_at: row.expired_at,
     viewed_at: row.viewed_at,
+    challenger_viewed_at: row.challenger_viewed_at,
+    defender_viewed_at: row.defender_viewed_at,
     challenger: normalizeJoinedProfile(row.challenger),
     defender: normalizeJoinedProfile(row.defender),
   };
@@ -119,7 +128,9 @@ export async function getCurrentUserId(): Promise<string> {
   return user.id;
 }
 
-export async function createChallenge(defenderUserId: string): Promise<McChallengeRow> {
+export async function createChallenge(
+  defenderUserId: string
+): Promise<McChallengeRow> {
   const challengerUserId = await getCurrentUserId();
 
   const response = await fetch("/api/mc/challenges/create", {
@@ -237,6 +248,8 @@ export async function getChallengeInbox(): Promise<McChallengeInboxData> {
       canceled_at,
       expired_at,
       viewed_at,
+      challenger_viewed_at,
+      defender_viewed_at,
       challenger:profiles!mc_challenges_challenger_user_id_fkey(
         id,
         username,
@@ -255,7 +268,7 @@ export async function getChallengeInbox(): Promise<McChallengeInboxData> {
     throw error;
   }
 
-  const rows = ((data ?? []) as unknown as RawMcChallengeRow[]).map(normalizeChallenge);
+  const rows = ((data ?? []) as RawMcChallengeRow[]).map(normalizeChallenge);
 
   const received = rows.filter(
     (row) => row.defender_user_id === userId && row.status === "pending"
@@ -265,28 +278,40 @@ export async function getChallengeInbox(): Promise<McChallengeInboxData> {
     (row) => row.challenger_user_id === userId && row.status === "pending"
   );
 
-  const readyToWatch = rows.filter(
-    (row) =>
-      (row.challenger_user_id === userId || row.defender_user_id === userId) &&
-      row.status === "ready_to_watch" &&
-      !row.viewed_at
-  );
+  const readyToWatch = rows.filter((row) => {
+    if (row.status !== "ready_to_watch") return false;
+
+    const isChallenger = row.challenger_user_id === userId;
+    const isDefender = row.defender_user_id === userId;
+
+    if (!isChallenger && !isDefender) return false;
+
+    if (isChallenger) {
+      return !row.challenger_viewed_at;
+    }
+
+    if (isDefender) {
+      return !row.defender_viewed_at;
+    }
+
+    return false;
+  });
 
   const updates = rows.filter(
-  (row) =>
-    row.challenger_user_id === userId &&
-    (row.status === "rejected" || row.status === "expired")
-);
+    (row) =>
+      row.challenger_user_id === userId &&
+      (row.status === "rejected" || row.status === "expired")
+  );
 
   const badgeCount = received.length + readyToWatch.length;
 
-return {
-  received,
-  sent,
-  readyToWatch,
-  updates,
-  badgeCount,
-};
+  return {
+    received,
+    sent,
+    readyToWatch,
+    updates,
+    badgeCount,
+  };
 }
 
 export async function hasPendingOutgoingChallenge(

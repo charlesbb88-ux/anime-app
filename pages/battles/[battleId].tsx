@@ -81,22 +81,9 @@ const McBattleDetailPage: NextPage = () => {
   const defenderName = battle?.defender_snapshot?.username ?? "Defender";
 
   return (
-    <main className="min-h-screen bg-black text-white">
+    <main className="min-h-screen text-black">
       <div className="mx-auto max-w-5xl px-4 pt-5 pb-8">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-xs uppercase tracking-[0.2em] text-white/45">
-              Battles
-            </div>
-            <h1 className="mt-1 text-2xl font-semibold">Battle viewer</h1>
-          </div>
-
-          <Link
-            href="/battle-inbox-test"
-            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10"
-          >
-            Back to battle inbox test
-          </Link>
         </div>
 
         {loading ? (
@@ -113,20 +100,6 @@ const McBattleDetailPage: NextPage = () => {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-              <div className="text-sm text-white/70">
-                {challengerName} vs {defenderName}
-              </div>
-
-              <div className="mt-1 text-xs uppercase tracking-[0.18em] text-white/40">
-                {formatBattleDate(battle.created_at)}
-              </div>
-
-              <div className="mt-3 text-xs text-white/45">
-                Battle ID: {battle.id}
-              </div>
-            </div>
-
             <McBattleReplayCard battle={battle} isActive />
           </div>
         )}
