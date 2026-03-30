@@ -334,7 +334,10 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
 
   React.useEffect(() => {
     function check() {
-      setIsMobile(window.innerWidth <= 767);
+      setIsMobile((prev) => {
+        const next = window.innerWidth <= 767;
+        return prev === next ? prev : next;
+      });
     }
     check();
     window.addEventListener("resize", check);
@@ -415,7 +418,7 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
 
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
-  }, [props.contentJson, props.contentText, props.content, isExpanded, isMobile]);
+  }, [props.contentJson, props.contentText, props.content, isExpanded]);
 
   const iconSize = isMain ? 22 : 20;
   const avatarSize = isMain ? 56 : 46;
