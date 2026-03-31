@@ -12,6 +12,8 @@ type Props = {
   rank: string;
   titleDebug?: GeneratedTitle;
   avatarLayers?: CharacterAvatarLayer[];
+  bodyId?: string | null;
+  hairId?: string | null;
 };
 
 export default function CharacterPanel({
@@ -20,6 +22,8 @@ export default function CharacterPanel({
   rank,
   titleDebug,
   avatarLayers = [],
+  bodyId,
+  hairId,
 }: Props) {
   const hasAvatar = avatarLayers.length > 0;
   const [showTitlePopup, setShowTitlePopup] = useState(false);
@@ -63,7 +67,7 @@ export default function CharacterPanel({
         <div className="flex flex-1 items-start justify-center">
           <div className="flex w-full max-w-md flex-col items-center">
             {hasAvatar ? (
-              <CharacterRigAvatarToggle />
+              <CharacterRigAvatarToggle bodyId={bodyId} hairId={hairId} />
             ) : (
               <div className="flex h-[420px] w-full items-center justify-center rounded-[2rem] border border-dashed border-black/15 bg-white/20">
                 <div className="text-center">

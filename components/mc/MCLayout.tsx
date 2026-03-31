@@ -22,6 +22,8 @@ import McBattleRecordCard from "@/components/mc/McBattleRecordCard";
 import ChallengeButton from "@/components/mc/challenges/ChallengeButton";
 import Link from "next/link";
 import { useChallengeBadgeCount } from "@/components/mc/challenges/useChallengeBadgeCount";
+import { getMcPaperDollLoadoutByUserId } from "@/lib/mcPaperDollLoadoutService";
+import type { McPaperDollLoadout } from "@/components/mc/paperdoll/mcPaperDollTypes";
 
 type Props = {
   userId: string;
@@ -88,6 +90,7 @@ export default function MCLayout({ userId }: Props) {
   const [avatarLayers, setAvatarLayers] = useState<CharacterAvatarLayer[]>([]);
   const [loadoutOptions, setLoadoutOptions] = useState<CharacterLoadoutOptionGroup[]>([]);
   const [savingSlotKey, setSavingSlotKey] = useState<string | null>(null);
+  const [paperDollLoadout, setPaperDollLoadout] = useState<McPaperDollLoadout | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -233,6 +236,13 @@ export default function MCLayout({ userId }: Props) {
 
         let normalizedAvatarLayers: CharacterAvatarLayer[] = [];
         let normalizedLoadoutOptions: CharacterLoadoutOptionGroup[] = [];
+        let loadout: McPaperDollLoadout | null = null;
+
+        try {
+          loadout = await getMcPaperDollLoadoutByUserId(userId);
+        } catch (e) {
+          console.error("Failed to load paperdoll loadout", e);
+        }
 
         const { data: userCharacterData, error: userCharacterError } = await supabase
           .from("user_mc_characters")
@@ -415,6 +425,7 @@ export default function MCLayout({ userId }: Props) {
           setAvatarLayers(normalizedAvatarLayers);
           setLoadoutOptions(normalizedLoadoutOptions);
           setUsername(profileData?.username ?? "Player");
+          setPaperDollLoadout(loadout);
           setLoading(false);
         }
       } catch (e: any) {
@@ -549,6 +560,8 @@ export default function MCLayout({ userId }: Props) {
                   rank={rank}
                   titleDebug={titleData}
                   avatarLayers={avatarLayers}
+                  bodyId={paperDollLoadout?.body}
+                  hairId={paperDollLoadout?.hair}
                 />
 
                 {viewerId && viewerId === userId ? (

@@ -4,12 +4,17 @@ import { useState } from "react";
 import CharacterRigAvatar from "@/components/mc/CharacterRigAvatar";
 import { ZoomIn, ZoomOut } from "lucide-react";
 
-export default function CharacterRigAvatarToggle() {
+type Props = {
+    bodyId?: string | null;
+    hairId?: string | null;
+};
+
+export default function CharacterRigAvatarToggle({ bodyId, hairId }: Props) {
     const [isZoomed, setIsZoomed] = useState(true);
 
     return (
         <div className="relative w-full max-w-[420px]">
-            <CharacterRigAvatar isZoomed={isZoomed} />
+            <CharacterRigAvatar isZoomed={isZoomed} bodyId={bodyId} hairId={hairId} />
 
             <div className="absolute right-3 top-3 z-20">
                 <button

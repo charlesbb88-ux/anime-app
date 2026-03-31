@@ -120,3 +120,21 @@ export async function saveMyMcPaperDollLoadout(
 
   return rowToLoadout(data as UserMcPaperDollLoadoutRow);
 }
+
+export async function getMcPaperDollLoadoutByUserId(
+  userId: string
+): Promise<McPaperDollLoadout | null> {
+  const { data, error } = await supabase
+    .from("user_mc_paperdoll_loadouts")
+    .select(SELECT_COLUMNS)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  if (!data) {
+    return null;
+  }
+
+  return rowToLoadout(data as UserMcPaperDollLoadoutRow);
+}
