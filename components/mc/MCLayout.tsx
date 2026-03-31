@@ -562,6 +562,7 @@ export default function MCLayout({ userId }: Props) {
                   avatarLayers={avatarLayers}
                   bodyId={paperDollLoadout?.body}
                   hairId={paperDollLoadout?.hair}
+                  showEditButton={viewerId === userId}
                 />
 
                 {viewerId && viewerId === userId ? (
