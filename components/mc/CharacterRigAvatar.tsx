@@ -111,7 +111,7 @@ export default function CharacterRigAvatar({
 
             <div
                 className={`absolute inset-0 transition-transform duration-300 ${isZoomed
-                    ? "scale-[1.35] translate-y-[-35px] sm:scale-[1.20] sm:translate-y-[-35px]"
+                    ? "scale-[1.3] translate-y-[-23px] sm:scale-[1.12] sm:translate-y-[-20px]"
                     : "scale-75 translate-y-0"
                     }`}
             >
