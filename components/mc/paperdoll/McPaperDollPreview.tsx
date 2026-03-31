@@ -33,68 +33,47 @@ export default function McPaperDollPreview({ loadout }: Props) {
   }, [loadout]);
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-      <div className="mb-3 text-sm font-semibold text-white">Preview</div>
+    <div className="rounded-2xl border border-black border-2 bg-white p-4">
 
-      <div className="mb-4 flex flex-wrap gap-2">
-        {ACTIONS.map((nextAction) => {
-          const selected = action === nextAction;
+      {/* HIDDEN FOR NOW */}
+      {false && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {ACTIONS.map((nextAction) => {
+            const selected = action === nextAction;
 
-          return (
-            <button
-              key={nextAction}
-              type="button"
-              onClick={() => setAction(nextAction)}
-              className={[
-                "rounded-xl border px-3 py-2 text-xs transition",
-                selected
-                  ? "border-cyan-400/40 bg-cyan-400/10 text-cyan-200"
-                  : "border-white/10 bg-black/20 text-white/80 hover:border-white/20 hover:bg-white/10",
-              ].join(" ")}
-            >
-              {nextAction}
-            </button>
-          );
-        })}
-      </div>
+            return (
+              <button
+                key={nextAction}
+                type="button"
+                onClick={() => setAction(nextAction)}
+                className={[
+                  "rounded-xl border px-3 py-2 text-xs transition",
+                  selected
+                    ? "border-black bg-black text-white"
+                    : "border-black bg-white/20 text-black/80 hover:bg-black/5",
+                ].join(" ")}
+              >
+                {nextAction}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div
-        className="relative mx-auto overflow-hidden rounded-2xl border border-white/10 bg-[#0f0f0f]"
-        style={{ width: 420, height: 320 }}
+        className="relative mx-auto overflow-hidden rounded-2xl bg-white"
+        style={{ width: 360, height: 520 }}
       >
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage: 'url("/mc/backgrounds/arena-bg.png")',
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            backgroundRepeat: "no-repeat",
-            opacity: 0.7,
-          }}
-        />
-
-        <div
-          className="absolute left-0 right-0"
-          style={{
-            bottom: -185,
-            height: 320,
-            backgroundImage: 'url("/mc/backgrounds/arena-platform.png")',
-            backgroundSize: "100% 100%",
-            backgroundPosition: "center bottom",
-            backgroundRepeat: "no-repeat",
-          }}
-        />
-
         <ScreenSpriteFighter
-          screenX={210}
-          screenY={300}
+          screenX={180}
+          screenY={480}
           facing="right"
           action={action}
           layers={layers}
           sourceFrameWidth={768}
           sourceFrameHeight={1024}
-          renderWidth={130}
-          renderHeight={173}
+          renderWidth={360}
+          renderHeight={480}
           yOffset={action === "defeat_ground" ? 28 : 8}
           flash={false}
         />
