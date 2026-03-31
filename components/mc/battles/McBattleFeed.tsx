@@ -21,6 +21,13 @@ type VisibleCandidate = {
   distanceToViewportCenter: number;
 };
 
+function isElementInViewport(el: HTMLDivElement | null) {
+  if (typeof window === "undefined" || !el) return false;
+
+  const rect = el.getBoundingClientRect();
+  return rect.bottom > 0 && rect.top < window.innerHeight;
+}
+
 function getBestAutoplayBattleId(
   battles: McBattleCardRow[],
   itemRefs: Record<string, HTMLDivElement | null>
@@ -137,15 +144,23 @@ export default function McBattleFeed({
     measureRafRef.current = window.requestAnimationFrame(() => {
       measureRafRef.current = null;
 
-      if (manualActiveBattleIdRef.current) {
-        return;
+      const manualId = manualActiveBattleIdRef.current;
+
+      if (manualId) {
+        const manualNode = itemRefs.current[manualId];
+
+        if (isElementInViewport(manualNode)) {
+          setActiveBattleId((prev) => (prev === manualId ? prev : manualId));
+          return;
+        }
+
+        manualActiveBattleIdRef.current = null;
+        setManualActiveBattleId(null);
       }
 
       const bestId = getBestAutoplayBattleId(battles, itemRefs.current);
 
-      if (bestId) {
-        setActiveBattleId((prev) => (prev === bestId ? prev : bestId));
-      }
+      setActiveBattleId((prev) => (prev === bestId ? prev : bestId));
     });
   }, [battles]);
 
@@ -164,7 +179,8 @@ export default function McBattleFeed({
       setOffset(data.length);
       setHasMore(data.length === initialLimit);
       setManualActiveBattleId(null);
-      setActiveBattleId(data[0]?.id ?? null);
+      manualActiveBattleIdRef.current = null;
+      setActiveBattleId(null);
     } catch (e: any) {
       setError(e?.message ?? "Failed to load battles.");
     } finally {
@@ -203,11 +219,15 @@ export default function McBattleFeed({
     [scheduleMeasure]
   );
 
-  const handleSelectBattle = useCallback((battleId: string) => {
-    manualActiveBattleIdRef.current = battleId;
-    setManualActiveBattleId(battleId);
-    setActiveBattleId(battleId);
-  }, []);
+  const handleSelectBattle = useCallback(
+    (battleId: string) => {
+      manualActiveBattleIdRef.current = battleId;
+      setManualActiveBattleId(battleId);
+      setActiveBattleId(battleId);
+      scheduleMeasure();
+    },
+    [scheduleMeasure]
+  );
 
   useEffect(() => {
     loadInitial();
@@ -223,32 +243,41 @@ export default function McBattleFeed({
     }
 
     setManualActiveBattleId((prev) => {
-      if (!prev) return prev;
+      if (!prev) return null;
       return currentIds.has(prev) ? prev : null;
     });
 
+    if (
+      manualActiveBattleIdRef.current &&
+      !currentIds.has(manualActiveBattleIdRef.current)
+    ) {
+      manualActiveBattleIdRef.current = null;
+    }
+
     setActiveBattleId((prev) => {
-      if (!prev) return battles[0]?.id ?? null;
-      return currentIds.has(prev) ? prev : battles[0]?.id ?? null;
+      if (!prev) return null;
+      return currentIds.has(prev) ? prev : null;
     });
-  }, [battles]);
+
+    if (!battles.length) {
+      setManualActiveBattleId(null);
+      manualActiveBattleIdRef.current = null;
+      setActiveBattleId(null);
+      return;
+    }
+
+    scheduleMeasure();
+  }, [battles, scheduleMeasure]);
 
   useEffect(() => {
     if (!battles.length) {
       setManualActiveBattleId(null);
+      manualActiveBattleIdRef.current = null;
       setActiveBattleId(null);
       return;
     }
 
     const run = () => {
-      scheduleMeasure();
-    };
-
-    const clearManualOverrideAndResumeAutoplay = () => {
-      if (!manualActiveBattleIdRef.current) return;
-
-      manualActiveBattleIdRef.current = null;
-      setManualActiveBattleId(null);
       scheduleMeasure();
     };
 
@@ -260,26 +289,10 @@ export default function McBattleFeed({
 
     window.addEventListener("scroll", run, { passive: true });
     window.addEventListener("resize", run);
-    window.addEventListener("wheel", clearManualOverrideAndResumeAutoplay, {
-      passive: true,
-    });
-    window.addEventListener("touchmove", clearManualOverrideAndResumeAutoplay, {
-      passive: true,
-    });
-    window.addEventListener("keydown", clearManualOverrideAndResumeAutoplay);
 
     return () => {
       window.removeEventListener("scroll", run);
       window.removeEventListener("resize", run);
-      window.removeEventListener("wheel", clearManualOverrideAndResumeAutoplay);
-      window.removeEventListener(
-        "touchmove",
-        clearManualOverrideAndResumeAutoplay
-      );
-      window.removeEventListener(
-        "keydown",
-        clearManualOverrideAndResumeAutoplay
-      );
       window.clearTimeout(t1);
       window.clearTimeout(t2);
       window.clearTimeout(t3);
