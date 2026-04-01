@@ -19,5 +19,5 @@ export default function EnglishTitle({
   const picked = pickEnglishTitle(titles);
   const text = picked?.value ?? fallback;
 
-  return <Tag className={className}>{text}</Tag>;
+  return React.createElement(Tag, { className }, text);
 }
