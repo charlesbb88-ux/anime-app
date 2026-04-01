@@ -106,7 +106,7 @@ export default function ProfileCard({
             </button>
 
             {showXpTooltip ? (
-              <div className="absolute left-0 top-full z-30 mt-2 w-[320px] rounded-2xl border-2 border-black bg-white px-4 py-3 text-sm text-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+<div className="absolute left-1/2 top-full z-30 mt-2 w-[min(320px,calc(100vw-1rem))] -translate-x-[70%] rounded-2xl border-2 border-black bg-white px-4 py-3 text-sm text-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] sm:left-0 sm:translate-x-0 sm:w-[320px]">
                 <div className="font-bold uppercase tracking-wide text-black">
                   Account XP
                 </div>
