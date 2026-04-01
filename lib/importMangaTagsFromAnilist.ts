@@ -22,11 +22,33 @@ export async function importMangaTagsFromAniList(
   if (!existingManga) throw new Error("Manga not found");
 
   // 2) fetch AniList
-  const { data: aniManga, error: aniError } =
-    await getAniListMangaById(anilistId);
+let aniManga: AniListManga | null = null;
 
-  if (aniError) throw new Error(aniError);
-  if (!aniManga) throw new Error("AniList manga not found");
+try {
+  const result = await getAniListMangaById(anilistId);
+  aniManga = result.data;
+
+  if (result.error) {
+    throw new Error(
+      `AniList request failed for anilistId=${anilistId}: ${result.error}`
+    );
+  }
+
+  if (!aniManga) {
+    throw new Error(`AniList manga not found for anilistId=${anilistId}`);
+  }
+} catch (err: any) {
+  const message =
+    err instanceof Error
+      ? err.message || err.name || "Unknown AniList error"
+      : typeof err === "string" && err.trim() !== ""
+      ? err
+      : JSON.stringify(err);
+
+  throw new Error(
+    `AniList fetch crashed for mangaId=${mangaId}, anilistId=${anilistId}: ${message || "Unknown error"}`
+  );
+}
 
   const rawTags = aniManga.tags ?? [];
 

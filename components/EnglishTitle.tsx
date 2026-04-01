@@ -6,7 +6,7 @@ import { pickEnglishTitle } from "@/lib/pickEnglishTitle";
 type Props = {
   titles: Record<string, string | null | undefined>;
   className?: string;
-  as?: React.ElementType; // <-- no JSX namespace
+  as?: keyof React.JSX.IntrinsicElements;
   fallback?: string;
 };
 

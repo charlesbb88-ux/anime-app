@@ -74,9 +74,11 @@ export default async function handler(
             })
             .eq("id", mangaId);
 
-          if (updateInvalidError) {
-            throw new Error(updateInvalidError.message);
-          }
+if (updateInvalidError) {
+  throw new Error(
+    `Failed to save invalid-id error for mangaId=${mangaId}: ${updateInvalidError.message}`
+  );
+}
         }
 
         failed++;
@@ -99,13 +101,20 @@ export default async function handler(
           })
           .eq("id", mangaId);
 
-        if (markDoneError) {
-          throw new Error(markDoneError.message);
-        }
+if (markDoneError) {
+  throw new Error(
+    `Failed to mark import done for mangaId=${mangaId}: ${markDoneError.message}`
+  );
+}
 
         success++;
       } catch (err: any) {
-        const message = err?.message ?? String(err);
+        const message =
+          err instanceof Error
+            ? err.message || err.name || "Unknown row error"
+            : typeof err === "string" && err.trim() !== ""
+            ? err
+            : JSON.stringify(err) || "Unknown row error";
 
         const { error: markFailedError } = await supabaseAdmin
           .from("manga")
@@ -114,9 +123,11 @@ export default async function handler(
           })
           .eq("id", mangaId);
 
-        if (markFailedError) {
-          throw new Error(markFailedError.message);
-        }
+if (markFailedError) {
+  throw new Error(
+    `Failed to save import error for mangaId=${mangaId}: ${markFailedError.message}`
+  );
+}
 
         failed++;
         failures.push({
@@ -202,9 +213,18 @@ export default async function handler(
       failures,
     });
   } catch (err: any) {
+    const errorMessage =
+      err instanceof Error
+        ? err.message || err.name || "Unknown server error"
+        : typeof err === "string" && err.trim() !== ""
+        ? err
+        : JSON.stringify(err) || "Unknown server error";
+
+    console.error("batch-import-manga-tags fatal error:", err);
+
     return res.status(500).json({
       ok: false,
-      error: err?.message ?? String(err),
+      error: errorMessage,
     });
   }
 }
