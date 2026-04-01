@@ -28,25 +28,27 @@ export default function CharacterPanel({
   showEditButton = false,
 }: Props) {
   const hasAvatar = avatarLayers.length > 0;
-  const [showTitlePopup, setShowTitlePopup] = useState(false);
-  const popupContentRef = useRef<HTMLDivElement | null>(null);
+  const [showTitleTooltip, setShowTitleTooltip] = useState(false);
+  const titleTooltipRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!showTitlePopup) return;
-
     function handlePointerDown(event: MouseEvent | TouchEvent) {
       const target = event.target as Node | null;
 
-      if (popupContentRef.current && target && popupContentRef.current.contains(target)) {
+      if (
+        titleTooltipRef.current &&
+        target &&
+        titleTooltipRef.current.contains(target)
+      ) {
         return;
       }
 
-      setShowTitlePopup(false);
+      setShowTitleTooltip(false);
     }
 
     function handleEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        setShowTitlePopup(false);
+        setShowTitleTooltip(false);
       }
     }
 
@@ -59,7 +61,7 @@ export default function CharacterPanel({
       document.removeEventListener("touchstart", handlePointerDown);
       document.removeEventListener("keydown", handleEscape);
     };
-  }, [showTitlePopup]);
+  }, []);
 
   return (
     <div className="h-full rounded-md border border-black border-2 bg-white p-3">
@@ -94,13 +96,63 @@ export default function CharacterPanel({
               <div className="text-3xl font-bold text-black">{username}</div>
 
               {titleDebug ? (
-                <button
-                  type="button"
-                  onClick={() => setShowTitlePopup(true)}
-                  className="mt-1 text-base text-black/90 underline font-semibold underline-offset-4 transition hover:text-black"
-                >
-                  {title}
-                </button>
+                <div ref={titleTooltipRef} className="relative mt-1 inline-block">
+                  <button
+                    type="button"
+                    onClick={() => setShowTitleTooltip((prev) => !prev)}
+                    className="text-base font-semibold text-black/90 underline underline-offset-4 transition hover:text-black"
+                  >
+                    {title}
+                  </button>
+
+                  {showTitleTooltip ? (
+                    <div className="absolute left-1/2 top-full z-30 mt-2 w-[320px] -translate-x-1/2 rounded-2xl border-2 border-black bg-white px-4 py-3 text-left text-sm text-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                      <div className="font-bold uppercase tracking-wide text-black">
+                        Why this title?
+                      </div>
+
+                      <div className="mt-2 space-y-2 leading-relaxed text-black">
+                        <div className="rounded-xl border border-black bg-black/[0.03] px-3 py-2">
+                          <div className="mb-1 text-xs font-bold uppercase tracking-wide text-black/70">
+                            Title breakdown
+                          </div>
+
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between gap-3">
+                              <span>Prefix Tag</span>
+                              <span className="font-semibold text-right">
+                                {titleDebug.prefixTag ?? "—"}
+                                {titleDebug.prefixLevel != null
+                                  ? ` (Level ${titleDebug.prefixLevel})`
+                                  : ""}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-3">
+                              <span>Class Tag</span>
+                              <span className="font-semibold text-right">
+                                {titleDebug.classTag ?? "—"}
+                                {titleDebug.classLevel != null
+                                  ? ` (Level ${titleDebug.classLevel})`
+                                  : ""}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-3">
+                              <span>Domain Tag</span>
+                              <span className="font-semibold text-right">
+                                {titleDebug.domainTag ?? "—"}
+                                {titleDebug.domainLevel != null
+                                  ? ` (Level ${titleDebug.domainLevel})`
+                                  : ""}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               ) : (
                 <div className="mt-1 text-base text-black/70">{title}</div>
               )}
@@ -110,44 +162,6 @@ export default function CharacterPanel({
           </div>
         </div>
       </div>
-
-      {showTitlePopup && titleDebug && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-white/60" />
-
-          <div
-            ref={popupContentRef}
-            className="relative z-10 w-full max-w-md rounded-2xl border border-black bg-[#eeeeF1] p-4 text-sm text-black shadow-2xl"
-          >
-            <div className="text-lg font-semibold">Why this title?</div>
-            <div className="mt-3 rounded-xl border border-black/10 bg-white p-3 text-sm text-black">
-              <div>
-                <span className="text-black/80 font-semibold">Prefix Tag:</span>{" "}
-                {titleDebug.prefixTag ?? "—"}{" "}
-                {titleDebug.prefixLevel != null
-                  ? `(Level ${titleDebug.prefixLevel})`
-                  : ""}
-              </div>
-
-              <div className="mt-1">
-                <span className="text-black/80 font-semibold">Class Tag:</span>{" "}
-                {titleDebug.classTag ?? "—"}{" "}
-                {titleDebug.classLevel != null
-                  ? `(Level ${titleDebug.classLevel})`
-                  : ""}
-              </div>
-
-              <div className="mt-1">
-                <span className="text-black/80 font-semibold">Domain Tag:</span>{" "}
-                {titleDebug.domainTag ?? "—"}{" "}
-                {titleDebug.domainLevel != null
-                  ? `(Level ${titleDebug.domainLevel})`
-                  : ""}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
