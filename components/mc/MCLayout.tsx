@@ -60,6 +60,14 @@ type CombatStatRow = {
   stat_value: number;
 };
 
+type XpBreakdown = {
+  follow_xp: number;
+  log_xp: number;
+  rating_xp: number;
+  review_xp: number;
+  total_xp: number;
+};
+
 function safeNumber(value: unknown, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -91,6 +99,7 @@ export default function MCLayout({ userId }: Props) {
   const [loadoutOptions, setLoadoutOptions] = useState<CharacterLoadoutOptionGroup[]>([]);
   const [savingSlotKey, setSavingSlotKey] = useState<string | null>(null);
   const [paperDollLoadout, setPaperDollLoadout] = useState<McPaperDollLoadout | null>(null);
+  const [xpBreakdown, setXpBreakdown] = useState<XpBreakdown | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,12 +139,14 @@ export default function MCLayout({ userId }: Props) {
           { data: baseStatsData, error: baseStatsError },
           { data: combatStatsData, error: combatStatsError },
           { data: profileData, error: profileError },
+          { data: xpBreakdownData, error: xpBreakdownError },
         ] = await Promise.all([
           supabase.rpc("get_account_progression", { p_user_id: userId }),
           supabase.rpc("get_user_progression_detailed", { p_user_id: userId }),
           supabase.rpc("get_user_base_stats", { p_user_id: userId }),
           supabase.rpc("get_user_combat_stats", { p_user_id: userId }),
           supabase.from("profiles").select("username").eq("id", userId).maybeSingle(),
+          supabase.rpc("get_account_xp_breakdown", { p_user_id: userId }),
         ]);
 
         if (accountError) throw accountError;
@@ -143,6 +154,7 @@ export default function MCLayout({ userId }: Props) {
         if (baseStatsError) throw baseStatsError;
         if (combatStatsError) throw combatStatsError;
         if (profileError) throw profileError;
+        if (xpBreakdownError) throw xpBreakdownError;
 
         const rawAccount = ((accountData as any[] | null) ?? [])[0] ?? null;
 
@@ -192,6 +204,18 @@ export default function MCLayout({ userId }: Props) {
           account_level: safeNumber(stat.account_level, 1),
           stat_value: safeNumber(stat.stat_value, 0),
         }));
+
+        const rawXpBreakdown = ((xpBreakdownData as any[] | null) ?? [])[0] ?? null;
+
+        const normalizedXpBreakdown: XpBreakdown | null = rawXpBreakdown
+          ? {
+            follow_xp: safeNumber(rawXpBreakdown.follow_xp, 0),
+            log_xp: safeNumber(rawXpBreakdown.log_xp, 0),
+            rating_xp: safeNumber(rawXpBreakdown.rating_xp, 0),
+            review_xp: safeNumber(rawXpBreakdown.review_xp, 0),
+            total_xp: safeNumber(rawXpBreakdown.total_xp, 0),
+          }
+          : null;
 
         const topTagIds = normalizedAffinities.slice(0, 3).map((tag) => tag.tag_id);
 
@@ -426,6 +450,7 @@ export default function MCLayout({ userId }: Props) {
           setLoadoutOptions(normalizedLoadoutOptions);
           setUsername(profileData?.username ?? "Player");
           setPaperDollLoadout(loadout);
+          setXpBreakdown(normalizedXpBreakdown);
           setLoading(false);
         }
       } catch (e: any) {
@@ -549,6 +574,7 @@ export default function MCLayout({ userId }: Props) {
                   progressNeededInLevel={progressNeededInLevel}
                   title={shortTitle}
                   rank={rank}
+                  xpBreakdown={xpBreakdown}
                 />
                 <StatsCard stats={baseStats} />
               </div>
