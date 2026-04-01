@@ -389,12 +389,12 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
                 {localMode === "login" ? (
                   <form onSubmit={handleLogin} className="space-y-3">
                     <div>
-                      <label className="block text-sm font-semibold mb-1">Email or username</label>
+                      <label className="block text-sm font-semibold mb-1">Email</label>
                       <input
                         value={identifier}
                         onChange={(e) => setIdentifier(e.target.value)}
                         className="w-full h-12 rounded-xl border border-black/15 px-4 text-base outline-none focus:border-black"
-                        placeholder="Email or username"
+                        placeholder="Email"
                         autoComplete="username"
                         disabled={busy}
                       />
