@@ -49,7 +49,6 @@ export default function ProfileBackdropModal({
     imgSize,
     panPx,
     zoom,
-    applied,
     saving,
     err,
 
@@ -65,7 +64,6 @@ export default function ProfileBackdropModal({
     beginDrag,
     moveDrag,
     endDrag,
-    applyNow,
     saveBackdropToDb,
   } = useBackdropEditor({
     isActive: open,
@@ -148,15 +146,6 @@ export default function ProfileBackdropModal({
 
                 <button
                   type="button"
-                  disabled={!pickedUrl || !imgSize}
-                  onClick={applyNow}
-                  className="inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-full border border-slate-300 bg-white text-slate-900 hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-white"
-                >
-                  Apply
-                </button>
-
-                <button
-                  type="button"
                   disabled={!pickedUrl || saving || !imgSize}
                   onClick={saveBackdropToDb}
                   className="ml-auto inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-full bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60"
@@ -202,7 +191,6 @@ export default function ProfileBackdropModal({
                 avatarInitial={avatarInitial}
                 previewBackdropH={PREVIEW_BACKDROP_H}
                 overlaySrc="/overlays/my-overlay4.png"
-                applied={applied}
               />
 
               <div className="mt-3 text-[11px] text-slate-500">

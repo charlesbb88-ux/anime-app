@@ -47,7 +47,9 @@ export default async function handler(
       .limit(limit);
 
     if (mangaListError) {
-      throw new Error(mangaListError.message);
+      throw new Error(
+        `Failed to load manga batch: ${mangaListError.message || "Unknown error"}`
+      );
     }
 
     let success = 0;
@@ -74,11 +76,13 @@ export default async function handler(
             })
             .eq("id", mangaId);
 
-if (updateInvalidError) {
-  throw new Error(
-    `Failed to save invalid-id error for mangaId=${mangaId}: ${updateInvalidError.message}`
-  );
-}
+          if (updateInvalidError) {
+            throw new Error(
+              `Failed to save invalid-id error for mangaId=${mangaId}: ${
+                updateInvalidError.message || "Unknown error"
+              }`
+            );
+          }
         }
 
         failed++;
@@ -101,11 +105,13 @@ if (updateInvalidError) {
           })
           .eq("id", mangaId);
 
-if (markDoneError) {
-  throw new Error(
-    `Failed to mark import done for mangaId=${mangaId}: ${markDoneError.message}`
-  );
-}
+        if (markDoneError) {
+          throw new Error(
+            `Failed to mark import done for mangaId=${mangaId}: ${
+              markDoneError.message || "Unknown error"
+            }`
+          );
+        }
 
         success++;
       } catch (err: any) {
@@ -123,11 +129,13 @@ if (markDoneError) {
           })
           .eq("id", mangaId);
 
-if (markFailedError) {
-  throw new Error(
-    `Failed to save import error for mangaId=${mangaId}: ${markFailedError.message}`
-  );
-}
+        if (markFailedError) {
+          throw new Error(
+            `Failed to save import error for mangaId=${mangaId}: ${
+              markFailedError.message || "Unknown error"
+            }`
+          );
+        }
 
         failed++;
         failures.push({
@@ -145,7 +153,7 @@ if (markFailedError) {
         .not("anilist_id", "is", null);
 
     if (totalEligibleError) {
-      throw new Error(totalEligibleError.message);
+      console.error("totalEligible count failed:", totalEligibleError);
     }
 
     const { count: done, error: doneError } = await supabaseAdmin
@@ -155,7 +163,7 @@ if (markFailedError) {
       .not("anilist_tags_imported_at", "is", null);
 
     if (doneError) {
-      throw new Error(doneError.message);
+      console.error("done count failed:", doneError);
     }
 
     const { count: leftCount, error: leftError } = await supabaseAdmin
@@ -166,7 +174,7 @@ if (markFailedError) {
       .is("anilist_tags_import_error", null);
 
     if (leftError) {
-      throw new Error(leftError.message);
+      console.error("left count failed:", leftError);
     }
 
     const { count: failedTotal, error: failedTotalError } = await supabaseAdmin
@@ -177,7 +185,7 @@ if (markFailedError) {
       .not("anilist_tags_import_error", "is", null);
 
     if (failedTotalError) {
-      throw new Error(failedTotalError.message);
+      console.error("failedTotal count failed:", failedTotalError);
     }
 
     const safeTotal =
