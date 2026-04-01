@@ -848,7 +848,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                               </div>
                             )}
 
-                            <p className="whitespace-pre-line text-base text-black">
+                            <div className="whitespace-pre-line text-base text-black">
                               {communityTopSummary.content}
                               <span className="inline-flex align-baseline ml-2">
                                 <MangaChapterSummary
@@ -857,7 +857,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
                                   mode="icon"
                                 />
                               </span>
-                            </p>
+                            </div>
                           </div>
                         ) : (
                           <MangaChapterSummary
