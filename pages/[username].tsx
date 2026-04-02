@@ -78,6 +78,10 @@ export default function UserProfilePage() {
     return u ? u.toLowerCase() : "";
   }, [normalizedUsername]);
 
+  const isReservedRoute = useMemo(() => {
+    return ["admin"].includes(unameLower);
+  }, [unameLower]);
+
   const { profile, loadingProfile, notFound } = useProfileByUsername(unameLower);
 
   const canonicalHandle = useMemo(() => {
@@ -132,6 +136,19 @@ export default function UserProfilePage() {
     };
   }, []);
 
+    if (isReservedRoute) {
+    return (
+      <main className="min-h-screen flex items-center justify-center">
+        <div className="bg-white shadow-sm rounded-xl px-6 py-5">
+          <p className="text-lg font-semibold text-slate-800 mb-2">Page not found</p>
+          <p className="text-sm text-slate-500">
+            This page does not exist.
+          </p>
+        </div>
+      </main>
+    );
+  }
+  
   if (loadingProfile) {
     return (
       <main className="min-h-screen flex items-center justify-center">
