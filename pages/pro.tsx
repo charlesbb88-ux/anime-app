@@ -1,37 +1,83 @@
 export default function ProPage() {
   return (
-    <main className="mx-auto max-w-3xl px-4 py-10 text-black">
-      <h1 className="text-3xl font-bold">Pro</h1>
-      <p className="mt-3 text-base text-slate-700">
-        Support the site and get a Pro badge. More perks can come later.
-      </p>
-
-      <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-semibold">Pro</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Badge next to your username and no ads once ads are added.
-            </p>
-          </div>
-          <div className="text-right">
-            <div className="text-2xl font-bold">$5</div>
-            <div className="text-sm text-slate-500">per month</div>
-          </div>
+    <main className="min-h-screen bg-[#0b1220] text-white">
+      <div className="mx-auto max-w-6xl px-4 py-12">
+        <div className="mx-auto max-w-3xl text-center">
+          <h1 className="text-4xl font-bold tracking-tight">Choose your plan</h1>
+          <p className="mt-4 text-base text-slate-300">
+            Use the site for free, or upgrade to Pro to support the project and
+            stand out across the app.
+          </p>
         </div>
 
-        <ul className="mt-5 space-y-2 text-sm text-slate-700">
-          <li>Pro badge next to your username</li>
-          <li>No ads</li>
-          <li>Supports the site</li>
-        </ul>
+        <div className="mt-12 grid gap-6 md:grid-cols-2">
+          <section className="flex h-full flex-col rounded-2xl border border-slate-700 bg-slate-900/70 shadow-sm">
+            <div className="border-b border-slate-700 px-6 py-6">
+              <div className="inline-flex rounded-md bg-slate-700 px-3 py-1 text-sm font-bold tracking-wide text-white">
+                FREE
+              </div>
 
-        <button
-          type="button"
-          className="mt-6 inline-flex items-center justify-center rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white"
-        >
-          Coming soon
-        </button>
+              <h2 className="mt-5 text-2xl font-semibold">Free</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-300">
+                Everything needed to use the site normally.
+              </p>
+            </div>
+
+            <div className="flex-1 px-6 py-6">
+              <ul className="space-y-3 text-sm text-slate-200">
+                <li>Log anime and manga</li>
+                <li>Write reviews and ratings</li>
+                <li>Use your profile and activity feed</li>
+                <li>Take part in battles and progression systems</li>
+              </ul>
+            </div>
+
+            <div className="border-t border-slate-700 bg-slate-800/70 px-6 py-6">
+              <div className="text-4xl font-bold">$0</div>
+              <div className="mt-1 text-sm text-slate-300">Forever free</div>
+
+              <button
+                type="button"
+                className="mt-6 inline-flex w-full items-center justify-center rounded-xl border border-slate-600 bg-slate-700 px-4 py-3 text-sm font-semibold text-white"
+              >
+                Current base plan
+              </button>
+            </div>
+          </section>
+
+          <section className="flex h-full flex-col rounded-2xl border border-cyan-500/50 bg-slate-900/70 shadow-sm">
+            <div className="border-b border-slate-700 px-6 py-6">
+              <div className="inline-flex rounded-md bg-cyan-500 px-3 py-1 text-sm font-bold tracking-wide text-slate-950">
+                PRO
+              </div>
+
+              <h2 className="mt-5 text-2xl font-semibold">Pro</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-300">
+                A simple way to support the site and show it on your account.
+              </p>
+            </div>
+
+            <div className="flex-1 px-6 py-6">
+              <ul className="space-y-3 text-sm text-slate-200">
+                <li>PRO badge next to your username</li>
+                <li>No ads once ads are added</li>
+                <li>Supports future development of the site</li>
+              </ul>
+            </div>
+
+            <div className="border-t border-slate-700 bg-slate-800/70 px-6 py-6">
+              <div className="text-4xl font-bold">$5</div>
+              <div className="mt-1 text-sm text-slate-300">Per month</div>
+
+              <button
+                type="button"
+                className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-cyan-500 px-4 py-3 text-sm font-semibold text-slate-950"
+              >
+                Coming soon
+              </button>
+            </div>
+          </section>
+        </div>
       </div>
     </main>
   );
