@@ -111,12 +111,17 @@ export default function MCLayout({ userId }: Props) {
       setError(null);
 
       try {
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
+        let user = null;
 
-        if (userError) throw userError;
+        try {
+          const {
+            data: { user: authUser },
+          } = await supabase.auth.getUser();
+
+          user = authUser ?? null;
+        } catch {
+          user = null;
+        }
 
         if (!cancelled) {
           setViewerId(user?.id ?? null);
@@ -149,12 +154,12 @@ export default function MCLayout({ userId }: Props) {
           supabase.rpc("get_account_xp_breakdown", { p_user_id: userId }),
         ]);
 
-        if (accountError) console.error("accountError", accountError);
-        if (affinityError) console.error("affinityError", affinityError);
-        if (baseStatsError) console.error("baseStatsError", baseStatsError);
-        if (combatStatsError) console.error("combatStatsError", combatStatsError);
-        if (profileError) console.error("profileError", profileError);
-        if (xpBreakdownError) console.error("xpBreakdownError", xpBreakdownError);
+        if (accountError) throw accountError;
+        if (affinityError) throw affinityError;
+        if (baseStatsError) throw baseStatsError;
+        if (combatStatsError) throw combatStatsError;
+        if (profileError) throw profileError;
+        if (xpBreakdownError) throw xpBreakdownError;
 
         const rawAccount = ((accountData as any[] | null) ?? [])[0] ?? null;
 
