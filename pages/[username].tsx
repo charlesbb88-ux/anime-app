@@ -136,7 +136,7 @@ export default function UserProfilePage() {
     };
   }, []);
 
-    if (isReservedRoute) {
+  if (isReservedRoute) {
     return (
       <main className="min-h-screen flex items-center justify-center">
         <div className="bg-white shadow-sm rounded-xl px-6 py-5">
@@ -148,7 +148,7 @@ export default function UserProfilePage() {
       </main>
     );
   }
-  
+
   if (loadingProfile) {
     return (
       <main className="min-h-screen flex items-center justify-center">
@@ -178,6 +178,7 @@ export default function UserProfilePage() {
         profileId={profile.id}
         username={profile.username}
         avatarUrl={profile.avatar_url}
+        isPro={profile.is_pro ?? false}
         backdropUrl={profile.backdrop_url}
         backdropPosX={profile.backdrop_pos_x}
         backdropPosY={profile.backdrop_pos_y}

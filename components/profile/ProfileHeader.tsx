@@ -17,6 +17,7 @@ type Props = {
 
   username: string;
   avatarUrl: string | null;
+  isPro?: boolean | null;
 
   backdropUrl: string | null;
   backdropPosX: number | null;
@@ -37,6 +38,7 @@ export default function ProfileHeader({
   profileId,
   username,
   avatarUrl,
+  isPro,
   backdropUrl,
   backdropPosX,
   backdropPosY,
@@ -57,6 +59,7 @@ export default function ProfileHeader({
       backdropZoom={backdropZoom}
       username={username}
       avatarUrl={avatarUrl}
+      isPro={isPro}
       hideTabs
       belowUsername={
         !isOwner ? (

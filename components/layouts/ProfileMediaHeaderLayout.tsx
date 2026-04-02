@@ -5,6 +5,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "re
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { computePanLimits, pctToPanPxForRender } from "@/lib/settings/backdropMath";
+import ProBadge from "@/components/pro/ProBadge";
 
 type Tab = "posts" | "watchlist" | "activity" | "journal" | "library" | "completions";
 
@@ -21,6 +22,7 @@ type Props = {
 
   username: string;
   avatarUrl: string | null;
+  isPro?: boolean | null;
 
   /** optional; if not provided, we infer from router.asPath */
   activeTab?: Tab;
@@ -77,6 +79,7 @@ export default function ProfileMediaHeaderLayout({
 
   username,
   avatarUrl,
+  isPro,
   activeTab,
 
   overlaySrc = "/overlays/my-overlay4.png",
@@ -400,7 +403,10 @@ export default function ProfileMediaHeaderLayout({
                       : { marginTop: -12 }
                   }
                 >
-                  {username}
+                  <span className="inline-flex items-center gap-2">
+                    <span>{username}</span>
+                    <ProBadge isPro={isPro} />
+                  </span>
                 </div>
                 {/* ✅ PHONE: reserve identical space whether FollowButton exists or not */}
                 {isPhone ? (

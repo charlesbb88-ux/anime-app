@@ -8,6 +8,7 @@ export type Profile = {
     id: string;
     username: string;
     avatar_url: string | null;
+    is_pro: boolean | null;
     created_at: string;
 
     backdrop_url: string | null;
@@ -40,9 +41,9 @@ export function useProfileByUsername(unameLower: string) {
 
 const { data: row, error } = await supabase
     .from("profiles")
-    .select(
-        "id, username, avatar_url, created_at, backdrop_url, backdrop_pos_x, backdrop_pos_y, backdrop_zoom, about_markdown, about_html, followers_count, following_count, pinned_post_id"
-    )
+.select(
+    "id, username, avatar_url, is_pro, created_at, backdrop_url, backdrop_pos_x, backdrop_pos_y, backdrop_zoom, about_markdown, about_html, followers_count, following_count, pinned_post_id"
+)
     .eq("username", unameLower)
     .maybeSingle();
 
