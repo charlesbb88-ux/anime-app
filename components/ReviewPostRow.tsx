@@ -7,6 +7,7 @@ import { Heart, Pin } from "lucide-react";
 import ActionRow from "./ActionRow";
 import RichPostRenderer from "@/components/composer/RichPostRenderer";
 import PostAttachments from "@/components/composer/PostAttachments";
+import UsernameLink from "@/components/user/UsernameLink";
 
 const POSTER_W = 72;
 const POSTER_H = 108;
@@ -36,6 +37,7 @@ export type ReviewPostRowProps = {
 
   displayName: string;
   username?: string;
+  isPro?: boolean | null;
   avatarUrl?: string | null;
   initial: string;
 
@@ -363,6 +365,7 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
 
     displayName,
     username,
+    isPro,
     avatarUrl,
     initial,
 
@@ -708,16 +711,12 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
               }}
             >
               {username ? (
-                <Link
-                  href={`/${username}`}
+                <span
                   onClick={(e) => e.stopPropagation()}
                   style={{
                     fontSize: nameFontSize,
                     fontWeight: 500,
                     color: "#333",
-                    textDecoration: "none",
-
-                    // ✅ keeps insane long names from breaking the layout
                     display: "inline-block",
                     maxWidth: isMobile ? "100%" : undefined,
                     overflow: isMobile ? "hidden" : undefined,
@@ -725,16 +724,14 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
                     whiteSpace: isMobile ? "nowrap" : undefined,
                   }}
                 >
-                  {displayName}
-                </Link>
+                  <UsernameLink username={username} isPro={isPro} />
+                </span>
               ) : (
                 <span
                   style={{
                     fontSize: nameFontSize,
                     fontWeight: 500,
                     color: "#333",
-
-                    // ✅ keeps insane long names from breaking the layout
                     display: "inline-block",
                     maxWidth: isMobile ? "100%" : undefined,
                     overflow: isMobile ? "hidden" : undefined,

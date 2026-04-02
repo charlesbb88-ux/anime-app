@@ -7,6 +7,7 @@ import ActionRow from "./ActionRow";
 import RichPostRenderer from "@/components/composer/RichPostRenderer";
 import PostAttachments from "@/components/composer/PostAttachments";
 import { Pin } from "lucide-react";
+import UsernameLink from "@/components/user/UsernameLink";
 
 export type CommentRowProps = {
   id: string;
@@ -26,6 +27,8 @@ export type CommentRowProps = {
 
   // canonical handle (lowercase, no @) for profile link
   username?: string;
+
+  isPro?: boolean | null;
 
   // avatar URL (if we have it)
   avatarUrl?: string | null;
@@ -124,6 +127,7 @@ export default function CommentRow(props: CommentRowProps) {
     displayName,
     initial,
     username,
+    isPro,
     avatarUrl,
     isMain = false,
     isOwner = false,
@@ -290,18 +294,19 @@ export default function CommentRow(props: CommentRowProps) {
           >
             {/* display name / handle */}
             {username ? (
-              <Link
-                href={`/${username}`}
+              <span
                 onClick={(e) => e.stopPropagation()}
                 style={{
                   fontSize: nameFontSize,
                   fontWeight: 500,
                   color: "#333",
-                  textDecoration: "none",
                 }}
               >
-                {displayName}
-              </Link>
+                <UsernameLink
+                  username={username}
+                  isPro={isPro}
+                />
+              </span>
             ) : (
               <span
                 style={{

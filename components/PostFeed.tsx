@@ -51,6 +51,7 @@ type Profile = {
   id: string;
   username: string | null;
   avatar_url: string | null;
+  is_pro: boolean | null;
 };
 
 type AnimeMeta = {
@@ -205,6 +206,8 @@ export default function PostFeed({
   const [avatarUrlsById, setAvatarUrlsById] = useState<Record<string, string | null>>(
     {}
   );
+
+  const [isProByUserId, setIsProByUserId] = useState<Record<string, boolean>>({});
 
   const [currentUserAvatarUrl, setCurrentUserAvatarUrl] = useState<string | null>(
     null
@@ -615,7 +618,7 @@ export default function PostFeed({
       if (newUserIds.length > 0) {
         const { data: profilesData, error: profilesError } = await supabase
           .from("profiles")
-          .select("id, username, avatar_url")
+          .select("id, username, avatar_url, is_pro")
           .in("id", newUserIds);
 
         if (!profilesError) {
@@ -631,6 +634,14 @@ export default function PostFeed({
             const next = isInitial ? {} : { ...prev };
             (profilesData || []).forEach((profile: Profile) => {
               next[profile.id] = profile.avatar_url ?? null;
+            });
+            return next;
+          });
+
+          setIsProByUserId((prev) => {
+            const next = isInitial ? {} : { ...prev };
+            (profilesData || []).forEach((profile: Profile) => {
+              next[profile.id] = !!profile.is_pro;
             });
             return next;
           });
@@ -1250,6 +1261,7 @@ export default function PostFeed({
                     displayName={displayName}
                     initial={initial}
                     username={handle ?? undefined}
+                    isPro={isProByUserId[p.user_id] ?? false}
                     avatarUrl={avatarUrl ?? null}
                     originLabel={originLabel}
                     originHref={originHref}
@@ -1290,6 +1302,7 @@ export default function PostFeed({
                     displayName={displayName}
                     initial={initial}
                     username={handle ?? undefined}
+                    isPro={isProByUserId[p.user_id] ?? false}
                     avatarUrl={avatarUrl}
                     isOwner={!!isOwner}
                     href={`/posts/${p.id}`}
