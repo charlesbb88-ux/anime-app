@@ -149,12 +149,12 @@ export default function MCLayout({ userId }: Props) {
           supabase.rpc("get_account_xp_breakdown", { p_user_id: userId }),
         ]);
 
-        if (accountError) throw accountError;
-        if (affinityError) throw affinityError;
-        if (baseStatsError) throw baseStatsError;
-        if (combatStatsError) throw combatStatsError;
-        if (profileError) throw profileError;
-        if (xpBreakdownError) throw xpBreakdownError;
+        if (accountError) console.error("accountError", accountError);
+        if (affinityError) console.error("affinityError", affinityError);
+        if (baseStatsError) console.error("baseStatsError", baseStatsError);
+        if (combatStatsError) console.error("combatStatsError", combatStatsError);
+        if (profileError) console.error("profileError", profileError);
+        if (xpBreakdownError) console.error("xpBreakdownError", xpBreakdownError);
 
         const rawAccount = ((accountData as any[] | null) ?? [])[0] ?? null;
 
