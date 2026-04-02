@@ -4,6 +4,8 @@ import { useMemo, useState, useRef, useEffect } from "react";
 import type { McBattleCardRow } from "@/components/mc/battles/mcBattleTypes";
 import McBattleReplayStage from "@/components/mc/battles/McBattleReplayStage";
 import type { McBattleUserMetaMap } from "@/hooks/useMcBattleUserMetaMap";
+import UsernameLink from "@/components/user/UsernameLink";
+import ProBadge from "@/components/pro/ProBadge";
 
 type Props = {
   battle: McBattleCardRow;
@@ -22,6 +24,7 @@ function FighterDetailsBlock({
   level,
   xp,
   title,
+  isPro,
 }: {
   align: "left" | "right";
   username: string;
@@ -31,6 +34,7 @@ function FighterDetailsBlock({
   level: number;
   xp: number;
   title: string;
+  isPro?: boolean | null;
 }) {
   const isRight = align === "right";
   const href = `/${username}`;
@@ -58,7 +62,15 @@ function FighterDetailsBlock({
       )}
 
       <div className={isRight ? "text-right" : "text-left"}>
-        <div className="text-lg font-medium text-black">{username}</div>
+        <div className="text-lg font-medium text-black">
+          <a
+            href={`/${username}`}
+            className={`inline-flex items-center gap-1 ${isRight ? "flex-row-reverse" : ""}`}
+          >
+            <span>{username}</span>
+            <ProBadge isPro={isPro} />
+          </a>
+        </div>
         <div className="text-sm text-black/60">{title}</div>
 
         <div className="text-sm">
@@ -183,6 +195,7 @@ export default function McBattleReplayCard({
               level={challengerMeta?.level ?? 1}
               xp={challengerMeta?.xp ?? 0}
               title={challengerMeta?.title ?? "Unranked Wanderer"}
+              isPro={challengerMeta?.isPro ?? false}
             />
 
             <FighterDetailsBlock
@@ -194,6 +207,7 @@ export default function McBattleReplayCard({
               level={defenderMeta?.level ?? 1}
               xp={defenderMeta?.xp ?? 0}
               title={defenderMeta?.title ?? "Unranked Wanderer"}
+              isPro={defenderMeta?.isPro ?? false}
             />
           </div>
         )}

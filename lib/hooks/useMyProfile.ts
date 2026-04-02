@@ -9,6 +9,7 @@ export type ProfileRow = {
   username: string;
   avatar_url: string | null;
   bio: string | null;
+  is_pro: boolean | null;
   created_at: string;
 
   backdrop_url: string | null;
@@ -32,6 +33,7 @@ function isProfileRow(x: any): x is ProfileRow {
     // these can be null, but must exist as keys in the object
     "avatar_url" in x &&
     "bio" in x &&
+    "is_pro" in x &&
     typeof x.created_at === "string" &&
     "backdrop_url" in x &&
     "backdrop_pos_x" in x &&
@@ -84,6 +86,7 @@ export function useMyProfile() {
             "username",
             "avatar_url",
             "bio",
+            "is_pro",
             "created_at",
             "backdrop_url",
             "backdrop_pos_x",

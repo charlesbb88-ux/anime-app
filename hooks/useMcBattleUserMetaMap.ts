@@ -9,6 +9,7 @@ type RawMetaRow = {
   user_id: string;
   username: string | null;
   avatar_url: string | null;
+  is_pro: boolean | null;
   wins: number | null;
   losses: number | null;
   account_level: number | null;
@@ -32,6 +33,7 @@ export type McBattleUserMeta = {
   userId: string;
   username: string;
   avatarUrl: string | null;
+  isPro: boolean;
   wins: number;
   losses: number;
   level: number;
@@ -144,6 +146,7 @@ export function useMcBattleUserMetaMap(userIds: string[]) {
           {
             username: string;
             avatarUrl: string | null;
+            isPro: boolean;
             wins: number;
             losses: number;
             level: number;
@@ -159,6 +162,7 @@ export function useMcBattleUserMetaMap(userIds: string[]) {
             baseMap.set(userId, {
               username: row.username ?? "Player",
               avatarUrl: row.avatar_url ?? null,
+              isPro: !!row.is_pro,
               wins: safeNumber(row.wins, 0),
               losses: safeNumber(row.losses, 0),
               level: safeNumber(row.account_level, 1),
@@ -186,6 +190,7 @@ export function useMcBattleUserMetaMap(userIds: string[]) {
             baseMap.set(userId, {
               username: "Player",
               avatarUrl: null,
+              isPro: false,
               wins: 0,
               losses: 0,
               level: 1,
@@ -221,6 +226,7 @@ export function useMcBattleUserMetaMap(userIds: string[]) {
             userId,
             username: base.username,
             avatarUrl: base.avatarUrl,
+            isPro: base.isPro,
             wins: base.wins,
             losses: base.losses,
             level: base.level,

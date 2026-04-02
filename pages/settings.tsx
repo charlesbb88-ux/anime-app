@@ -10,8 +10,9 @@ import SettingsAvatarTab from "@/components/settings/SettingsAvatarTab";
 import SettingsBannerTab from "@/components/settings/SettingsBannerTab";
 import ProfileAboutEditor from "@/components/profile/ProfileAboutEditor";
 import { useMyProfile } from "@/lib/hooks/useMyProfile";
+import SettingsSubscriptionTab from "@/components/settings/SettingsSubscriptionTab";
 
-type TabKey = "profile" | "about" | "avatar" | "banner";
+type TabKey = "profile" | "about" | "avatar" | "banner" | "subscription";
 
 const SettingsPage: NextPage = () => {
   const { authUser, profile, loading, error, setProfileOptimistic } = useMyProfile();
@@ -94,6 +95,15 @@ const SettingsPage: NextPage = () => {
                     Banner
                   </button>
                 </li>
+                <li className={tabLiClass("subscription")}>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("subscription")}
+                    className="focus:outline-none"
+                  >
+                    Subscription
+                  </button>
+                </li>
               </ul>
             </nav>
           </div>
@@ -130,13 +140,15 @@ const SettingsPage: NextPage = () => {
                   })
                 }
               />
-            ) : (
+            ) : activeTab === "banner" ? (
               <SettingsBannerTab
                 userId={profile.id}
                 username={profile.username}
                 avatarUrl={profile.avatar_url}
                 isActive={activeTab === "banner"}
               />
+            ) : (
+              <SettingsSubscriptionTab isPro={profile.is_pro} />
             )}
           </div>
         </section>
