@@ -49,7 +49,7 @@ export default function SettingsSubscriptionTab({ isPro }: Props) {
               Upgrade to Pro
             </div>
             <div className="text-xs text-slate-600">
-              Get a PRO badge next to your username.
+              Get a PRO badge next to your username and no ads.
             </div>
 
             <Link
