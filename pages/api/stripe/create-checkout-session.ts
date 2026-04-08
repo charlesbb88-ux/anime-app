@@ -58,8 +58,8 @@ export default async function handler(
           quantity: 1,
         },
       ],
-      success_url: "https://inkbased.app/pro?success=1",
-      cancel_url: "https://inkbased.app/pro?canceled=1",
+      success_url: "https://www.inkbased.app/pro?success=1",
+      cancel_url: "https://www.inkbased.app/pro?canceled=1",
       customer_email: user.email,
       client_reference_id: user.id,
       metadata: {
