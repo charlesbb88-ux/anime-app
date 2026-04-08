@@ -8,11 +8,11 @@ type Props = {
 
 export default function SettingsSubscriptionTab({ isPro }: Props) {
   return (
-    <div className="max-w-xl space-y-4 bg-white rounded-xs border-2 border-black p-5">
+    <div className="max-w-xl space-y-4">
       {isPro ? (
         <>
-          {/* Header */}
-          <div className="space-y-1">
+          {/* Header box */}
+          <div className="bg-white rounded-xs border-2 border-black p-5 space-y-1">
             <div className="text-sm font-semibold text-blue-600">
               Pro Active
             </div>
@@ -22,7 +22,7 @@ export default function SettingsSubscriptionTab({ isPro }: Props) {
           </div>
 
           {/* Plan box */}
-          <div className="rounded-xs border-2 border-black bg-slate-50 p-4 space-y-1">
+          <div className="bg-slate-50 rounded-xs border-2 border-black p-4 space-y-1">
             <div className="text-xs font-semibold text-slate-900">
               Current plan
             </div>
@@ -33,8 +33,8 @@ export default function SettingsSubscriptionTab({ isPro }: Props) {
         </>
       ) : (
         <>
-          {/* Header */}
-          <div className="space-y-1">
+          {/* Header box */}
+          <div className="bg-white rounded-xs border-2 border-black p-5 space-y-1">
             <div className="text-sm font-semibold text-slate-900">
               Free Plan
             </div>
@@ -44,7 +44,7 @@ export default function SettingsSubscriptionTab({ isPro }: Props) {
           </div>
 
           {/* Upgrade box */}
-          <div className="rounded-xs border-2 border-black bg-slate-50 p-4 space-y-2">
+          <div className="bg-slate-50 rounded-xs border-2 border-black p-4 space-y-2">
             <div className="text-xs font-semibold text-slate-900">
               Upgrade to Pro
             </div>
