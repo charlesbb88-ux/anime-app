@@ -40,6 +40,13 @@ function getSubscriptionPriceId(subscription: Stripe.Subscription): string | nul
   return firstItem?.price?.id ?? null;
 }
 
+function getSubscriptionPeriodEnd(subscription: Stripe.Subscription): number | null {
+  const firstItem = subscription.items.data[0];
+  return typeof firstItem?.current_period_end === "number"
+    ? firstItem.current_period_end
+    : null;
+}
+
 function unixToIso(value: number | null | undefined): string | null {
   return typeof value === "number"
     ? new Date(value * 1000).toISOString()
@@ -56,6 +63,7 @@ async function updateProfileByUserId(
     stripe_subscription_status?: string | null;
     stripe_cancel_at_period_end?: boolean | null;
     stripe_current_period_end?: string | null;
+    stripe_cancel_at?: string | null;
   }
 ) {
   const { error } = await supabaseAdmin
@@ -117,6 +125,7 @@ export default async function handler(
         let stripeSubscriptionStatus: string | null = null;
         let stripeCancelAtPeriodEnd: boolean | null = null;
         let stripeCurrentPeriodEnd: string | null = null;
+        let stripeCancelAt: string | null = null;
 
         if (stripeSubscriptionId) {
           const subscription = await stripe.subscriptions.retrieve(
@@ -126,9 +135,8 @@ export default async function handler(
           stripePriceId = getSubscriptionPriceId(subscription);
           stripeSubscriptionStatus = subscription.status;
           stripeCancelAtPeriodEnd = subscription.cancel_at_period_end;
-stripeCurrentPeriodEnd = unixToIso(
-  subscription.items.data[0]?.current_period_end
-);
+          stripeCurrentPeriodEnd = unixToIso(getSubscriptionPeriodEnd(subscription));
+          stripeCancelAt = unixToIso(subscription.cancel_at);
         }
 
         await updateProfileByUserId(supabaseUserId, {
@@ -139,6 +147,7 @@ stripeCurrentPeriodEnd = unixToIso(
           stripe_subscription_status: stripeSubscriptionStatus,
           stripe_cancel_at_period_end: stripeCancelAtPeriodEnd,
           stripe_current_period_end: stripeCurrentPeriodEnd,
+          stripe_cancel_at: stripeCancelAt,
         });
 
         break;
@@ -163,9 +172,8 @@ stripeCurrentPeriodEnd = unixToIso(
           stripe_price_id: getSubscriptionPriceId(subscription),
           stripe_subscription_status: subscription.status,
           stripe_cancel_at_period_end: subscription.cancel_at_period_end,
-stripe_current_period_end: unixToIso(
-  subscription.items.data[0]?.current_period_end
-),
+          stripe_current_period_end: unixToIso(getSubscriptionPeriodEnd(subscription)),
+          stripe_cancel_at: unixToIso(subscription.cancel_at),
         });
 
         break;
@@ -191,6 +199,7 @@ stripe_current_period_end: unixToIso(
           stripe_subscription_status: subscription.status,
           stripe_cancel_at_period_end: false,
           stripe_current_period_end: null,
+          stripe_cancel_at: null,
         });
 
         break;

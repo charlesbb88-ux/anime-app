@@ -12,6 +12,7 @@ type ProfileBillingRow = {
   is_pro: boolean | null;
   stripe_cancel_at_period_end: boolean | null;
   stripe_current_period_end: string | null;
+  stripe_cancel_at: string | null;
 };
 
 export default function SettingsSubscriptionTab({ isPro }: Props) {
@@ -22,6 +23,7 @@ export default function SettingsSubscriptionTab({ isPro }: Props) {
     is_pro: Boolean(isPro),
     stripe_cancel_at_period_end: false,
     stripe_current_period_end: null,
+    stripe_cancel_at: null,
   });
 
   useEffect(() => {
@@ -47,6 +49,7 @@ export default function SettingsSubscriptionTab({ isPro }: Props) {
               is_pro: false,
               stripe_cancel_at_period_end: false,
               stripe_current_period_end: null,
+              stripe_cancel_at: null,
             });
           }
           return;
@@ -54,7 +57,9 @@ export default function SettingsSubscriptionTab({ isPro }: Props) {
 
         const { data, error: profileError } = await supabase
           .from("profiles")
-          .select("is_pro, stripe_cancel_at_period_end, stripe_current_period_end")
+          .select(
+            "is_pro, stripe_cancel_at_period_end, stripe_current_period_end, stripe_cancel_at"
+          )
           .eq("id", user.id)
           .single();
 
@@ -69,6 +74,7 @@ export default function SettingsSubscriptionTab({ isPro }: Props) {
             is_pro: Boolean(profile?.is_pro),
             stripe_cancel_at_period_end: Boolean(profile?.stripe_cancel_at_period_end),
             stripe_current_period_end: profile?.stripe_current_period_end ?? null,
+            stripe_cancel_at: profile?.stripe_cancel_at ?? null,
           });
         }
       } catch (err) {
@@ -81,6 +87,7 @@ export default function SettingsSubscriptionTab({ isPro }: Props) {
             is_pro: Boolean(isPro),
             stripe_cancel_at_period_end: false,
             stripe_current_period_end: null,
+            stripe_cancel_at: null,
           });
         }
       } finally {
@@ -146,12 +153,15 @@ export default function SettingsSubscriptionTab({ isPro }: Props) {
 
   const isProActive = Boolean(billingState.is_pro);
 
-  const formattedPeriodEnd = useMemo(() => {
-    if (!billingState.stripe_current_period_end) {
+  const cancellationDate = useMemo(() => {
+    const rawDate =
+      billingState.stripe_cancel_at || billingState.stripe_current_period_end;
+
+    if (!rawDate) {
       return null;
     }
 
-    const date = new Date(billingState.stripe_current_period_end);
+    const date = new Date(rawDate);
 
     if (Number.isNaN(date.getTime())) {
       return null;
@@ -162,7 +172,11 @@ export default function SettingsSubscriptionTab({ isPro }: Props) {
       month: "long",
       day: "numeric",
     });
-  }, [billingState.stripe_current_period_end]);
+  }, [billingState.stripe_cancel_at, billingState.stripe_current_period_end]);
+
+  const hasCancellationScheduled =
+    Boolean(billingState.stripe_cancel_at_period_end) ||
+    Boolean(billingState.stripe_cancel_at);
 
   return (
     <div className="max-w-xl space-y-4">
@@ -173,7 +187,7 @@ export default function SettingsSubscriptionTab({ isPro }: Props) {
               Pro Active
             </div>
 
-            {billingState.stripe_cancel_at_period_end ? (
+            {hasCancellationScheduled ? (
               <>
                 <p className="text-xs text-slate-700">
                   Your subscription has been canceled, but Pro is still active for now.
@@ -184,8 +198,8 @@ export default function SettingsSubscriptionTab({ isPro }: Props) {
                     Cancellation scheduled
                   </div>
                   <div className="mt-1 text-xs text-amber-700">
-                    {formattedPeriodEnd
-                      ? `You will keep Pro until ${formattedPeriodEnd}.`
+                    {cancellationDate
+                      ? `You will keep Pro until ${cancellationDate}.`
                       : "You will keep Pro until the end of your current billing period."}
                   </div>
                 </div>
@@ -206,9 +220,9 @@ export default function SettingsSubscriptionTab({ isPro }: Props) {
               Pro badge next to your username and no ads.
             </div>
 
-            {billingState.stripe_cancel_at_period_end && formattedPeriodEnd ? (
+            {hasCancellationScheduled && cancellationDate ? (
               <div className="text-xs text-slate-700">
-                Access ends on <span className="font-semibold">{formattedPeriodEnd}</span>.
+                Access ends on <span className="font-semibold">{cancellationDate}</span>.
               </div>
             ) : null}
 
