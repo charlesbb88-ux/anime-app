@@ -639,7 +639,10 @@ export default function MCLayout({ userId }: Props) {
               <div className="order-3 flex flex-col gap-2 lg:order-none lg:col-start-3">
                 <AbilitiesCard />
                 <CombatStatsCard stats={combatStats} />
-                <AffinitiesCard affinities={affinities} />
+                <AffinitiesCard
+                  affinities={affinities}
+                  viewAllHref={`/${username}/affinities`}
+                />
               </div>
               <div className="order-4 mt-2 lg:col-span-3 min-w-0">
                 <div className="mb-4 flex items-center justify-between">
