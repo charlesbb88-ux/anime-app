@@ -427,12 +427,6 @@ export default function MangaChapterPhoneLayout(props: {
           </div>
 
           <div className="mt-4 flex items-center gap-4">
-            <Link
-              href={`/manga/${slug}/art`}
-              className="text-sm text-blue-500 hover:underline"
-            >
-              Art
-            </Link>
           </div>
         </div>
       </div>

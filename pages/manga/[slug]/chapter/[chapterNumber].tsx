@@ -903,9 +903,6 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
         </div>
 
         <div className="mt-3 flex items-center gap-4">
-          <Link href={`/manga/${slugString}/art`} className="text-sm text-blue-500 hover:underline">
-            Art
-          </Link>
         </div>
       </div>
     </>

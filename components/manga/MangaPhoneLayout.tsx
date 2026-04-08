@@ -360,16 +360,6 @@ export default function MangaPhoneLayout(props: {
 
                     {/* Footer links */}
                     <div className="mt-4 flex items-center gap-4">
-                        <Link
-                            href={`/manga/${slug}/art`}
-                            className="text-sm text-blue-500 hover:underline"
-                        >
-                            Art
-                        </Link>
-
-                        <Link href="/" className="text-xs text-blue-400 hover:text-blue-300">
-                            ← Back home
-                        </Link>
                     </div>
                 </div>
             </div>
