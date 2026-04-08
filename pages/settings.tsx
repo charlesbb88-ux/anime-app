@@ -54,7 +54,7 @@ const SettingsPage: NextPage = () => {
 
   const tabLiClass = (tab: TabKey) =>
     [
-      "pb-1 text-xs sm:text-md font-semibold tracking-wide uppercase border-b-2",
+      "pb-1 text-sm sm:text-md font-semibold tracking-wide uppercase border-b-2",
       activeTab === tab
         ? "border-slate-900 text-slate-900"
         : "border-transparent text-slate-400 hover:text-slate-900",
@@ -71,7 +71,7 @@ const SettingsPage: NextPage = () => {
 
           <div className="mt-4 flex items-start justify-between gap-4">
             <nav aria-label="Account settings tabs" className="flex-1">
-              <ul className="flex flex-nowrap gap-3 sm:gap-6 overflow-x-auto">
+              <ul className="flex flex-nowrap gap-5 sm:gap-6 overflow-x-auto">
                 <li className={tabLiClass("profile")}>
                   <button type="button" onClick={() => setActiveTab("profile")} className="focus:outline-none">
                     Profile
