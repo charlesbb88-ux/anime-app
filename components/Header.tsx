@@ -231,7 +231,7 @@ export default function Header({ transparent = false }: { transparent?: boolean 
 
   const menuLinks = baseProfilePath
     ? [
-      { label: "Posts", href: baseProfilePath },
+      { label: "Profile", href: baseProfilePath },
       { label: "MC", href: `${baseProfilePath}/mc` },
       { label: "Battles", href: `${baseProfilePath}/battles` },
       { label: "Completions", href: `${baseProfilePath}/completions` },

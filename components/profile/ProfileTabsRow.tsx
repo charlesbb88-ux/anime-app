@@ -178,7 +178,7 @@ export default function ProfileTabsRow({
         onDragStart={handleDragStart}
       >
         <div className={innerClass}>
-          <Tab href={baseProfilePath} active={computedActive === "posts"} label="Posts" />
+          <Tab href={baseProfilePath} active={computedActive === "posts"} label="Profile" />
           <Tab href={`${baseProfilePath}/mc`} active={computedActive === "mc"} label="MC" />
           <Tab href={`${baseProfilePath}/battles`} active={computedActive === "battles"} label="Battles" />
           <Tab

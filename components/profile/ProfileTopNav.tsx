@@ -7,14 +7,14 @@ type Props = {
   avatarUrl: string | null;
   bio?: string | null;
   activeTab?:
-    | "posts"
-    | "watchlist"
-    | "activity"
-    | "journal"
-    | "library"
-    | "completions"
-    | "mc"
-    | "battles";
+  | "posts"
+  | "watchlist"
+  | "activity"
+  | "journal"
+  | "library"
+  | "completions"
+  | "mc"
+  | "battles";
 };
 
 export default function ProfileTopNav({
@@ -36,11 +36,10 @@ export default function ProfileTopNav({
   const baseProfilePath = `/${username}`;
 
   function tabClass(isActive: boolean) {
-    return `pb-.5 ${
-      isActive
+    return `pb-.5 ${isActive
         ? "border-b-2 border-black text-black"
         : "text-slate-500 hover:text-black"
-    }`;
+      }`;
   }
 
   const currentTab = useMemo(() => {
@@ -123,7 +122,7 @@ export default function ProfileTopNav({
               ref={currentTab === "posts" ? activeTabRef : null}
               className={tabClass(currentTab === "posts")}
             >
-              Posts
+              Profile
             </Link>
 
             <Link
