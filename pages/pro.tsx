@@ -1,29 +1,103 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useRouter } from "next/router";
+
+type ProfileRow = {
+    is_pro: boolean | null;
+};
 
 export default function ProPage() {
     const [isLoadingCheckout, setIsLoadingCheckout] = useState(false);
+    const [isLoadingPortal, setIsLoadingPortal] = useState(false);
+    const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+    const [isPro, setIsPro] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
+    const router = useRouter();
+    const { success, canceled } = router.query;
+
+    useEffect(() => {
+        let isMounted = true;
+
+        async function loadProfile() {
+            try {
+                setIsLoadingProfile(true);
+                setError(null);
+
+                const {
+                    data: { user },
+                    error: userError,
+                } = await supabase.auth.getUser();
+
+                if (userError) {
+                    throw new Error(userError.message);
+                }
+
+                if (!user) {
+                    if (isMounted) {
+                        setIsPro(false);
+                    }
+                    return;
+                }
+
+                const { data, error: profileError } = await supabase
+                    .from("profiles")
+                    .select("is_pro")
+                    .eq("id", user.id)
+                    .single<ProfileRow>();
+
+                if (profileError) {
+                    throw new Error(profileError.message);
+                }
+
+                if (isMounted) {
+                    setIsPro(Boolean(data?.is_pro));
+                }
+            } catch (err) {
+                const message =
+                    err instanceof Error ? err.message : "Something went wrong.";
+                if (isMounted) {
+                    setError(message);
+                    setIsPro(false);
+                }
+            } finally {
+                if (isMounted) {
+                    setIsLoadingProfile(false);
+                }
+            }
+        }
+
+        loadProfile();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
+    async function getAccessToken(): Promise<string> {
+        const {
+            data: { session },
+            error: sessionError,
+        } = await supabase.auth.getSession();
+
+        if (sessionError) {
+            throw new Error(sessionError.message);
+        }
+
+        const accessToken = session?.access_token;
+
+        if (!accessToken) {
+            throw new Error("You must be signed in.");
+        }
+
+        return accessToken;
+    }
 
     async function handleSubscribe() {
         try {
             setIsLoadingCheckout(true);
             setError(null);
 
-            const {
-                data: { session },
-                error: sessionError,
-            } = await supabase.auth.getSession();
-
-            if (sessionError) {
-                throw new Error(sessionError.message);
-            }
-
-            const accessToken = session?.access_token;
-
-            if (!accessToken) {
-                throw new Error("You must be signed in to subscribe.");
-            }
+            const accessToken = await getAccessToken();
 
             const response = await fetch("/api/stripe/create-checkout-session", {
                 method: "POST",
@@ -52,6 +126,42 @@ export default function ProPage() {
         }
     }
 
+    async function handleManageBilling() {
+        try {
+            setIsLoadingPortal(true);
+            setError(null);
+
+            const accessToken = await getAccessToken();
+
+            const response = await fetch("/api/stripe/create-portal-session", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${accessToken}`,
+                },
+            });
+
+            const data = (await response.json()) as { url?: string; error?: string };
+
+            if (!response.ok) {
+                throw new Error(data.error || "Failed to open billing portal.");
+            }
+
+            if (!data.url) {
+                throw new Error("Billing portal URL was missing.");
+            }
+
+            window.location.href = data.url;
+        } catch (err) {
+            const message =
+                err instanceof Error ? err.message : "Something went wrong.";
+            setError(message);
+            setIsLoadingPortal(false);
+        }
+    }
+
+    const isBusy = isLoadingCheckout || isLoadingPortal || isLoadingProfile;
+
     return (
         <main className="min-h-screen bg-[#0b1220] text-white">
             <div className="mx-auto max-w-6xl px-4 py-12">
@@ -59,6 +169,18 @@ export default function ProPage() {
                     <h1 className="text-3xl font-bold tracking-tight">
                         Show your support for Inkbased by upgrading to Pro
                     </h1>
+
+                    {success === "1" ? (
+                        <div className="mt-4 rounded-md bg-green-500/10 border border-green-500/30 px-4 py-3 text-sm text-green-400">
+                            Subscription successful. You are now Pro.
+                        </div>
+                    ) : null}
+
+                    {canceled === "1" ? (
+                        <div className="mt-4 rounded-md bg-yellow-500/10 border border-yellow-500/30 px-4 py-3 text-sm text-yellow-400">
+                            Checkout canceled. No changes were made.
+                        </div>
+                    ) : null}
 
                     {error ? (
                         <p className="mt-4 text-sm text-red-400">{error}</p>
@@ -120,14 +242,33 @@ export default function ProPage() {
                             <div className="text-4xl font-bold">$5</div>
                             <div className="mt-1 text-sm text-slate-300">Per month</div>
 
-                            <button
-                                type="button"
-                                onClick={handleSubscribe}
-                                disabled={isLoadingCheckout}
-                                className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-cyan-500 px-4 py-3 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-70"
-                            >
-                                {isLoadingCheckout ? "Redirecting..." : "Subscribe"}
-                            </button>
+                            {isLoadingProfile ? (
+                                <button
+                                    type="button"
+                                    disabled
+                                    className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-cyan-500 px-4 py-3 text-sm font-semibold text-slate-950 opacity-70"
+                                >
+                                    Loading...
+                                </button>
+                            ) : isPro ? (
+                                <button
+                                    type="button"
+                                    onClick={handleManageBilling}
+                                    disabled={isBusy}
+                                    className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-cyan-500 px-4 py-3 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-70"
+                                >
+                                    {isLoadingPortal ? "Opening..." : "Manage Billing"}
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={handleSubscribe}
+                                    disabled={isBusy}
+                                    className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-cyan-500 px-4 py-3 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-70"
+                                >
+                                    {isLoadingCheckout ? "Redirecting..." : "Subscribe"}
+                                </button>
+                            )}
                         </div>
                     </section>
                 </div>
