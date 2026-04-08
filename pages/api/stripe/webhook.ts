@@ -35,6 +35,31 @@ function hasProAccess(status: string | null | undefined): boolean {
   return status === "active" || status === "trialing";
 }
 
+function getSubscriptionPriceId(subscription: Stripe.Subscription): string | null {
+  const firstItem = subscription.items.data[0];
+  return firstItem?.price?.id ?? null;
+}
+
+async function updateProfileByUserId(
+  userId: string,
+  values: {
+    is_pro?: boolean;
+    stripe_customer_id?: string | null;
+    stripe_subscription_id?: string | null;
+    stripe_price_id?: string | null;
+    stripe_subscription_status?: string | null;
+  }
+) {
+  const { error } = await supabaseAdmin
+    .from("profiles")
+    .update(values)
+    .eq("id", userId);
+
+  if (error) {
+    throw error;
+  }
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -70,20 +95,35 @@ export default async function handler(
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         const supabaseUserId = session.metadata?.supabase_user_id;
+        const stripeCustomerId =
+          typeof session.customer === "string" ? session.customer : null;
+        const stripeSubscriptionId =
+          typeof session.subscription === "string" ? session.subscription : null;
 
         if (!supabaseUserId) {
           console.error("Missing supabase_user_id in checkout.session.completed");
           break;
         }
 
-        const { error } = await supabaseAdmin
-          .from("profiles")
-          .update({ is_pro: true })
-          .eq("id", supabaseUserId);
+        let stripePriceId: string | null = null;
+        let stripeSubscriptionStatus: string | null = null;
 
-        if (error) {
-          throw error;
+        if (stripeSubscriptionId) {
+          const subscription = await stripe.subscriptions.retrieve(
+            stripeSubscriptionId
+          );
+
+          stripePriceId = getSubscriptionPriceId(subscription);
+          stripeSubscriptionStatus = subscription.status;
         }
+
+        await updateProfileByUserId(supabaseUserId, {
+          is_pro: true,
+          stripe_customer_id: stripeCustomerId,
+          stripe_subscription_id: stripeSubscriptionId,
+          stripe_price_id: stripePriceId,
+          stripe_subscription_status: stripeSubscriptionStatus,
+        });
 
         break;
       }
@@ -97,16 +137,16 @@ export default async function handler(
           break;
         }
 
-        const isPro = hasProAccess(subscription.status);
-
-        const { error } = await supabaseAdmin
-          .from("profiles")
-          .update({ is_pro: isPro })
-          .eq("id", supabaseUserId);
-
-        if (error) {
-          throw error;
-        }
+        await updateProfileByUserId(supabaseUserId, {
+          is_pro: hasProAccess(subscription.status),
+          stripe_customer_id:
+            typeof subscription.customer === "string"
+              ? subscription.customer
+              : null,
+          stripe_subscription_id: subscription.id,
+          stripe_price_id: getSubscriptionPriceId(subscription),
+          stripe_subscription_status: subscription.status,
+        });
 
         break;
       }
@@ -120,14 +160,16 @@ export default async function handler(
           break;
         }
 
-        const { error } = await supabaseAdmin
-          .from("profiles")
-          .update({ is_pro: false })
-          .eq("id", supabaseUserId);
-
-        if (error) {
-          throw error;
-        }
+        await updateProfileByUserId(supabaseUserId, {
+          is_pro: false,
+          stripe_customer_id:
+            typeof subscription.customer === "string"
+              ? subscription.customer
+              : null,
+          stripe_subscription_id: subscription.id,
+          stripe_price_id: getSubscriptionPriceId(subscription),
+          stripe_subscription_status: subscription.status,
+        });
 
         break;
       }
