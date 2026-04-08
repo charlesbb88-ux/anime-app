@@ -40,6 +40,12 @@ function getSubscriptionPriceId(subscription: Stripe.Subscription): string | nul
   return firstItem?.price?.id ?? null;
 }
 
+function unixToIso(value: number | null | undefined): string | null {
+  return typeof value === "number"
+    ? new Date(value * 1000).toISOString()
+    : null;
+}
+
 async function updateProfileByUserId(
   userId: string,
   values: {
@@ -48,6 +54,8 @@ async function updateProfileByUserId(
     stripe_subscription_id?: string | null;
     stripe_price_id?: string | null;
     stripe_subscription_status?: string | null;
+    stripe_cancel_at_period_end?: boolean | null;
+    stripe_current_period_end?: string | null;
   }
 ) {
   const { error } = await supabaseAdmin
@@ -107,6 +115,8 @@ export default async function handler(
 
         let stripePriceId: string | null = null;
         let stripeSubscriptionStatus: string | null = null;
+        let stripeCancelAtPeriodEnd: boolean | null = null;
+        let stripeCurrentPeriodEnd: string | null = null;
 
         if (stripeSubscriptionId) {
           const subscription = await stripe.subscriptions.retrieve(
@@ -115,6 +125,10 @@ export default async function handler(
 
           stripePriceId = getSubscriptionPriceId(subscription);
           stripeSubscriptionStatus = subscription.status;
+          stripeCancelAtPeriodEnd = subscription.cancel_at_period_end;
+stripeCurrentPeriodEnd = unixToIso(
+  subscription.items.data[0]?.current_period_end
+);
         }
 
         await updateProfileByUserId(supabaseUserId, {
@@ -123,6 +137,8 @@ export default async function handler(
           stripe_subscription_id: stripeSubscriptionId,
           stripe_price_id: stripePriceId,
           stripe_subscription_status: stripeSubscriptionStatus,
+          stripe_cancel_at_period_end: stripeCancelAtPeriodEnd,
+          stripe_current_period_end: stripeCurrentPeriodEnd,
         });
 
         break;
@@ -146,6 +162,10 @@ export default async function handler(
           stripe_subscription_id: subscription.id,
           stripe_price_id: getSubscriptionPriceId(subscription),
           stripe_subscription_status: subscription.status,
+          stripe_cancel_at_period_end: subscription.cancel_at_period_end,
+stripe_current_period_end: unixToIso(
+  subscription.items.data[0]?.current_period_end
+),
         });
 
         break;
@@ -169,6 +189,8 @@ export default async function handler(
           stripe_subscription_id: subscription.id,
           stripe_price_id: getSubscriptionPriceId(subscription),
           stripe_subscription_status: subscription.status,
+          stripe_cancel_at_period_end: false,
+          stripe_current_period_end: null,
         });
 
         break;
