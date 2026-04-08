@@ -1230,9 +1230,8 @@ export default function PostFeed({
               const atts = attachmentsByPostId[p.id] || [];
 
               return review ? (
-                <ImpressionWrap postId={p.id} onSeen={recordImpression}>
+                <ImpressionWrap key={p.id} postId={p.id} onSeen={recordImpression}>
                   <ReviewPostRow
-                    key={p.id}
                     postId={p.id}
                     reviewId={review.id}
                     userId={p.user_id}
@@ -1275,9 +1274,8 @@ export default function PostFeed({
                   />
                 </ImpressionWrap>
               ) : (
-                <ImpressionWrap postId={p.id} onSeen={recordImpression}>
+                <ImpressionWrap key={p.id} postId={p.id} onSeen={recordImpression}>
                   <CommentRow
-                    key={p.id}
                     id={p.id}
                     userId={p.user_id}
                     createdAt={p.created_at}

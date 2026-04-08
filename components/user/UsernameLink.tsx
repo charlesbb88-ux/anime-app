@@ -13,12 +13,12 @@ export default function UsernameLink({
   className = "",
 }: Props) {
   return (
-    <Link
-      href={`/${username}`}
-      className={`inline-flex items-center gap-1 ${className}`}
-    >
-      <span>{username}</span>
+    <span className={`inline-flex items-center gap-1 ${className}`}>
+      <Link href={`/${username}`} className="inline-flex items-center">
+        <span>{username}</span>
+      </Link>
+
       <ProBadge isPro={isPro} />
-    </Link>
+    </span>
   );
 }

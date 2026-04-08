@@ -12,6 +12,7 @@ import UsernameLink from "@/components/user/UsernameLink";
 const POSTER_W = 72;
 const POSTER_H = 108;
 const POSTER_GAP = 12;
+const POSTER_EXT_H = 22;
 
 export type ReviewPostRowProps = {
   postId: string;
@@ -22,17 +23,14 @@ export type ReviewPostRowProps = {
 
   content: string;
 
-  // ✅ NEW: renderer inputs (prefer these if provided)
   contentText?: string | null;
   contentJson?: any | null;
 
-  // ✅ NEW: attachments for this post
   attachments?: any[];
 
-  rating: number | null; // reviews.rating: 0..100 (or null)
+  rating: number | null;
   containsSpoilers?: boolean;
 
-  // ✅ author-like snapshot from reviews.author_liked
   authorLiked?: boolean;
 
   displayName: string;
@@ -44,11 +42,9 @@ export type ReviewPostRowProps = {
   originLabel?: string;
   originHref?: string;
 
-  // ✅ episode info (extension label)
   episodeLabel?: string;
   episodeHref?: string;
 
-  // ✅ manga chapter parity
   chapterLabel?: string;
   chapterHref?: string;
 
@@ -74,7 +70,6 @@ export type ReviewPostRowProps = {
   onRowClick?: (id: string, e: any) => void;
   disableHoverHighlight?: boolean;
 
-  // ✅ pin / unpin (profile)
   pinnedPostId?: string | null;
   onTogglePin?: (postId: string, e: any) => void;
 
@@ -107,23 +102,17 @@ function formatRelativeTime(dateString: string) {
   return `${years}y`;
 }
 
-/* -------------------- Stars (NO placeholder/backing row) -------------------- */
-
 function clampInt(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.round(n)));
 }
 
-// reviews.rating is 0..100 -> halfStars 0..10 (0.5 steps)
 function rating100ToHalfStars(rating100: number): number {
   const r = Math.max(0, Math.min(100, rating100));
   return clampInt((r / 100) * 10, 0, 10);
 }
 
-// halfStars is 0..10
-// starIndex is 1..5
-// returns 0, 50, or 100
 function computeStarFillPercent(shownHalfStars: number, starIndex: number) {
-  const starHalfStart = (starIndex - 1) * 2; // 0,2,4,6,8
+  const starHalfStart = (starIndex - 1) * 2;
   const remaining = shownHalfStars - starHalfStart;
 
   if (remaining >= 2) return 100 as const;
@@ -186,22 +175,16 @@ function ReviewStarsRow({
   );
 }
 
-/* -------------------- Poster box -------------------- */
-
 function PosterBox({
   url,
   title,
   episodeLabel,
-  episodeHref,
   chapterLabel,
-  chapterHref,
 }: {
   url?: string | null;
   title: string;
   episodeLabel?: string;
-  episodeHref?: string;
   chapterLabel?: string;
-  chapterHref?: string;
 }) {
   const [hasError, setHasError] = useState(false);
 
@@ -209,53 +192,7 @@ function PosterBox({
     title && title.trim().length > 0 ? title.trim().charAt(0).toUpperCase() : "?";
 
   const showImage = !!url && !hasError;
-
-  const EXT_H = 22;
-
   const extLabel = episodeLabel ?? chapterLabel;
-  const extHref = episodeHref ?? chapterHref;
-
-  const extensionNode = extLabel ? (
-    extHref ? (
-      <Link
-        href={extHref}
-        onClick={(e) => e.stopPropagation()}
-        style={{ textDecoration: "none" }}
-      >
-        <div
-          style={{
-            height: EXT_H,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: "0.72rem",
-            fontWeight: 700,
-            color: "#333",
-            lineHeight: 1,
-          }}
-          title={extLabel}
-        >
-          {extLabel}
-        </div>
-      </Link>
-    ) : (
-      <div
-        style={{
-          height: EXT_H,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: "0.72rem",
-          fontWeight: 700,
-          color: "#333",
-          lineHeight: 1,
-        }}
-        title={extLabel}
-      >
-        {extLabel}
-      </div>
-    )
-  ) : null;
 
   return (
     <div
@@ -265,7 +202,7 @@ function PosterBox({
         borderRadius: 6,
         border: "1px solid #000",
         background: "#f5f5f5",
-        paddingBottom: extLabel ? EXT_H : 0,
+        paddingBottom: extLabel ? POSTER_EXT_H : 0,
         position: "relative",
         overflow: "hidden",
       }}
@@ -312,20 +249,6 @@ function PosterBox({
           </div>
         )}
       </div>
-
-      {extLabel && (
-        <div
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: EXT_H,
-          }}
-        >
-          {extensionNode}
-        </div>
-      )}
     </div>
   );
 }
@@ -345,6 +268,7 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
+
   const [isHovered, setIsHovered] = React.useState(false);
 
   const COLLAPSED_LINES = 10;
@@ -434,6 +358,9 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
   const isClickable = !!(href || onRowClick);
   const canHighlight = isClickable && !disableHoverHighlight;
 
+  const extLabel = episodeLabel ?? chapterLabel;
+  const extHref = episodeHref ?? chapterHref;
+
   function handleRowClick(e: React.MouseEvent<HTMLDivElement>) {
     if (onRowClick) {
       onRowClick(postId, e);
@@ -495,7 +422,6 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
         if (canHighlight) setIsHovered(false);
       }}
     >
-      {/* bottom-right edit / delete menu */}
       {isOwner && onToggleMenu && (
         <div className="absolute bottom-[0.4rem] right-[0.4rem] z-10 md:bottom-[0.7rem] bottom-[-0.3rem]">
           <button
@@ -620,7 +546,6 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
         </div>
       ) : null}
 
-      {/* BODY */}
       <div
         style={{
           display: "flex",
@@ -631,7 +556,6 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
             : `${isPinned ? "1.8rem" : "0.8rem"} 0.8rem 0.4rem 0.8rem`,
         }}
       >
-        {/* Avatar */}
         {username ? (
           <Link
             href={`/${username}`}
@@ -644,9 +568,7 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
           avatarNode
         )}
 
-        {/* Content column */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          {/* Poster floats right */}
           <div
             style={{
               float: "right",
@@ -654,34 +576,62 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
               marginTop: isMobile ? 0 : 2,
             }}
           >
-            {originHref ? (
-              <Link
-                href={originHref}
-                onClick={(e) => e.stopPropagation()}
-                style={{ display: "inline-block" }}
-              >
+            <div style={{ display: "inline-block", position: "relative" }}>
+              {originHref ? (
+                <Link
+                  href={originHref}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ display: "block" }}
+                >
+                  <PosterBox
+                    url={posterUrl}
+                    title={title || "?"}
+                    episodeLabel={episodeLabel}
+                    chapterLabel={chapterLabel}
+                  />
+                </Link>
+              ) : (
                 <PosterBox
                   url={posterUrl}
                   title={title || "?"}
                   episodeLabel={episodeLabel}
-                  episodeHref={episodeHref}
                   chapterLabel={chapterLabel}
-                  chapterHref={chapterHref}
                 />
-              </Link>
-            ) : (
-              <PosterBox
-                url={posterUrl}
-                title={title || "?"}
-                episodeLabel={episodeLabel}
-                episodeHref={episodeHref}
-                chapterLabel={chapterLabel}
-                chapterHref={chapterHref}
-              />
-            )}
+              )}
+
+              {extLabel && extHref ? (
+                <Link
+                  href={extHref}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: POSTER_EXT_H,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textDecoration: "none",
+                    zIndex: 2,
+                  }}
+                  title={extLabel}
+                >
+                  <span
+                    style={{
+                      fontSize: "0.72rem",
+                      fontWeight: 700,
+                      color: "#333",
+                      lineHeight: 1,
+                    }}
+                  >
+                    {extLabel}
+                  </span>
+                </Link>
+              ) : null}
+            </div>
           </div>
 
-          {/* Header row */}
           <div
             style={{
               display: "flex",
@@ -697,17 +647,11 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
                 display: "flex",
                 alignItems: "center",
                 gap: "0.35rem",
-
-                // ✅ this lane owns the leftover space
                 flex: 1,
                 minWidth: 0,
-
-                // ✅ prevents it from spilling underneath the right side
                 overflow: "hidden",
-
-                // ✅ on phone, allow the "· time · Spoilers" to drop down if needed
-                flexWrap: "wrap",   // ✅ allow wrapping on desktop too
-                rowGap: 2,          // ✅ keeps the 2nd line tight/clean when it happens
+                flexWrap: "wrap",
+                rowGap: 2,
               }}
             >
               {username ? (
@@ -797,7 +741,6 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
                 {title}
               </span>
 
-              {/* Stars + author-like snapshot */}
               <div
                 style={{
                   marginTop: 2,
@@ -825,19 +768,18 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
             </div>
           </div>
 
-          {/* Text */}
           <div
             ref={textWrapRef}
             style={
               isExpanded
                 ? { margin: 0 }
                 : {
-                  margin: 0,
-                  overflow: "hidden",
-                  display: "-webkit-box",
-                  WebkitBoxOrient: "vertical" as any,
-                  WebkitLineClamp: COLLAPSED_LINES as any,
-                }
+                    margin: 0,
+                    overflow: "hidden",
+                    display: "-webkit-box",
+                    WebkitBoxOrient: "vertical" as any,
+                    WebkitLineClamp: COLLAPSED_LINES as any,
+                  }
             }
           >
             <RichPostRenderer
@@ -870,9 +812,10 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
               Show more
             </button>
           ) : null}
-          {(props.attachments?.length ?? 0) > 0 ? (
+
+          {(attachments?.length ?? 0) > 0 ? (
             <div style={{ marginTop: 10 }}>
-              <PostAttachments items={props.attachments as any} />
+              <PostAttachments items={attachments as any} />
             </div>
           ) : null}
 
