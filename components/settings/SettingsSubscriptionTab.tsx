@@ -27,7 +27,7 @@ export default function SettingsSubscriptionTab({ isPro }: Props) {
               Current plan
             </div>
             <div className="text-xs text-slate-600">
-              Pro badge next to your username and no ads once ads are added.
+              Pro badge next to your username and no ads.
             </div>
           </div>
         </>
