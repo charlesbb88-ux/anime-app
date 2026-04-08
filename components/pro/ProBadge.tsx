@@ -16,12 +16,12 @@ export default function ProBadge({
       href="/pro"
       onClick={(e) => e.stopPropagation()}
       className={[
-        "inline-flex items-center rounded-full border border-cyan-400/60 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-300",
+        "inline-flex items-center rounded-full border border-slate-800 bg-slate-800 px-2 text-[10px] font-semibold uppercase tracking-wide text-white",
         className,
       ].join(" ")}
       title="View Pro"
     >
-      PRO
+      Pro
     </Link>
   );
 }
