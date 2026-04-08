@@ -1,9 +1,68 @@
+import { useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+
 export default function ProPage() {
+    const [isLoadingCheckout, setIsLoadingCheckout] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    async function handleSubscribe() {
+        try {
+            setIsLoadingCheckout(true);
+            setError(null);
+
+            const {
+                data: { session },
+                error: sessionError,
+            } = await supabase.auth.getSession();
+
+            if (sessionError) {
+                throw new Error(sessionError.message);
+            }
+
+            const accessToken = session?.access_token;
+
+            if (!accessToken) {
+                throw new Error("You must be signed in to subscribe.");
+            }
+
+            const response = await fetch("/api/stripe/create-checkout-session", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${accessToken}`,
+                },
+            });
+
+            const data = (await response.json()) as { url?: string; error?: string };
+
+            if (!response.ok) {
+                throw new Error(data.error || "Failed to create checkout session.");
+            }
+
+            if (!data.url) {
+                throw new Error("Stripe checkout URL was missing.");
+            }
+
+            window.location.href = data.url;
+        } catch (err) {
+            const message =
+                err instanceof Error ? err.message : "Something went wrong.";
+            setError(message);
+            setIsLoadingCheckout(false);
+        }
+    }
+
     return (
         <main className="min-h-screen bg-[#0b1220] text-white">
             <div className="mx-auto max-w-6xl px-4 py-12">
                 <div className="mx-auto max-w-3xl text-center">
-                    <h1 className="text-3xl font-bold tracking-tight">Show your support for Inkbased by upgrading to Pro</h1>
+                    <h1 className="text-3xl font-bold tracking-tight">
+                        Show your support for Inkbased by upgrading to Pro
+                    </h1>
+
+                    {error ? (
+                        <p className="mt-4 text-sm text-red-400">{error}</p>
+                    ) : null}
                 </div>
 
                 <div className="mt-12 grid gap-6 md:grid-cols-2">
@@ -63,9 +122,11 @@ export default function ProPage() {
 
                             <button
                                 type="button"
-                                className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-cyan-500 px-4 py-3 text-sm font-semibold text-slate-950"
+                                onClick={handleSubscribe}
+                                disabled={isLoadingCheckout}
+                                className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-cyan-500 px-4 py-3 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-70"
                             >
-                                Coming soon
+                                {isLoadingCheckout ? "Redirecting..." : "Subscribe"}
                             </button>
                         </div>
                     </section>
