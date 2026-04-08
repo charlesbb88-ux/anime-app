@@ -1136,20 +1136,6 @@ export default function PostFeed({
         ) : (
           <>
             {posts.map((p) => {
-              if (p.content_html) {
-                console.log("HAS HTML", p.id, p.content_html.slice(0, 120));
-              } else {
-                console.log("NO HTML", p.id);
-              }
-              if (p.content_json) {
-                console.log("JSON TYPE", typeof p.content_json);
-                const s = typeof p.content_json === "string" ? p.content_json : JSON.stringify(p.content_json);
-                console.log("JSON PREVIEW", p.id, s.slice(0, 250));
-              } else {
-                console.log("NO JSON", p.id);
-              }
-
-              console.log("ATT COUNT", p.id, (attachmentsByPostId[p.id] || []).length);
               const isOwner = user && user.id === p.user_id;
               const isMenuOpen = openMenuPostId === p.id;
               const likeCount = likeCounts[p.id] || 0;
