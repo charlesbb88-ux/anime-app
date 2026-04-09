@@ -175,6 +175,8 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
         .eq("slug", slugValue)
         .maybeSingle();
 
+      console.log("manga fetch finished", performance.now(), slugValue);
+
       if (!isMounted) return;
 
       if (error || !data) {
