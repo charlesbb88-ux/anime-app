@@ -580,10 +580,7 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
               {originHref ? (
                 <Link
                   href={originHref}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    console.log("poster click", performance.now(), originHref);
-                  }}
+                  onClick={(e) => e.stopPropagation()}
                   style={{ display: "block" }}
                 >
                   <PosterBox
@@ -777,12 +774,12 @@ export default function ReviewPostRow(props: ReviewPostRowProps) {
               isExpanded
                 ? { margin: 0 }
                 : {
-                  margin: 0,
-                  overflow: "hidden",
-                  display: "-webkit-box",
-                  WebkitBoxOrient: "vertical" as any,
-                  WebkitLineClamp: COLLAPSED_LINES as any,
-                }
+                    margin: 0,
+                    overflow: "hidden",
+                    display: "-webkit-box",
+                    WebkitBoxOrient: "vertical" as any,
+                    WebkitLineClamp: COLLAPSED_LINES as any,
+                  }
             }
           >
             <RichPostRenderer
