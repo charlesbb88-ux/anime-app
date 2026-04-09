@@ -318,6 +318,11 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
   // ------------------------
   // Loading / Not Found
   // ------------------------
+  console.log("manga page render", performance.now(), {
+    slug,
+    loading,
+    hasManga: !!manga,
+  });
   if (loading) {
     return (
       <div className="mx-auto max-w-5xl px-4 py-8">
