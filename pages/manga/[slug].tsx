@@ -669,11 +669,13 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                     </div>
                   )}
 
-                  <div className="mt-6">
-                    <FeedShell>
-                      <PostFeed key={feedNonce} mangaId={manga.id} />
-                    </FeedShell>
-                  </div>
+                  {/*
+<div className="mt-6">
+  <FeedShell>
+    <PostFeed key={feedNonce} mangaId={manga.id} />
+  </FeedShell>
+</div>
+*/}
                 </div>
               </div>
 
