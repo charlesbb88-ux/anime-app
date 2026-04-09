@@ -98,6 +98,10 @@ function cleanSynopsis(raw: string) {
 }
 
 const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
+
+  useEffect(() => {
+    console.log("manga page mounted", performance.now());
+  }, []);
   const router = useRouter();
 
   const [slug, setSlug] = useState<string | null>(null);
