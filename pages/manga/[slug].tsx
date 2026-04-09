@@ -98,10 +98,6 @@ function cleanSynopsis(raw: string) {
 }
 
 const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
-
-  useEffect(() => {
-    console.log("manga page mounted", performance.now());
-  }, []);
   const router = useRouter();
 
   const [slug, setSlug] = useState<string | null>(null);
@@ -174,8 +170,6 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
         .select("*")
         .eq("slug", slugValue)
         .maybeSingle();
-
-      console.log("manga fetch finished", performance.now(), slugValue);
 
       if (!isMounted) return;
 
@@ -318,11 +312,6 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
   // ------------------------
   // Loading / Not Found
   // ------------------------
-  console.log("manga page render", performance.now(), {
-    slug,
-    loading,
-    hasManga: !!manga,
-  });
   if (loading) {
     return (
       <div className="mx-auto max-w-5xl px-4 py-8">
@@ -669,13 +658,11 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                     </div>
                   )}
 
-                  {/*
-<div className="mt-6">
-  <FeedShell>
-    <PostFeed key={feedNonce} mangaId={manga.id} />
-  </FeedShell>
-</div>
-*/}
+                  <div className="mt-6">
+                    <FeedShell>
+                      <PostFeed key={feedNonce} mangaId={manga.id} />
+                    </FeedShell>
+                  </div>
                 </div>
               </div>
 
