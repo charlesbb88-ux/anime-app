@@ -23,6 +23,7 @@ import FeedShell from "@/components/FeedShell";
 
 import ResponsiveSwitch from "@/components/ResponsiveSwitch";
 import MangaPhoneLayout from "@/components/manga/MangaPhoneLayout";
+
 const GlobalLogModal = dynamic(
   () => import("@/components/reviews/GlobalLogModal"),
   { ssr: false }
@@ -113,29 +114,29 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
   const [tagsLoading, setTagsLoading] = useState(false);
   const [showSpoilers, setShowSpoilers] = useState(false);
 
-  // ✅ save review test state
+  // save review test state
   const [savingReview, setSavingReview] = useState(false);
   const [reviewSaveMsg, setReviewSaveMsg] = useState<string | null>(null);
 
-  // ✅ force PostFeed to remount so it refetches immediately (no page refresh)
+  // force PostFeed to remount so it refetches immediately (no page refresh)
   const [feedNonce, setFeedNonce] = useState(0);
 
-  // ✅ force ActionBox to remount so marks refresh immediately (no page refresh)
+  // force ActionBox to remount so marks refresh immediately (no page refresh)
   const [actionBoxNonce, setActionBoxNonce] = useState(0);
 
-  // ✅ open/close the log modal
+  // open/close the log modal
   const [logOpen, setLogOpen] = useState(false);
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
   const [selectedChapterNumber, setSelectedChapterNumber] = useState<number | null>(null);
   const [chapterLogsNonce, setChapterLogsNonce] = useState(0);
 
-  // ✅ refresh QuickLogBox after ANY modal success (review OR log)
+  // refresh QuickLogBox after ANY modal success (review OR log)
   const [quickLogRefreshNonce, setQuickLogRefreshNonce] = useState(0);
 
-  // ✅ single token you pass into quick log boxes
+  // single token you pass into quick log boxes
   const quickLogRefreshToken = chapterLogsNonce * 100000 + quickLogRefreshNonce;
 
-  // ✅ my manga series log count
+  // my manga series log count
   const [myMangaSeriesLogCount, setMyMangaSeriesLogCount] = useState<number | null>(
     null
   );
@@ -235,7 +236,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
     };
   }, [manga?.id]);
 
-  // ✅ fetch my manga series log count (soft-fail)
+  // fetch my manga series log count (soft-fail)
   useEffect(() => {
     const mangaId = manga?.id;
     if (!mangaId) {
@@ -282,7 +283,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
     };
   }, [manga?.id]);
 
-  // ✅ test review (unchanged behavior)
+  // test review (unchanged behavior)
   async function handleTestSaveReview() {
     if (!manga?.id) return;
 
@@ -313,9 +314,6 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
     }
   }
 
-  // ------------------------
-  // Loading / Not Found
-  // ------------------------
   if (loading) {
     return (
       <div className="mx-auto max-w-5xl px-4 py-8">
@@ -365,8 +363,8 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
 
   const secondaryTitle =
     typeof manga.title_preferred === "string" &&
-      manga.title_preferred.trim() &&
-      manga.title_preferred.trim() !== displayPrimaryTitle
+    manga.title_preferred.trim() &&
+    manga.title_preferred.trim() !== displayPrimaryTitle
       ? manga.title_preferred.trim()
       : null;
 
@@ -381,8 +379,8 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
       : []),
     ...(Array.isArray(m.content_warnings)
       ? m.content_warnings.filter(
-        (x: unknown): x is string => typeof x === "string" && x.trim().length > 0
-      )
+          (x: unknown): x is string => typeof x === "string" && x.trim().length > 0
+        )
       : []),
   ];
 
@@ -394,13 +392,6 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
   );
   const spoilerCount = spoilerTags.length;
 
-  // ------------------------
-  // MAIN MANGA PAGE CONTENT
-  // ------------------------
-  // ------------------------
-  // MAIN MANGA PAGE CONTENT
-  // ------------------------
-
   function formatSafetyPill(text: string) {
     return text
       .split(" ")
@@ -411,7 +402,6 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
   const desktopView = (
     <>
       <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
-        {/* Backdrop (from SSR public.manga_covers) */}
         {backdropUrl && (
           <div className="relative h-[620px] w-full overflow-hidden">
             <Image
@@ -425,7 +415,6 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
               className="h-full w-full object-cover object-[50%_25%]"
             />
 
-            {/* Overlay (same as anime page) */}
             <img
               src="/overlays/my-overlay.png"
               alt=""
@@ -434,12 +423,9 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
           </div>
         )}
 
-        {/* Top section */}
         <div className="-mt-5 relative z-10 px-3">
           <div className="mb-8 flex flex-row gap-7">
-            {/* LEFT COLUMN */}
             <div className="flex-shrink-0 w-56">
-              {/* Poster */}
               {manga.image_url ? (
                 <img
                   src={manga.image_url}
@@ -452,7 +438,6 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                 </div>
               )}
 
-              {/* Genres + Safety */}
               {hasAnyTopPills && (
                 <div className="mt-4">
                   <h2 className="mb-1 text-sm font-semibold text-black-300">
@@ -481,7 +466,6 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                 </div>
               )}
 
-              {/* Tags */}
               {tags.length > 0 && (
                 <div className="mt-5">
                   <div className="mb-1 flex items-center gap-2">
@@ -525,8 +509,9 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                               )}
 
                               <span
-                                className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"
-                                  }`}
+                                className={`relative ${
+                                  isSpoiler ? "text-red-400" : "text-gray-100"
+                                }`}
                               >
                                 {tag.name}
                               </span>
@@ -563,10 +548,8 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                       className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
                     >
                       {showSpoilers
-                        ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
-                        }`
-                        : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"
-                        }`}
+                        ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`
+                        : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`}
                     </button>
                   )}
                 </div>
@@ -590,9 +573,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
               </div>
             </div>
 
-            {/* RIGHT COLUMN */}
             <div className="min-w-100 flex-1">
-              {/* ROW 1 — PRIMARY TITLE ONLY (no secondary here) */}
               <div className="mb-0 pl-1">
                 <EnglishTitle
                   as="h1"
@@ -607,9 +588,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                 />
               </div>
 
-              {/* ROW 2 — LEFT CONTENT + ActionBox pinned top-right */}
               <div className="relative w-full">
-                {/* RIGHT SIDE: ActionBox (pinned) */}
                 <div className="absolute right-0 top-6 flex flex-col items-end gap-2">
                   <MangaActionBox
                     key={actionBoxNonce}
@@ -629,14 +608,15 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
                     onOpenLog={(chapterId, chapterNumber) => {
                       setSelectedChapterId(chapterId ?? null);
                       setSelectedChapterNumber(
-                        typeof chapterNumber === "number" && Number.isFinite(chapterNumber) ? chapterNumber : null
+                        typeof chapterNumber === "number" && Number.isFinite(chapterNumber)
+                          ? chapterNumber
+                          : null
                       );
                       setLogOpen(true);
                     }}
                   />
                 </div>
 
-                {/* LEFT SIDE: reserve space so text never goes under ActionBox */}
                 <div className="min-w-0 pr-[270px] pl-1">
                   {showSecondaryTitle && secondaryTitle && (
                     <h2 className="mt-0 text-xl font-semibold leading-snug text-gray-500">
@@ -675,8 +655,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
           </div>
         </div>
 
-        <div className="mt-3 flex items-center gap-4">
-        </div>
+        <div className="mt-3 flex items-center gap-4"></div>
       </div>
     </>
   );
@@ -712,6 +691,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
       reviewSaveMsg={reviewSaveMsg}
     />
   );
+
   return (
     <>
       <ResponsiveSwitch desktop={desktopView} phone={phoneView} />
@@ -773,7 +753,6 @@ export const getServerSideProps: GetServerSideProps<MangaPageProps> = async (ctx
     return { props: { initialBackdropUrl: null } };
   }
 
-  // 1) Get manga id by slug (server-side)
   const { data: mangaRow, error: mangaErr } = await supabaseAdmin
     .from("manga")
     .select("id")
@@ -784,7 +763,6 @@ export const getServerSideProps: GetServerSideProps<MangaPageProps> = async (ctx
     return { props: { initialBackdropUrl: null } };
   }
 
-  // 2) Pull ALL cached images for this manga from public.manga_covers
   const { data: covers, error: coverErr } = await supabaseAdmin
     .from("manga_covers")
     .select("cached_url")
