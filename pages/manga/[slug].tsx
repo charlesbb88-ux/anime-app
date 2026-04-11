@@ -162,6 +162,8 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
     let isMounted = true;
 
     async function fetchManga() {
+      const t = Date.now();
+      console.log("CLIENT manga fetch start");
       setLoading(true);
       setErrorMessage(null);
 
@@ -170,6 +172,8 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
         .select("*")
         .eq("slug", slugValue)
         .maybeSingle();
+
+      console.log("CLIENT manga fetch done:", Date.now() - t, "ms");
 
       if (!isMounted) return;
 
@@ -202,6 +206,8 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
     let isMounted = true;
 
     async function fetchTags() {
+      const t = Date.now();
+      console.log("CLIENT tags fetch start");
       setTagsLoading(true);
 
       const { data, error } = await supabase
@@ -211,6 +217,8 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
         )
         .eq("manga_id", mangaId)
         .order("rank", { ascending: false });
+
+      console.log("CLIENT tags fetch done:", Date.now() - t, "ms");
 
       if (!isMounted) return;
 
@@ -762,6 +770,8 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
 export default MangaPage;
 
 export const getServerSideProps: GetServerSideProps<MangaPageProps> = async (ctx) => {
+  const t0 = Date.now();
+  console.log("GSSP START");
   const raw = ctx.params?.slug;
   const slug =
     typeof raw === "string" ? raw : Array.isArray(raw) && raw[0] ? raw[0] : null;
@@ -771,23 +781,33 @@ export const getServerSideProps: GetServerSideProps<MangaPageProps> = async (ctx
   }
 
   // 1) Get manga id by slug (server-side)
+  const q1 = Date.now();
+  console.log("GSSP manga query start");
+
   const { data: mangaRow, error: mangaErr } = await supabaseAdmin
     .from("manga")
     .select("id")
     .eq("slug", slug)
     .maybeSingle();
 
+  console.log("GSSP manga query done:", Date.now() - q1, "ms");
+
   if (mangaErr || !mangaRow?.id) {
     return { props: { initialBackdropUrl: null } };
   }
 
   // 2) Pull ALL cached images for this manga from public.manga_covers
+  const q2 = Date.now();
+  console.log("GSSP covers query start");
+
   const { data: covers, error: coverErr } = await supabaseAdmin
     .from("manga_covers")
     .select("cached_url")
     .eq("manga_id", mangaRow.id)
     .not("cached_url", "is", null)
     .limit(200);
+
+  console.log("GSSP covers query done:", Date.now() - q2, "ms");
 
   if (coverErr || !covers || covers.length === 0) {
     return { props: { initialBackdropUrl: null } };
@@ -802,6 +822,8 @@ export const getServerSideProps: GetServerSideProps<MangaPageProps> = async (ctx
   }
 
   const pick = urls[Math.floor(Math.random() * urls.length)];
+
+  console.log("GSSP TOTAL:", Date.now() - t0, "ms");
 
   return {
     props: {
