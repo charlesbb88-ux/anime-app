@@ -139,6 +139,13 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
   // Backdrop from SSR (public.manga_covers)
   const [backdropUrl] = useState<string | null>(initialBackdropUrl);
 
+  console.log("MANGA PAGE RENDER", {
+  slug,
+  loading,
+  hasManga: !!manga,
+  time: Date.now(),
+});
+
   // Normalize slug
   useEffect(() => {
     if (!router.isReady) return;
@@ -187,7 +194,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
 
       setLoading(false);
     }
-
+console.log("FETCH EFFECT TRIGGERED", { slug, time: Date.now() });
     fetchManga();
 
     return () => {
