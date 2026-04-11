@@ -207,7 +207,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
 
     async function fetchTags() {
       const t = Date.now();
-      console.log("CLIENT tags fetch start");
+console.log("CLIENT tags fetch start");
       setTagsLoading(true);
 
       const { data, error } = await supabase
@@ -217,8 +217,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
         )
         .eq("manga_id", mangaId)
         .order("rank", { ascending: false });
-
-      console.log("CLIENT tags fetch done:", Date.now() - t, "ms");
+        
 
       if (!isMounted) return;
 
