@@ -673,11 +673,7 @@ console.log("FETCH EFFECT TRIGGERED", { slug, time: Date.now() });
                     </div>
                   )}
 
-                  <div className="mt-6">
-                    <FeedShell>
-                      <PostFeed key={feedNonce} mangaId={manga.id} />
-                    </FeedShell>
-                  </div>
+<div className="mt-6">PostFeed removed for test</div>
                 </div>
               </div>
 
