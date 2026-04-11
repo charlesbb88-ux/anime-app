@@ -7,6 +7,9 @@ import Image from "next/image";
 
 import EnglishTitle from "@/components/EnglishTitle";
 import MangaMetaBox from "@/components/manga/MangaMetaBox";
+import ChapterNavigator from "@/components/ChapterNavigator";
+import MangaActionBox from "@/components/actions/MangaActionBox";
+import MangaQuickLogBox from "@/components/manga/MangaQuickLogBox";
 import { supabase } from "@/lib/supabaseClient";
 
 type Manga = {
@@ -92,7 +95,14 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
 
   const [backdropUrl] = useState<string | null>(initialBackdropUrl);
 
-  console.log("STEP 3 PAGE RENDER", {
+  // kept because original page used these
+  const [actionBoxNonce] = useState(0);
+  const [chapterLogsNonce] = useState(0);
+  const [quickLogRefreshNonce] = useState(0);
+
+  const quickLogRefreshToken = chapterLogsNonce * 100000 + quickLogRefreshNonce;
+
+  console.log("STEP 4 PAGE RENDER", {
     slug,
     loading,
     hasManga: !!manga,
@@ -122,7 +132,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
 
     async function fetchManga() {
       const t = Date.now();
-      console.log("STEP 3 manga fetch start", {
+      console.log("STEP 4 manga fetch start", {
         slug: slugValue,
         time: t,
       });
@@ -136,7 +146,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
         .eq("slug", slugValue)
         .maybeSingle();
 
-      console.log("STEP 3 manga fetch done", {
+      console.log("STEP 4 manga fetch done", {
         slug: slugValue,
         ms: Date.now() - t,
       });
@@ -144,7 +154,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
       if (!isMounted) return;
 
       if (error || !data) {
-        console.error("STEP 3 manga fetch error", error);
+        console.error("STEP 4 manga fetch error", error);
         setManga(null);
         setErrorMessage("Manga not found.");
       } else {
@@ -154,7 +164,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
       setLoading(false);
     }
 
-    console.log("STEP 3 fetch effect triggered", {
+    console.log("STEP 4 fetch effect triggered", {
       slug: slugValue,
       time: Date.now(),
     });
@@ -177,7 +187,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
 
     async function fetchTags() {
       const t = Date.now();
-      console.log("STEP 3 tags fetch start", {
+      console.log("STEP 4 tags fetch start", {
         mangaId,
         time: t,
       });
@@ -192,7 +202,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
         .eq("manga_id", mangaId)
         .order("rank", { ascending: false });
 
-      console.log("STEP 3 tags fetch done", {
+      console.log("STEP 4 tags fetch done", {
         mangaId,
         ms: Date.now() - t,
       });
@@ -200,7 +210,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
       if (!isMounted) return;
 
       if (error || !data) {
-        console.error("STEP 3 tags fetch error", error);
+        console.error("STEP 4 tags fetch error", error);
         setTags([]);
       } else {
         setTags(data as MangaTag[]);
@@ -220,7 +230,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
     return (
       <div style={{ padding: 40, fontFamily: "Arial, sans-serif" }}>
         <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 16 }}>
-          Step 3 test
+          Step 4 test
         </h1>
         <div style={{ fontSize: 20 }}>Loading manga...</div>
       </div>
@@ -231,7 +241,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
     return (
       <div style={{ padding: 40, fontFamily: "Arial, sans-serif" }}>
         <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 16 }}>
-          Step 3 test
+          Step 4 test
         </h1>
         <div style={{ fontSize: 20, marginBottom: 12 }}>Manga not found.</div>
         {errorMessage && <div style={{ fontSize: 16 }}>{errorMessage}</div>}
@@ -292,10 +302,6 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
       )}
 
       <div style={{ padding: "0 24px" }}>
-        <div style={{ marginBottom: 12, fontSize: 14 }}>
-          <strong>Slug:</strong> {slug ?? "none"}
-        </div>
-
         <div style={{ marginBottom: 24 }}>
           <EnglishTitle
             as="h1"
@@ -310,170 +316,282 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
           />
         </div>
 
-        {typeof manga.description === "string" && manga.description.trim() && (
-          <div style={{ marginBottom: 24, maxWidth: 900 }}>
-            <p style={{ fontSize: 16, lineHeight: 1.5, whiteSpace: "pre-line" }}>
-              {cleanSynopsis(manga.description)}
-            </p>
-          </div>
-        )}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "260px minmax(0, 1fr)",
+            gap: 28,
+            alignItems: "start",
+          }}
+        >
+          <div>
+            {manga.image_url ? (
+              <img
+                src={manga.image_url}
+                alt={manga.title}
+                style={{
+                  width: 224,
+                  height: 336,
+                  objectFit: "cover",
+                  borderRadius: 8,
+                  border: "3px solid black",
+                  display: "block",
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: 224,
+                  height: 336,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: 8,
+                  background: "#1f2937",
+                  color: "#e5e7eb",
+                  fontSize: 48,
+                  fontWeight: 700,
+                }}
+              >
+                {manga.title?.[0] ?? "?"}
+              </div>
+            )}
 
-        {hasAnyTopPills && (
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>
-              Genres / Safety
-            </div>
+            {hasAnyTopPills && (
+              <div style={{ marginTop: 18 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>
+                  Genres / Safety
+                </div>
 
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 8,
-              }}
-            >
-              {genres.map((g) => (
-                <span
-                  key={`genre-${g}`}
-                  style={{
-                    borderRadius: 999,
-                    background: "#111",
-                    color: "#fff",
-                    padding: "6px 12px",
-                    fontSize: 12,
-                  }}
-                >
-                  {g}
-                </span>
-              ))}
-
-              {uniqueSafetyPills.map((pill) => (
-                <span
-                  key={`safety-${pill}`}
-                  style={{
-                    borderRadius: 999,
-                    background: "#b91c1c",
-                    color: "#fff",
-                    padding: "6px 12px",
-                    fontSize: 12,
-                  }}
-                >
-                  {formatSafetyPill(pill)}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div style={{ marginBottom: 24, maxWidth: 340 }}>
-          <MangaMetaBox
-            titleEnglish={manga.title_english}
-            titlePreferred={manga.title_preferred}
-            titleNative={manga.title_native}
-            totalVolumes={manga.total_volumes}
-            totalChapters={manga.total_chapters}
-            format={manga.format}
-            status={manga.status}
-            startDate={manga.start_date}
-            endDate={manga.end_date}
-            season={manga.season}
-            seasonYear={manga.season_year}
-            averageScore={manga.average_score}
-          />
-        </div>
-
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>
-            Tags
-          </div>
-
-          {tagsLoading && (
-            <div style={{ fontSize: 14, marginBottom: 10 }}>Loading tags...</div>
-          )}
-
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              maxWidth: 420,
-            }}
-          >
-            {tags.map((tag) => {
-              const isSpoiler =
-                tag.is_general_spoiler === true || tag.is_media_spoiler === true;
-
-              if (isSpoiler && !showSpoilers) return null;
-
-              const percent =
-                typeof tag.rank === "number"
-                  ? Math.max(0, Math.min(100, Math.round(tag.rank)))
-                  : null;
-
-              return (
                 <div
-                  key={tag.id}
                   style={{
-                    position: "relative",
-                    border: "1px solid #444",
-                    borderRadius: 999,
-                    overflow: "hidden",
-                    background: "#1f1f1f",
-                    color: "#fff",
-                    padding: "8px 12px",
-                    fontSize: 13,
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 8,
                   }}
-                  title={tag.description ?? undefined}
                 >
-                  {percent !== null && (
-                    <div
+                  {genres.map((g) => (
+                    <span
+                      key={`genre-${g}`}
                       style={{
-                        position: "absolute",
-                        inset: 0,
-                        width: `${percent}%`,
-                        background: "#000",
+                        borderRadius: 999,
+                        background: "#111",
+                        color: "#fff",
+                        padding: "6px 12px",
+                        fontSize: 12,
                       }}
-                    />
-                  )}
+                    >
+                      {g}
+                    </span>
+                  ))}
 
-                  <div
+                  {uniqueSafetyPills.map((pill) => (
+                    <span
+                      key={`safety-${pill}`}
+                      style={{
+                        borderRadius: 999,
+                        background: "#b91c1c",
+                        color: "#fff",
+                        padding: "6px 12px",
+                        fontSize: 12,
+                      }}
+                    >
+                      {formatSafetyPill(pill)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div style={{ marginTop: 24, maxWidth: 340 }}>
+              <MangaMetaBox
+                titleEnglish={manga.title_english}
+                titlePreferred={manga.title_preferred}
+                titleNative={manga.title_native}
+                totalVolumes={manga.total_volumes}
+                totalChapters={manga.total_chapters}
+                format={manga.format}
+                status={manga.status}
+                startDate={manga.start_date}
+                endDate={manga.end_date}
+                season={manga.season}
+                seasonYear={manga.season_year}
+                averageScore={manga.average_score}
+              />
+            </div>
+
+            <div style={{ marginTop: 24 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>
+                Tags
+              </div>
+
+              {tagsLoading && (
+                <div style={{ fontSize: 14, marginBottom: 10 }}>Loading tags...</div>
+              )}
+
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  maxWidth: 420,
+                }}
+              >
+                {tags.map((tag) => {
+                  const isSpoiler =
+                    tag.is_general_spoiler === true ||
+                    tag.is_media_spoiler === true;
+
+                  if (isSpoiler && !showSpoilers) return null;
+
+                  const percent =
+                    typeof tag.rank === "number"
+                      ? Math.max(0, Math.min(100, Math.round(tag.rank)))
+                      : null;
+
+                  return (
+                    <div
+                      key={tag.id}
+                      style={{
+                        position: "relative",
+                        border: "1px solid #444",
+                        borderRadius: 999,
+                        overflow: "hidden",
+                        background: "#1f1f1f",
+                        color: "#fff",
+                        padding: "8px 12px",
+                        fontSize: 13,
+                      }}
+                      title={tag.description ?? undefined}
+                    >
+                      {percent !== null && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            inset: 0,
+                            width: `${percent}%`,
+                            background: "#000",
+                          }}
+                        />
+                      )}
+
+                      <div
+                        style={{
+                          position: "relative",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 12,
+                        }}
+                      >
+                        <span style={{ color: isSpoiler ? "#f87171" : "#fff" }}>
+                          {tag.name}
+                        </span>
+
+                        {percent !== null && <span>{percent}%</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {spoilerCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowSpoilers((prev) => !prev)}
+                  style={{
+                    marginTop: 12,
+                    background: "transparent",
+                    border: "none",
+                    color: "#2563eb",
+                    cursor: "pointer",
+                    padding: 0,
+                    fontSize: 14,
+                    fontWeight: 700,
+                  }}
+                >
+                  {showSpoilers
+                    ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`
+                    : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`}
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <div style={{ marginBottom: 24 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  marginBottom: 16,
+                }}
+              >
+                <div style={{ width: 250 }}>
+                  <MangaActionBox
+                    key={actionBoxNonce}
+                    mangaId={manga.id}
+                    onOpenLog={() => {
+                      console.log("STEP 4 MangaActionBox onOpenLog");
+                    }}
+                    onShowActivity={() => {
+                      router.push(`/manga/${manga.slug}/activity`);
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  marginBottom: 20,
+                }}
+              >
+                <div style={{ width: 250 }}>
+                  <MangaQuickLogBox
+                    mangaId={manga.id}
+                    totalChapters={manga.total_chapters}
+                    refreshToken={quickLogRefreshToken}
+                    onOpenLog={(chapterId, chapterNumber) => {
+                      console.log("STEP 4 MangaQuickLogBox onOpenLog", {
+                        chapterId,
+                        chapterNumber,
+                      });
+                    }}
+                  />
+                </div>
+              </div>
+
+              {typeof manga.description === "string" && manga.description.trim() && (
+                <div style={{ marginBottom: 24, maxWidth: 900 }}>
+                  <p
                     style={{
-                      position: "relative",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 12,
+                      fontSize: 16,
+                      lineHeight: 1.5,
+                      whiteSpace: "pre-line",
                     }}
                   >
-                    <span style={{ color: isSpoiler ? "#f87171" : "#fff" }}>
-                      {tag.name}
-                    </span>
-
-                    {percent !== null && <span>{percent}%</span>}
-                  </div>
+                    {cleanSynopsis(manga.description)}
+                  </p>
                 </div>
-              );
-            })}
-          </div>
+              )}
 
-          {spoilerCount > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowSpoilers((prev) => !prev)}
-              style={{
-                marginTop: 12,
-                background: "transparent",
-                border: "none",
-                color: "#2563eb",
-                cursor: "pointer",
-                padding: 0,
-                fontSize: 14,
-                fontWeight: 700,
-              }}
-            >
-              {showSpoilers
-                ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`
-                : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`}
-            </button>
-          )}
+              {slug && (
+                <div style={{ marginTop: 24 }}>
+                  <ChapterNavigator
+                    slug={slug}
+                    totalChapters={manga.total_chapters}
+                    currentChapterNumber={null}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop: 24, fontSize: 16, color: "#666" }}>
+              Step 4 test: PostFeed, GlobalLogModal, ResponsiveSwitch, and
+              MangaPhoneLayout are still removed.
+            </div>
+          </div>
         </div>
       </div>
     </div>
