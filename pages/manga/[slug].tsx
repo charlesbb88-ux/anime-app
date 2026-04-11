@@ -140,11 +140,11 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
   const [backdropUrl] = useState<string | null>(initialBackdropUrl);
 
   console.log("MANGA PAGE RENDER", {
-  slug,
-  loading,
-  hasManga: !!manga,
-  time: Date.now(),
-});
+    slug,
+    loading,
+    hasManga: !!manga,
+    time: Date.now(),
+  });
 
   // Normalize slug
   useEffect(() => {
@@ -194,7 +194,7 @@ const MangaPage: NextPage<MangaPageProps> = ({ initialBackdropUrl }) => {
 
       setLoading(false);
     }
-console.log("FETCH EFFECT TRIGGERED", { slug, time: Date.now() });
+    console.log("FETCH EFFECT TRIGGERED", { slug, time: Date.now() });
     fetchManga();
 
     return () => {
@@ -673,7 +673,7 @@ console.log("FETCH EFFECT TRIGGERED", { slug, time: Date.now() });
                     </div>
                   )}
 
-<div className="mt-6">PostFeed removed for test</div>
+                  <div className="mt-6">PostFeed removed for test</div>
                 </div>
               </div>
 
@@ -721,7 +721,7 @@ console.log("FETCH EFFECT TRIGGERED", { slug, time: Date.now() });
   );
   return (
     <>
-      <ResponsiveSwitch desktop={desktopView} phone={phoneView} />
+      {desktopView}
 
       {/* ✅ Global log modal stays OUTSIDE so behavior is identical everywhere */}
       <GlobalLogModal
