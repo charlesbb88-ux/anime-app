@@ -89,14 +89,14 @@ type MangaTag = {
   category: string | null;
 };
 
-function normalizeBackdropUrl(url: string) {
+function normalizeBackdropUrl(url: string): string {
   if (url.includes("https://image.tmdb.org/t/p/original/")) {
     return url.replace("/t/p/original/", "/t/p/w1280/");
   }
   return url;
 }
 
-function cleanSynopsis(raw: string) {
+function cleanSynopsis(raw: string): string {
   let s = raw
     .replace(/\r\n/g, "\n")
     .replace(/<br\s*\/?>/gi, "\n")
@@ -117,7 +117,7 @@ function cleanSynopsis(raw: string) {
     .trim();
 }
 
-function formatSafetyPill(text: string) {
+function formatSafetyPill(text: string): string {
   return text
     .split(" ")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
@@ -159,6 +159,80 @@ function MangaInstantShell() {
   );
 }
 
+function getCoverUrlsStorageKey(mangaId: string): string {
+  return `manga_backdrop_urls_${mangaId}`;
+}
+
+function getCoverIndexStorageKey(mangaId: string): string {
+  return `manga_backdrop_index_${mangaId}`;
+}
+
+function readStoredCoverUrls(mangaId: string): string[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.sessionStorage.getItem(getCoverUrlsStorageKey(mangaId));
+    if (!raw) return [];
+
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    const result: string[] = [];
+
+    for (const item of parsed) {
+      if (typeof item === "string") {
+        const trimmed = item.trim();
+        if (trimmed.length > 0) {
+          result.push(trimmed);
+        }
+      }
+    }
+
+    return result;
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredCoverUrls(mangaId: string, urls: string[]): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.sessionStorage.setItem(
+      getCoverUrlsStorageKey(mangaId),
+      JSON.stringify(urls)
+    );
+  } catch {}
+}
+
+function getNextRotatingCover(mangaId: string, urls: string[]): string | null {
+  if (urls.length === 0) return null;
+
+  const firstUrl = urls[0];
+  if (typeof firstUrl !== "string") return null;
+
+  if (typeof window === "undefined") {
+    return firstUrl;
+  }
+
+  try {
+    const key = getCoverIndexStorageKey(mangaId);
+    const raw = window.sessionStorage.getItem(key);
+    const prevIndex = raw !== null ? Number(raw) : -1;
+    const safePrevIndex =
+      Number.isFinite(prevIndex) && prevIndex >= -1 ? prevIndex : -1;
+
+    const nextIndex = (safePrevIndex + 1) % urls.length;
+    const maybeUrl = urls[nextIndex];
+    const nextUrl = typeof maybeUrl === "string" ? maybeUrl : firstUrl;
+
+    window.sessionStorage.setItem(key, String(nextIndex));
+    return nextUrl;
+  } catch {
+    return firstUrl;
+  }
+}
+
 const MangaPage: NextPage = () => {
   const router = useRouter();
 
@@ -177,7 +251,9 @@ const MangaPage: NextPage = () => {
 
   const [logOpen, setLogOpen] = useState(false);
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
-  const [selectedChapterNumber, setSelectedChapterNumber] = useState<number | null>(null);
+  const [selectedChapterNumber, setSelectedChapterNumber] = useState<number | null>(
+    null
+  );
   const [chapterLogsNonce, setChapterLogsNonce] = useState(0);
   const [quickLogRefreshNonce, setQuickLogRefreshNonce] = useState(0);
   const [myMangaSeriesLogCount, setMyMangaSeriesLogCount] = useState<number | null>(
@@ -186,17 +262,23 @@ const MangaPage: NextPage = () => {
 
   const quickLogRefreshToken = chapterLogsNonce * 100000 + quickLogRefreshNonce;
 
-  const slug = useMemo(() => {
-    const raw = router.query.slug as string | string[] | undefined;
+  const slug = useMemo((): string | null => {
+    const raw = router.query.slug;
+
     if (typeof raw === "string") return raw;
-    if (Array.isArray(raw) && raw[0]) return raw[0];
+
+    if (Array.isArray(raw) && raw.length > 0) {
+      const first = raw[0];
+      return typeof first === "string" ? first : null;
+    }
+
     return null;
   }, [router.query.slug]);
 
   useEffect(() => {
     if (!router.isReady) return;
 
-    if (!slug) {
+    if (slug === null) {
       setManga(null);
       setBackdropUrl(null);
       setLoading(false);
@@ -214,10 +296,12 @@ const MangaPage: NextPage = () => {
       setTags([]);
       setShowSpoilers(false);
 
+      const currentSlug = slug;
+
       const { data, error } = await supabase
         .from("manga")
         .select("*")
-        .eq("slug", slug)
+        .eq("slug", currentSlug)
         .maybeSingle();
 
       if (!isMounted) return;
@@ -241,43 +325,63 @@ const MangaPage: NextPage = () => {
   }, [router.isReady, slug]);
 
   useEffect(() => {
-    const mangaId = manga?.id;
-
-    if (!mangaId) {
+    if (!manga || typeof manga.id !== "string") {
       setBackdropUrl(null);
       return;
     }
 
+    const confirmedMangaId = manga.id;
     let cancelled = false;
 
     async function fetchBackdrop() {
+      const storedUrls = readStoredCoverUrls(confirmedMangaId);
+
+      if (storedUrls.length > 0) {
+        const immediatePick = getNextRotatingCover(confirmedMangaId, storedUrls);
+        if (!cancelled && typeof immediatePick === "string") {
+          setBackdropUrl(normalizeBackdropUrl(immediatePick));
+        }
+        return;
+      }
+
       const { data, error } = await supabase
         .from("manga_covers")
         .select("cached_url")
-        .eq("manga_id", mangaId)
-        .not("cached_url", "is", null)
-        .limit(200);
+        .eq("manga_id", confirmedMangaId)
+        .not("cached_url", "is", null);
 
       if (cancelled) return;
 
       if (error || !data || data.length === 0) {
-        setBackdropUrl(manga?.banner_image_url ?? null);
+        setBackdropUrl(null);
         return;
       }
 
-      const urls = data
-        .map((c: any) =>
-          typeof c.cached_url === "string" ? c.cached_url.trim() : ""
-        )
-        .filter(Boolean);
+      const urls: string[] = [];
+
+      for (const row of data) {
+        const rawUrl = (row as { cached_url?: unknown }).cached_url;
+        if (typeof rawUrl === "string") {
+          const trimmed = rawUrl.trim();
+          if (trimmed.length > 0) {
+            urls.push(trimmed);
+          }
+        }
+      }
 
       if (urls.length === 0) {
-        setBackdropUrl(manga?.banner_image_url ?? null);
+        setBackdropUrl(null);
         return;
       }
 
-      const pick = urls[Math.floor(Math.random() * urls.length)];
-      setBackdropUrl(normalizeBackdropUrl(pick));
+      writeStoredCoverUrls(confirmedMangaId, urls);
+
+      const picked = getNextRotatingCover(confirmedMangaId, urls);
+      if (typeof picked === "string") {
+        setBackdropUrl(normalizeBackdropUrl(picked));
+      } else {
+        setBackdropUrl(null);
+      }
     }
 
     fetchBackdrop();
@@ -285,16 +389,15 @@ const MangaPage: NextPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [manga?.id, manga?.banner_image_url]);
+  }, [manga]);
 
   useEffect(() => {
-    const mangaId = manga?.id;
-
-    if (!mangaId) {
+    if (!manga || typeof manga.id !== "string") {
       setTags([]);
       return;
     }
 
+    const confirmedMangaId = manga.id;
     let isMounted = true;
 
     async function fetchTags() {
@@ -305,7 +408,7 @@ const MangaPage: NextPage = () => {
         .select(
           "id, manga_id, name, description, rank, is_adult, is_general_spoiler, is_media_spoiler, category"
         )
-        .eq("manga_id", mangaId)
+        .eq("manga_id", confirmedMangaId)
         .order("rank", { ascending: false });
 
       if (!isMounted) return;
@@ -325,16 +428,15 @@ const MangaPage: NextPage = () => {
     return () => {
       isMounted = false;
     };
-  }, [manga?.id]);
+  }, [manga]);
 
   useEffect(() => {
-    const mangaId = manga?.id;
-
-    if (!mangaId) {
+    if (!manga || typeof manga.id !== "string") {
       setMyMangaSeriesLogCount(null);
       return;
     }
 
+    const confirmedMangaId = manga.id;
     let cancelled = false;
 
     async function run() {
@@ -354,7 +456,7 @@ const MangaPage: NextPage = () => {
         .from("manga_series_logs")
         .select("id", { count: "exact", head: true })
         .eq("user_id", user.id)
-        .eq("manga_id", mangaId);
+        .eq("manga_id", confirmedMangaId);
 
       if (cancelled) return;
 
@@ -372,7 +474,7 @@ const MangaPage: NextPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [manga?.id]);
+  }, [manga]);
 
   if (loading) {
     return <MangaInstantShell />;
@@ -396,7 +498,14 @@ const MangaPage: NextPage = () => {
     );
   }
 
-  const picked = pickEnglishTitle(
+  const pageSlug =
+    typeof manga.slug === "string" && manga.slug.trim().length > 0
+      ? manga.slug
+      : slug !== null
+        ? slug
+        : "";
+
+  const pickedTitle = pickEnglishTitle(
     {
       title_english: manga.title_english,
       title_preferred: manga.title_preferred,
@@ -410,7 +519,7 @@ const MangaPage: NextPage = () => {
     }
   );
 
-  const displayPrimaryTitle = picked?.value ?? manga.title ?? "Untitled";
+  const displayPrimaryTitle = pickedTitle?.value ?? manga.title ?? "Untitled";
 
   const secondaryTitle =
     typeof manga.title_preferred === "string" &&
@@ -449,7 +558,6 @@ const MangaPage: NextPage = () => {
             alt=""
             className="h-full w-full object-cover object-[50%_25%]"
           />
-
           <img
             src="/overlays/my-overlay.png"
             alt=""
@@ -478,7 +586,6 @@ const MangaPage: NextPage = () => {
             {hasAnyTopPills && (
               <div className="mt-4">
                 <h2 className="mb-1 text-sm font-semibold text-black-300">Genres</h2>
-
                 <div className="flex flex-wrap gap-2">
                   {genres.map((g) => (
                     <span
@@ -488,7 +595,6 @@ const MangaPage: NextPage = () => {
                       {g}
                     </span>
                   ))}
-
                   {uniqueSafetyPills.map((pill) => (
                     <span
                       key={`safety-${pill}`}
@@ -633,7 +739,7 @@ const MangaPage: NextPage = () => {
                     setSelectedChapterNumber(null);
                     setLogOpen(true);
                   }}
-                  onShowActivity={() => router.push(`/manga/${manga.slug}/activity`)}
+                  onShowActivity={() => router.push(`/manga/${pageSlug}/activity`)}
                 />
 
                 <MangaQuickLogBox
@@ -643,7 +749,8 @@ const MangaPage: NextPage = () => {
                   onOpenLog={(chapterId, chapterNumber) => {
                     setSelectedChapterId(chapterId ?? null);
                     setSelectedChapterNumber(
-                      typeof chapterNumber === "number" && Number.isFinite(chapterNumber)
+                      typeof chapterNumber === "number" &&
+                      Number.isFinite(chapterNumber)
                         ? chapterNumber
                         : null
                     );
@@ -667,15 +774,13 @@ const MangaPage: NextPage = () => {
                   </div>
                 )}
 
-                {slug && (
-                  <div className="mt-10 min-w-0 overflow-hidden">
-                    <ChapterNavigator
-                      slug={slug}
-                      totalChapters={manga.total_chapters}
-                      currentChapterNumber={null}
-                    />
-                  </div>
-                )}
+                <div className="mt-10 min-w-0 overflow-hidden">
+                  <ChapterNavigator
+                    slug={pageSlug}
+                    totalChapters={manga.total_chapters}
+                    currentChapterNumber={null}
+                  />
+                </div>
 
                 <div className="mt-6">
                   <FeedShell>
@@ -692,7 +797,7 @@ const MangaPage: NextPage = () => {
 
   const phoneView = (
     <MangaPhoneLayout
-      slug={slug}
+      slug={pageSlug}
       manga={manga}
       backdropUrl={backdropUrl}
       tags={tags}
@@ -707,7 +812,7 @@ const MangaPage: NextPage = () => {
         setSelectedChapterNumber(null);
         setLogOpen(true);
       }}
-      onShowActivity={() => router.push(`/manga/${manga.slug}/activity`)}
+      onShowActivity={() => router.push(`/manga/${pageSlug}/activity`)}
       onOpenLogForChapter={(chapterId, chapterNumber) => {
         setSelectedChapterId(chapterId ?? null);
         setSelectedChapterNumber(
@@ -740,7 +845,7 @@ const MangaPage: NextPage = () => {
           mangaChapterId={selectedChapterId}
           mangaChapterNumber={selectedChapterNumber}
           onSuccess={async () => {
-            const mangaId = manga.id;
+            const confirmedMangaId = manga.id;
 
             setQuickLogRefreshNonce((n) => n + 1);
 
@@ -758,7 +863,7 @@ const MangaPage: NextPage = () => {
             const { count: myCount, error: myErr } = await supabase
               .from("manga_series_logs")
               .select("id", { count: "exact", head: true })
-              .eq("manga_id", mangaId)
+              .eq("manga_id", confirmedMangaId)
               .eq("user_id", user.id);
 
             if (!myErr) setMyMangaSeriesLogCount(myCount ?? 0);
