@@ -89,6 +89,13 @@ type MangaTag = {
   category: string | null;
 };
 
+function normalizeBackdropUrl(url: string) {
+  if (url.includes("https://image.tmdb.org/t/p/original/")) {
+    return url.replace("/t/p/original/", "/t/p/w1280/");
+  }
+  return url;
+}
+
 function cleanSynopsis(raw: string) {
   let s = raw
     .replace(/\r\n/g, "\n")
@@ -159,6 +166,8 @@ const MangaPage: NextPage = () => {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
+
   const [tags, setTags] = useState<MangaTag[]>([]);
   const [tagsLoading, setTagsLoading] = useState(false);
   const [showSpoilers, setShowSpoilers] = useState(false);
@@ -189,6 +198,7 @@ const MangaPage: NextPage = () => {
 
     if (!slug) {
       setManga(null);
+      setBackdropUrl(null);
       setLoading(false);
       setErrorMessage("Manga not found.");
       return;
@@ -200,6 +210,7 @@ const MangaPage: NextPage = () => {
       setLoading(true);
       setErrorMessage(null);
       setManga(null);
+      setBackdropUrl(null);
       setTags([]);
       setShowSpoilers(false);
 
@@ -228,6 +239,53 @@ const MangaPage: NextPage = () => {
       isMounted = false;
     };
   }, [router.isReady, slug]);
+
+  useEffect(() => {
+    const mangaId = manga?.id;
+
+    if (!mangaId) {
+      setBackdropUrl(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function fetchBackdrop() {
+      const { data, error } = await supabase
+        .from("manga_covers")
+        .select("cached_url")
+        .eq("manga_id", mangaId)
+        .not("cached_url", "is", null)
+        .limit(200);
+
+      if (cancelled) return;
+
+      if (error || !data || data.length === 0) {
+        setBackdropUrl(manga?.banner_image_url ?? null);
+        return;
+      }
+
+      const urls = data
+        .map((c: any) =>
+          typeof c.cached_url === "string" ? c.cached_url.trim() : ""
+        )
+        .filter(Boolean);
+
+      if (urls.length === 0) {
+        setBackdropUrl(manga?.banner_image_url ?? null);
+        return;
+      }
+
+      const pick = urls[Math.floor(Math.random() * urls.length)];
+      setBackdropUrl(normalizeBackdropUrl(pick));
+    }
+
+    fetchBackdrop();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [manga?.id, manga?.banner_image_url]);
 
   useEffect(() => {
     const mangaId = manga?.id;
@@ -384,10 +442,10 @@ const MangaPage: NextPage = () => {
 
   const desktopView = (
     <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
-      {manga.banner_image_url ? (
+      {backdropUrl ? (
         <div className="relative h-[620px] w-full overflow-hidden">
           <img
-            src={manga.banner_image_url}
+            src={backdropUrl}
             alt=""
             className="h-full w-full object-cover object-[50%_25%]"
           />
@@ -636,7 +694,7 @@ const MangaPage: NextPage = () => {
     <MangaPhoneLayout
       slug={slug}
       manga={manga}
-      backdropUrl={manga.banner_image_url}
+      backdropUrl={backdropUrl}
       tags={tags}
       tagsLoading={tagsLoading}
       showSpoilers={showSpoilers}
