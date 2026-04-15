@@ -89,6 +89,9 @@ type MangaTag = {
   category: string | null;
 };
 
+const TRANSPARENT_BACKDROP_DATA_URI =
+  "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=";
+
 function normalizeBackdropUrl(url: string): string {
   if (url.includes("https://image.tmdb.org/t/p/original/")) {
     return url.replace("/t/p/original/", "/t/p/w1280/");
@@ -124,10 +127,38 @@ function formatSafetyPill(text: string): string {
     .join(" ");
 }
 
+function BackdropFrame({
+  url,
+  showOverlay = true,
+}: {
+  url: string | null;
+  showOverlay?: boolean;
+}) {
+  return (
+    <div className="relative h-[620px] w-full overflow-hidden bg-gray-200">
+      {url ? (
+        <img
+          src={url}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover object-[50%_25%]"
+        />
+      ) : null}
+
+      {showOverlay ? (
+        <img
+          src="/overlays/my-overlay.png"
+          alt=""
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function MangaInstantShell() {
   return (
     <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
-      <div className="relative h-[620px] w-full overflow-hidden bg-gray-200 animate-pulse" />
+      <BackdropFrame url={null} showOverlay />
 
       <div className="-mt-5 relative z-10 px-3">
         <div className="mb-8 flex flex-row gap-7">
@@ -142,15 +173,19 @@ function MangaInstantShell() {
           </div>
 
           <div className="min-w-100 flex-1">
-            <div className="mb-4 mt-4 h-12 w-[420px] max-w-full rounded bg-gray-300 animate-pulse" />
-            <div className="mb-4 h-7 w-[260px] max-w-full rounded bg-gray-200 animate-pulse" />
+            <div className="mb-0 pl-1">
+              <div className="mt-2 h-12 w-[420px] max-w-full rounded bg-gray-300 animate-pulse" />
+              <div className="mt-3 h-7 w-[260px] max-w-full rounded bg-gray-200 animate-pulse" />
+            </div>
 
-            <div className="space-y-3 mt-6">
-              <div className="h-4 w-full rounded bg-gray-200 animate-pulse" />
-              <div className="h-4 w-full rounded bg-gray-200 animate-pulse" />
-              <div className="h-4 w-[92%] rounded bg-gray-200 animate-pulse" />
-              <div className="h-4 w-[88%] rounded bg-gray-200 animate-pulse" />
-              <div className="h-4 w-[76%] rounded bg-gray-200 animate-pulse" />
+            <div className="min-w-0 pr-[270px] pl-1 mt-6">
+              <div className="space-y-3">
+                <div className="h-4 w-full rounded bg-gray-200 animate-pulse" />
+                <div className="h-4 w-full rounded bg-gray-200 animate-pulse" />
+                <div className="h-4 w-[92%] rounded bg-gray-200 animate-pulse" />
+                <div className="h-4 w-[88%] rounded bg-gray-200 animate-pulse" />
+                <div className="h-4 w-[76%] rounded bg-gray-200 animate-pulse" />
+              </div>
             </div>
           </div>
         </div>
@@ -296,12 +331,10 @@ const MangaPage: NextPage = () => {
       setTags([]);
       setShowSpoilers(false);
 
-      const currentSlug = slug;
-
       const { data, error } = await supabase
         .from("manga")
         .select("*")
-        .eq("slug", currentSlug)
+        .eq("slug", slug)
         .maybeSingle();
 
       if (!isMounted) return;
@@ -505,6 +538,8 @@ const MangaPage: NextPage = () => {
         ? slug
         : "";
 
+  const phoneBackdropUrl = backdropUrl ?? TRANSPARENT_BACKDROP_DATA_URI;
+
   const pickedTitle = pickEnglishTitle(
     {
       title_english: manga.title_english,
@@ -551,22 +586,7 @@ const MangaPage: NextPage = () => {
 
   const desktopView = (
     <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
-      {backdropUrl ? (
-        <div className="relative h-[620px] w-full overflow-hidden">
-          <img
-            src={backdropUrl}
-            alt=""
-            className="h-full w-full object-cover object-[50%_25%]"
-          />
-          <img
-            src="/overlays/my-overlay.png"
-            alt=""
-            className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-          />
-        </div>
-      ) : (
-        <div className="relative h-[620px] w-full overflow-hidden bg-gray-200" />
-      )}
+      <BackdropFrame url={backdropUrl} showOverlay />
 
       <div className="-mt-5 relative z-10 px-3">
         <div className="mb-8 flex flex-row gap-7">
@@ -750,7 +770,7 @@ const MangaPage: NextPage = () => {
                     setSelectedChapterId(chapterId ?? null);
                     setSelectedChapterNumber(
                       typeof chapterNumber === "number" &&
-                      Number.isFinite(chapterNumber)
+                        Number.isFinite(chapterNumber)
                         ? chapterNumber
                         : null
                     );
@@ -799,7 +819,7 @@ const MangaPage: NextPage = () => {
     <MangaPhoneLayout
       slug={pageSlug}
       manga={manga}
-      backdropUrl={backdropUrl}
+      backdropUrl={phoneBackdropUrl}
       tags={tags}
       tagsLoading={tagsLoading}
       showSpoilers={showSpoilers}
