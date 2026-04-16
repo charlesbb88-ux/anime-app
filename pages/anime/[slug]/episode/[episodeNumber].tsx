@@ -68,43 +68,45 @@ function firstChar(value: string): string {
   return value.length > 0 ? value.charAt(0) : "?";
 }
 
-function getBackdropUrlsStorageKey(animeId: string, episodeNumber: number): string {
+function getEpisodeBackdropUrlsStorageKey(animeId: string, episodeNumber: number): string {
   return `anime_episode_backdrop_urls_${animeId}_${episodeNumber}`;
 }
 
-function getBackdropIndexStorageKey(animeId: string, episodeNumber: number): string {
+function getEpisodeBackdropIndexStorageKey(animeId: string, episodeNumber: number): string {
   return `anime_episode_backdrop_index_${animeId}_${episodeNumber}`;
 }
 
-function readStoredBackdropUrls(animeId: string, episodeNumber: number): string[] {
+function readStoredEpisodeBackdropUrls(
+  animeId: string,
+  episodeNumber: number
+): string[] {
   if (typeof window === "undefined") return [];
 
   try {
     const raw = window.sessionStorage.getItem(
-      getBackdropUrlsStorageKey(animeId, episodeNumber)
+      getEpisodeBackdropUrlsStorageKey(animeId, episodeNumber)
     );
     if (!raw) return [];
 
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
 
-    const result: string[] = [];
+    const urls: string[] = [];
     for (const item of parsed) {
       if (typeof item === "string") {
         const trimmed = item.trim();
         if (trimmed.length > 0) {
-          result.push(trimmed);
+          urls.push(trimmed);
         }
       }
     }
-
-    return result;
+    return urls;
   } catch {
     return [];
   }
 }
 
-function writeStoredBackdropUrls(
+function writeStoredEpisodeBackdropUrls(
   animeId: string,
   episodeNumber: number,
   urls: string[]
@@ -113,13 +115,13 @@ function writeStoredBackdropUrls(
 
   try {
     window.sessionStorage.setItem(
-      getBackdropUrlsStorageKey(animeId, episodeNumber),
+      getEpisodeBackdropUrlsStorageKey(animeId, episodeNumber),
       JSON.stringify(urls)
     );
   } catch {}
 }
 
-function getNextRotatingBackdrop(
+function getNextRotatingEpisodeBackdrop(
   animeId: string,
   episodeNumber: number,
   urls: string[]
@@ -132,7 +134,7 @@ function getNextRotatingBackdrop(
   }
 
   try {
-    const key = getBackdropIndexStorageKey(animeId, episodeNumber);
+    const key = getEpisodeBackdropIndexStorageKey(animeId, episodeNumber);
     const raw = window.sessionStorage.getItem(key);
     const prevIndex = raw !== null ? Number(raw) : -1;
     const safePrevIndex =
@@ -148,6 +150,29 @@ function getNextRotatingBackdrop(
   } catch {
     return firstUrl;
   }
+}
+
+function getSeriesBackdropUrl(anime: Anime | null): string | null {
+  const candidateKeys = [
+    "banner_image_url",
+    "backdrop_url",
+    "cover_image_extra_large",
+    "cover_image_large",
+  ] as const;
+
+  for (const key of candidateKeys) {
+    const raw = (anime as any)?.[key];
+    if (typeof raw === "string" && raw.trim().length > 0) {
+      return normalizeBackdropUrl(raw.trim());
+    }
+  }
+
+  return null;
+}
+
+function getSeriesPosterUrl(anime: Anime | null): string | null {
+  const raw = anime?.image_url;
+  return typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : null;
 }
 
 function BackdropFrame({
@@ -286,7 +311,7 @@ const AnimeEpisodePage: NextPage = () => {
   const [quickLogRefreshToken, setQuickLogRefreshToken] = useState(0);
 
   const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
-  const [backdropLoaded, setBackdropLoaded] = useState(false);
+  const [backdropResolved, setBackdropResolved] = useState(false);
 
   const slugString = useMemo(() => firstString(slug), [slug]);
   const episodeNumberString = useMemo(
@@ -349,7 +374,7 @@ const AnimeEpisodePage: NextPage = () => {
       setTags([]);
       setShowSpoilers(false);
       setBackdropUrl(null);
-      setBackdropLoaded(false);
+      setBackdropResolved(false);
 
       const { data, error } = await getAnimeBySlug(slugString);
 
@@ -380,7 +405,7 @@ const AnimeEpisodePage: NextPage = () => {
   useEffect(() => {
     if (!anime?.id || !isValidEpisodeNumber) {
       setBackdropUrl(null);
-      setBackdropLoaded(true);
+      setBackdropResolved(true);
       return;
     }
 
@@ -388,12 +413,12 @@ const AnimeEpisodePage: NextPage = () => {
     let cancelled = false;
 
     async function run() {
-      setBackdropLoaded(false);
+      setBackdropResolved(false);
 
-      const storedUrls = readStoredBackdropUrls(animeId, episodeNum);
+      const storedUrls = readStoredEpisodeBackdropUrls(animeId, episodeNum);
 
       if (storedUrls.length > 0) {
-        const immediatePick = getNextRotatingBackdrop(
+        const immediatePick = getNextRotatingEpisodeBackdrop(
           animeId,
           episodeNum,
           storedUrls
@@ -403,9 +428,9 @@ const AnimeEpisodePage: NextPage = () => {
           setBackdropUrl(
             typeof immediatePick === "string"
               ? normalizeBackdropUrl(immediatePick)
-              : FALLBACK_BACKDROP_SRC
+              : null
           );
-          setBackdropLoaded(true);
+          setBackdropResolved(true);
         }
         return;
       }
@@ -419,50 +444,57 @@ const AnimeEpisodePage: NextPage = () => {
 
       if (cancelled) return;
 
-      if (epErr || !epRow?.id) {
-        setBackdropUrl(FALLBACK_BACKDROP_SRC);
-        setBackdropLoaded(true);
-        return;
-      }
+      if (!epErr && epRow?.id) {
+        const { data: arts, error: artsErr } = await supabase
+          .from("anime_episode_artwork")
+          .select("url, source")
+          .eq("anime_episode_id", epRow.id)
+          .neq("source", "tvdb");
 
-      const { data: arts, error: artsErr } = await supabase
-        .from("anime_episode_artwork")
-        .select("url, source")
-        .eq("anime_episode_id", epRow.id)
-        .neq("source", "tvdb");
+        if (cancelled) return;
 
-      if (cancelled) return;
+        if (!artsErr && Array.isArray(arts) && arts.length > 0) {
+          const urls: string[] = [];
 
-      if (artsErr || !Array.isArray(arts) || arts.length === 0) {
-        setBackdropUrl(FALLBACK_BACKDROP_SRC);
-        setBackdropLoaded(true);
-        return;
-      }
+          for (const row of arts as Array<{ url?: unknown }>) {
+            if (typeof row?.url === "string") {
+              const trimmed = row.url.trim();
+              if (trimmed.length > 0) {
+                urls.push(trimmed);
+              }
+            }
+          }
 
-      const urls: string[] = [];
-      for (const row of arts as Array<{ url?: unknown }>) {
-        if (typeof row?.url === "string") {
-          const trimmed = row.url.trim();
-          if (trimmed.length > 0) {
-            urls.push(trimmed);
+          if (urls.length > 0) {
+            writeStoredEpisodeBackdropUrls(animeId, episodeNum, urls);
+
+            const pick = getNextRotatingEpisodeBackdrop(animeId, episodeNum, urls);
+
+            setBackdropUrl(
+              typeof pick === "string" ? normalizeBackdropUrl(pick) : null
+            );
+            setBackdropResolved(true);
+            return;
           }
         }
       }
 
-      if (urls.length === 0) {
-        setBackdropUrl(FALLBACK_BACKDROP_SRC);
-        setBackdropLoaded(true);
+      const seriesBackdropUrl = getSeriesBackdropUrl(anime);
+      if (seriesBackdropUrl) {
+        setBackdropUrl(seriesBackdropUrl);
+        setBackdropResolved(true);
         return;
       }
 
-      writeStoredBackdropUrls(animeId, episodeNum, urls);
+      const seriesPosterUrl = getSeriesPosterUrl(anime);
+      if (seriesPosterUrl) {
+        setBackdropUrl(seriesPosterUrl);
+        setBackdropResolved(true);
+        return;
+      }
 
-      const pick = getNextRotatingBackdrop(animeId, episodeNum, urls);
-
-      setBackdropUrl(
-        typeof pick === "string" ? normalizeBackdropUrl(pick) : FALLBACK_BACKDROP_SRC
-      );
-      setBackdropLoaded(true);
+      setBackdropUrl(FALLBACK_BACKDROP_SRC);
+      setBackdropResolved(true);
     }
 
     run();
@@ -470,7 +502,7 @@ const AnimeEpisodePage: NextPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [anime?.id, isValidEpisodeNumber, episodeNum]);
+  }, [anime, anime?.id, isValidEpisodeNumber, episodeNum]);
 
   useEffect(() => {
     if (!anime?.id) {
@@ -588,7 +620,7 @@ const AnimeEpisodePage: NextPage = () => {
   const desktopView = (
     <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
       <div className="relative h-[620px] w-full overflow-hidden bg-gray-200">
-        {backdropLoaded && backdropUrl ? (
+        {backdropResolved && backdropUrl ? (
           <img
             src={backdropUrl}
             alt=""
@@ -898,7 +930,11 @@ const AnimeEpisodePage: NextPage = () => {
       episodeNum={episodeNum}
       anime={anime as any}
       episode={episode as any}
-      backdropUrl={backdropLoaded ? backdropUrl ?? FALLBACK_BACKDROP_SRC : TRANSPARENT_BACKDROP_DATA_URI}
+      backdropUrl={
+        backdropResolved
+          ? backdropUrl ?? FALLBACK_BACKDROP_SRC
+          : TRANSPARENT_BACKDROP_DATA_URI
+      }
       tags={tags}
       tagsLoading={tagsLoading}
       showSpoilers={showSpoilers}
