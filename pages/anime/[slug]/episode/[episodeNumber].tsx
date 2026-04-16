@@ -302,6 +302,39 @@ const AnimeEpisodePage: NextPage = () => {
 
   const episodeNum = isValidEpisodeNumber ? parsedEpisodeNum : NaN;
 
+  const a: any = anime;
+
+  const pickedSeriesTitle = useMemo(() => {
+    if (!anime) return null;
+
+    return (
+      pickEnglishTitle({
+        title_english: a?.title_english ?? null,
+        title_preferred: a?.title_preferred ?? null,
+        title: anime.title ?? null,
+        title_native: a?.title_native ?? null,
+      })?.value ?? null
+    );
+  }, [anime, a]);
+
+  const seriesDisplayTitle = pickedSeriesTitle ?? anime?.title ?? slugString;
+
+  const genres: string[] = useMemo(() => {
+    const g = a?.genres;
+    return Array.isArray(g) ? g : [];
+  }, [a]);
+
+  const hasGenres = genres.length > 0;
+
+  const spoilerTags = useMemo(
+    () =>
+      tags.filter(
+        (t) => t.is_general_spoiler === true || t.is_media_spoiler === true
+      ),
+    [tags]
+  );
+  const spoilerCount = spoilerTags.length;
+
   useEffect(() => {
     if (!router.isReady) return;
     if (!slugString) return;
@@ -505,7 +538,9 @@ const AnimeEpisodePage: NextPage = () => {
 
   useEffect(() => {
     setSelectedEpisodeId(episode?.id ?? null);
-    setSelectedEpisodeNumber(episode?.episode_number ?? (isValidEpisodeNumber ? episodeNum : null));
+    setSelectedEpisodeNumber(
+      episode?.episode_number ?? (isValidEpisodeNumber ? episodeNum : null)
+    );
   }, [episode?.id, episode?.episode_number, episodeNum, isValidEpisodeNumber]);
 
   if (!router.isReady || isAnimeLoading) {
@@ -535,33 +570,6 @@ const AnimeEpisodePage: NextPage = () => {
       </div>
     );
   }
-
-  const a: any = anime;
-
-  const pickedSeriesTitle = pickEnglishTitle({
-    title_english: a?.title_english ?? null,
-    title_preferred: a?.title_preferred ?? null,
-    title: anime.title ?? null,
-    title_native: a?.title_native ?? null,
-  })?.value;
-
-  const seriesDisplayTitle = pickedSeriesTitle ?? anime.title ?? slugString;
-
-  const genres: string[] = useMemo(() => {
-    const g = a?.genres;
-    return Array.isArray(g) ? g : [];
-  }, [a]);
-
-  const hasGenres = genres.length > 0;
-
-  const spoilerTags = useMemo(
-    () =>
-      tags.filter(
-        (t) => t.is_general_spoiler === true || t.is_media_spoiler === true
-      ),
-    [tags]
-  );
-  const spoilerCount = spoilerTags.length;
 
   const desktopView = (
     <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
