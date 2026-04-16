@@ -1,7 +1,7 @@
 // pages/anime/[slug].tsx
 
 import { useEffect, useMemo, useState } from "react";
-import type { NextPage, GetServerSideProps } from "next";
+import type { NextPage } from "next";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import FeedShell from "@/components/FeedShell";
@@ -9,7 +9,6 @@ import FeedShell from "@/components/FeedShell";
 import { getAnimeBySlug } from "@/lib/anime";
 import type { Anime } from "@/lib/types";
 import { supabase } from "@/lib/supabaseClient";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 import EpisodeNavigator from "@/components/EpisodeNavigator";
 import CharacterNavigator from "@/components/CharacterNavigator";
@@ -26,10 +25,7 @@ import ResponsiveSwitch from "@/components/ResponsiveSwitch";
 import AnimePhoneLayout from "@/components/anime/AnimePhoneLayout";
 
 import EnglishTitle from "@/components/EnglishTitle";
-
-import SmartBackdropImage from "@/components/SmartBackdropImage";
 import { FALLBACK_BACKDROP_SRC } from "@/lib/fallbacks";
-
 import { pickEnglishTitle } from "@/lib/pickEnglishTitle";
 
 type AnimeTag = {
@@ -44,14 +40,18 @@ type AnimeTag = {
   category: string | null;
 };
 
-type AnimePageProps = {
-  initialBackdropUrl: string | null;
-};
+const TRANSPARENT_BACKDROP_DATA_URI =
+  "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=";
 
-function normalizeBackdropUrl(url: string) {
-  if (url.includes("https://image.tmdb.org/t/p/original/")) {
-    return url.replace("/t/p/original/", "/t/p/w1280/");
+function normalizeBackdropUrl(url: string): string {
+  if (!url) return url;
+
+  if (url.includes("https://image.tmdb.org/t/p/")) {
+    if (url.includes("/t/p/original/")) {
+      return url.replace("/t/p/original/", "/t/p/w1280/");
+    }
   }
+
   return url;
 }
 
@@ -78,6 +78,88 @@ function firstString(value: string | string[] | undefined): string {
 
 function firstChar(value: string): string {
   return value.length > 0 ? value.charAt(0) : "?";
+}
+
+function getAnimeBackdropUrlsStorageKey(animeId: string): string {
+  return `anime_backdrop_urls_${animeId}`;
+}
+
+function getAnimeBackdropIndexStorageKey(animeId: string): string {
+  return `anime_backdrop_index_${animeId}`;
+}
+
+function readStoredAnimeBackdropUrls(animeId: string): string[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.sessionStorage.getItem(
+      getAnimeBackdropUrlsStorageKey(animeId)
+    );
+    if (!raw) return [];
+
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    const urls: string[] = [];
+    for (const item of parsed) {
+      if (typeof item === "string") {
+        const trimmed = item.trim();
+        if (trimmed.length > 0) {
+          urls.push(trimmed);
+        }
+      }
+    }
+
+    return urls;
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredAnimeBackdropUrls(animeId: string, urls: string[]): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.sessionStorage.setItem(
+      getAnimeBackdropUrlsStorageKey(animeId),
+      JSON.stringify(urls)
+    );
+  } catch {}
+}
+
+function getNextRotatingAnimeBackdrop(
+  animeId: string,
+  urls: string[]
+): string | null {
+  const firstUrl = urls.find((u) => typeof u === "string" && u.length > 0);
+  if (!firstUrl) return null;
+
+  if (typeof window === "undefined") {
+    return firstUrl;
+  }
+
+  try {
+    const key = getAnimeBackdropIndexStorageKey(animeId);
+    const raw = window.sessionStorage.getItem(key);
+    const prevIndex = raw !== null ? Number(raw) : -1;
+    const safePrevIndex =
+      Number.isFinite(prevIndex) && prevIndex >= -1 ? prevIndex : -1;
+
+    const nextIndex = (safePrevIndex + 1) % urls.length;
+    const maybeUrl = urls[nextIndex];
+    const nextUrl =
+      typeof maybeUrl === "string" && maybeUrl.length > 0 ? maybeUrl : firstUrl;
+
+    window.sessionStorage.setItem(key, String(nextIndex));
+    return nextUrl;
+  } catch {
+    return firstUrl;
+  }
+}
+
+function getSeriesPosterUrl(anime: Anime | null): string | null {
+  const raw = anime?.image_url;
+  return typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : null;
 }
 
 function AnimeSeriesInstantShell() {
@@ -150,14 +232,15 @@ function AnimeSeriesInstantShell() {
             </div>
           </div>
         </div>
+
+        <div className="h-4 w-20 rounded bg-gray-200 animate-pulse" />
       </div>
     </div>
   );
 }
 
-const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
+const AnimePage: NextPage = () => {
   const router = useRouter();
-
   const slug = useMemo(() => firstString(router.query.slug), [router.query.slug]);
 
   const [anime, setAnime] = useState<Anime | null>(null);
@@ -180,13 +263,18 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
   const [episodeLogsNonce, setEpisodeLogsNonce] = useState(0);
   const [quickLogRefreshToken, setQuickLogRefreshToken] = useState(0);
 
+  const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
+  const [backdropResolved, setBackdropResolved] = useState(false);
+
   useEffect(() => {
     if (!router.isReady) return;
 
     if (!slug) {
       setAnime(null);
-      setErrorMessage("Anime not found.");
       setLoading(false);
+      setErrorMessage("Anime not found.");
+      setBackdropUrl(null);
+      setBackdropResolved(true);
       return;
     }
 
@@ -196,6 +284,8 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
       setLoading(true);
       setErrorMessage(null);
       setShowSpoilers(false);
+      setBackdropUrl(null);
+      setBackdropResolved(false);
 
       const { data, error } = await getAnimeBySlug(slug);
 
@@ -218,6 +308,102 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
       isMounted = false;
     };
   }, [router.isReady, slug]);
+
+  useEffect(() => {
+    if (!anime?.id) {
+      setBackdropUrl(null);
+      setBackdropResolved(true);
+      return;
+    }
+
+    const animeId = anime.id;
+    let cancelled = false;
+
+    async function run() {
+      setBackdropResolved(false);
+
+      const storedUrls = readStoredAnimeBackdropUrls(animeId);
+
+      if (storedUrls.length > 0) {
+        const immediatePick = getNextRotatingAnimeBackdrop(animeId, storedUrls);
+
+        if (!cancelled) {
+          setBackdropUrl(
+            typeof immediatePick === "string"
+              ? normalizeBackdropUrl(immediatePick)
+              : null
+          );
+          setBackdropResolved(true);
+        }
+        return;
+      }
+
+      const { data: arts, error: artErr } = await supabase
+        .from("anime_artwork")
+        .select("url, is_primary, vote, width")
+        .eq("anime_id", animeId)
+        .in("kind", ["backdrop", "3"])
+        .limit(50);
+
+      if (cancelled) return;
+
+      if (!artErr && Array.isArray(arts) && arts.length > 0) {
+        const sorted = [...arts].sort((a: any, b: any) => {
+          const ap = a.is_primary ? 1 : 0;
+          const bp = b.is_primary ? 1 : 0;
+          if (bp !== ap) return bp - ap;
+
+          const av = typeof a.vote === "number" ? a.vote : -1;
+          const bv = typeof b.vote === "number" ? b.vote : -1;
+          if (bv !== av) return bv - av;
+
+          const aw = typeof a.width === "number" ? a.width : -1;
+          const bw = typeof b.width === "number" ? b.width : -1;
+          return bw - aw;
+        });
+
+        const topN = sorted.slice(0, Math.min(12, sorted.length));
+        const urls: string[] = [];
+
+        for (const row of topN as Array<{ url?: unknown }>) {
+          if (typeof row?.url === "string") {
+            const trimmed = row.url.trim();
+            if (trimmed.length > 0) {
+              urls.push(trimmed);
+            }
+          }
+        }
+
+        if (urls.length > 0) {
+          writeStoredAnimeBackdropUrls(animeId, urls);
+
+          const pick = getNextRotatingAnimeBackdrop(animeId, urls);
+
+          setBackdropUrl(
+            typeof pick === "string" ? normalizeBackdropUrl(pick) : null
+          );
+          setBackdropResolved(true);
+          return;
+        }
+      }
+
+      const seriesPosterUrl = getSeriesPosterUrl(anime);
+      if (seriesPosterUrl) {
+        setBackdropUrl(seriesPosterUrl);
+        setBackdropResolved(true);
+        return;
+      }
+
+      setBackdropUrl(FALLBACK_BACKDROP_SRC);
+      setBackdropResolved(true);
+    }
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [anime, anime?.id]);
 
   useEffect(() => {
     const animeId = anime?.id;
@@ -300,261 +486,265 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
   );
   const spoilerCount = spoilerTags.length;
 
-  const phoneBackdropUrl =
-    initialBackdropUrl ?? anime.image_url ?? FALLBACK_BACKDROP_SRC;
-
   const desktopView = (
-    <>
-      <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
-        <div className="relative h-[620px] w-full overflow-hidden">
-          <SmartBackdropImage
-            src={initialBackdropUrl}
-            posterFallbackSrc={anime.image_url ?? null}
-            finalFallbackSrc={FALLBACK_BACKDROP_SRC}
-            alt=""
-            width={1920}
-            height={1080}
-            priority
-            sizes="100vw"
-            className="h-full w-full object-cover object-bottom"
-            posterFallbackObjectPosition="50% 30%"
-            finalFallbackObjectPosition="50% 13%"
-            deferFinalUntilPosterResolved
-          />
-
+    <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
+      <div className="relative h-[620px] w-full overflow-hidden bg-gray-200">
+        {backdropResolved && backdropUrl ? (
           <img
-            src="/overlays/my-overlay.png"
+            src={backdropUrl}
             alt=""
-            className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+            className="absolute inset-0 h-full w-full object-cover object-bottom"
           />
-        </div>
+        ) : null}
 
-        <div className="-mt-5 relative z-10 px-3">
-          <div className="mb-8 flex flex-row gap-7">
-            <div className="flex-shrink-0 w-56">
-              {anime.image_url ? (
-                <img
-                  src={anime.image_url}
-                  alt={anime.title}
-                  className="h-84 w-56 rounded-md object-cover border-3 border-black/100"
-                />
-              ) : (
-                <div className="flex h-64 w-56 items-center justify-center rounded-lg bg-gray-800 text-4xl font-bold text-gray-200">
-                  {firstChar(anime.title ?? "").toUpperCase()}
-                </div>
-              )}
+        <img
+          src="/overlays/my-overlay.png"
+          alt=""
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+        />
+      </div>
 
-              {hasGenres && (
-                <div className="mt-4">
-                  <h2 className="mb-1 text-sm font-semibold text-black-300">
-                    Genres
-                  </h2>
-                  <div className="flex flex-wrap gap-2">
-                    {genres.map((g) => (
-                      <span
-                        key={g}
-                        className="rounded-full bg-black px-3 py-1 text-xs text-gray-100"
-                      >
-                        {g}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
+      <div className="-mt-5 relative z-10 px-3">
+        <div className="mb-8 flex flex-row gap-7">
+          <div className="flex-shrink-0 w-56">
+            {anime.image_url ? (
+              <img
+                src={anime.image_url}
+                alt={anime.title}
+                className="h-84 w-56 rounded-md object-cover border-3 border-black/100"
+              />
+            ) : (
+              <div className="flex h-64 w-56 items-center justify-center rounded-lg bg-gray-800 text-4xl font-bold text-gray-200">
+                {firstChar(anime.title ?? "").toUpperCase()}
+              </div>
+            )}
 
-              <div className="mt-5">
-                <div className="mb-1 flex items-center gap-2">
-                  <h2 className="text-base font-semibold text-black-300">Tags</h2>
-                  {tagsLoading ? (
-                    <span className="text-[10px] uppercase tracking-wide text-gray-500">
-                      Loading…
+            {hasGenres ? (
+              <div className="mt-4">
+                <h2 className="mb-1 text-sm font-semibold text-black-300">
+                  Genres
+                </h2>
+                <div className="flex flex-wrap gap-2">
+                  {genres.map((g) => (
+                    <span
+                      key={g}
+                      className="rounded-full bg-black px-3 py-1 text-xs text-gray-100"
+                    >
+                      {g}
                     </span>
-                  ) : null}
+                  ))}
                 </div>
+              </div>
+            ) : null}
 
-                {!tagsLoading && tags.length === 0 ? (
-                  <p className="text-sm text-gray-500">
-                    No tags imported yet for this anime.
-                  </p>
-                ) : (
-                  <>
-                    <div className="flex flex-col gap-1">
-                      <div className="flex w-full flex-col gap-1">
-                        {tags.map((tag) => {
-                          const isSpoiler =
-                            tag.is_general_spoiler || tag.is_media_spoiler;
+            <div className="mt-5">
+              <div className="mb-1 flex items-center gap-2">
+                <h2 className="text-base font-semibold text-black-300">Tags</h2>
+                {tagsLoading ? (
+                  <span className="text-[10px] uppercase tracking-wide text-gray-500">
+                    Loading…
+                  </span>
+                ) : null}
+              </div>
 
-                          if (isSpoiler && !showSpoilers) return null;
+              {!tagsLoading && tags.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  No tags imported yet for this anime.
+                </p>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex w-full flex-col gap-1">
+                      {tags.map((tag) => {
+                        const isSpoiler =
+                          tag.is_general_spoiler === true ||
+                          tag.is_media_spoiler === true;
 
-                          let percent: number | null = null;
-                          if (typeof tag.rank === "number") {
-                            percent = Math.max(
-                              0,
-                              Math.min(100, Math.round(tag.rank))
-                            );
-                          }
+                        if (isSpoiler && !showSpoilers) return null;
 
-                          return (
-                            <div key={tag.id} className="group relative inline-flex">
-                              <span
-                                className="
-                                  relative inline-flex w-full items-center justify-between
-                                  rounded-full border border-gray-700 bg-gray-900/80
-                                  px-3 py-[3px] text-[13px] font-medium
-                                  whitespace-nowrap overflow-hidden
-                                "
-                              >
-                                {percent !== null ? (
-                                  <span
-                                    className="pointer-events-none absolute inset-y-0 left-0 bg-black"
-                                    style={{ width: `${percent}%` }}
-                                  />
-                                ) : null}
+                        const percent =
+                          typeof tag.rank === "number"
+                            ? Math.max(0, Math.min(100, Math.round(tag.rank)))
+                            : null;
 
+                        return (
+                          <div key={tag.id} className="group relative inline-flex">
+                            <span
+                              className="
+                                relative inline-flex w-full items-center justify-between
+                                rounded-full border border-gray-700 bg-gray-900/80
+                                px-3 py-[3px] text-[13px] font-medium
+                                whitespace-nowrap overflow-hidden
+                              "
+                            >
+                              {percent !== null ? (
                                 <span
-                                  className={`relative ${
-                                    isSpoiler ? "text-red-400" : "text-gray-100"
-                                  }`}
-                                >
-                                  {tag.name}
-                                </span>
+                                  className="pointer-events-none absolute inset-y-0 left-0 bg-black"
+                                  style={{ width: `${percent}%` }}
+                                />
+                              ) : null}
 
-                                {percent !== null ? (
-                                  <span className="relative text-[11px] font-semibold text-gray-200">
-                                    {percent}%
-                                  </span>
-                                ) : null}
+                              <span
+                                className={`relative ${
+                                  isSpoiler ? "text-red-400" : "text-gray-100"
+                                }`}
+                              >
+                                {tag.name}
                               </span>
 
-                              {tag.description ? (
-                                <div
-                                  className="
-                                    pointer-events-none absolute left-0 top-full z-20 mt-1 w-64
-                                    rounded-md bg-black px-3 py-2 text-xs text-gray-100 shadow-lg
-                                    opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0
-                                    transition duration-200 delay-150
-                                  "
-                                >
-                                  {tag.description}
-                                </div>
+                              {percent !== null ? (
+                                <span className="relative text-[11px] font-semibold text-gray-200">
+                                  {percent}%
+                                </span>
                               ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
+                            </span>
+
+                            {tag.description ? (
+                              <div
+                                className="
+                                  pointer-events-none absolute left-0 top-full z-20 mt-1 w-64
+                                  rounded-md bg-black px-3 py-2 text-xs text-gray-100 shadow-lg
+                                  opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0
+                                  transition duration-200 delay-150
+                                "
+                              >
+                                {tag.description}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
                     </div>
+                  </div>
 
-                    {spoilerCount > 0 ? (
-                      <button
-                        type="button"
-                        onClick={() => setShowSpoilers((prev) => !prev)}
-                        className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
-                      >
-                        {showSpoilers
-                          ? `Hide ${spoilerCount} spoiler tag${
-                              spoilerCount === 1 ? "" : "s"
-                            }`
-                          : `Show ${spoilerCount} spoiler tag${
-                              spoilerCount === 1 ? "" : "s"
-                            }`}
-                      </button>
-                    ) : null}
-                  </>
-                )}
-              </div>
-
-              <div className="mt-4">
-                <AnimeMetaBox
-                  titleEnglish={a.title_english}
-                  titleNative={a.title_native}
-                  totalEpisodes={anime.total_episodes}
-                  format={a.format}
-                  status={a.status}
-                  startDate={a.start_date}
-                  endDate={a.end_date}
-                  season={a.season}
-                  seasonYear={a.season_year}
-                  averageScore={
-                    typeof a.average_score === "number" ? a.average_score : null
-                  }
-                />
-              </div>
+                  {spoilerCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowSpoilers((prev) => !prev)}
+                      className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
+                    >
+                      {showSpoilers
+                        ? `Hide ${spoilerCount} spoiler tag${
+                            spoilerCount === 1 ? "" : "s"
+                          }`
+                        : `Show ${spoilerCount} spoiler tag${
+                            spoilerCount === 1 ? "" : "s"
+                          }`}
+                    </button>
+                  ) : null}
+                </>
+              )}
             </div>
 
-            <div className="min-w-100 flex-1">
-              <EnglishTitle
-                as="h1"
-                className="text-4xl font-bold leading-tight"
-                titles={{
-                  title_english: (anime as any).title_english,
-                  title_preferred: (anime as any).title_preferred,
-                  title: anime.title,
-                  title_native: (anime as any).title_native,
-                }}
-                fallback={anime.title}
+            <div className="mt-4">
+              <AnimeMetaBox
+                titleEnglish={a?.title_english ?? null}
+                titleNative={a?.title_native ?? null}
+                totalEpisodes={anime.total_episodes ?? null}
+                format={a?.format ?? null}
+                status={a?.status ?? null}
+                startDate={a?.start_date ?? null}
+                endDate={a?.end_date ?? null}
+                season={a?.season ?? null}
+                seasonYear={a?.season_year ?? null}
+                averageScore={
+                  typeof a?.average_score === "number" ? a.average_score : null
+                }
               />
+            </div>
+          </div>
 
-              <div className="relative w-full">
-                <div className="absolute right-0 top-6 flex flex-col items-end gap-2">
-                  <ActionBox
-                    key={actionBoxNonce}
-                    animeId={anime.id}
-                    onOpenLog={() => setLogOpen(true)}
-                    onShowActivity={() => router.push(`/anime/${anime.slug}/activity`)}
-                  />
+          <div className="min-w-100 flex-1">
+            <EnglishTitle
+              as="h1"
+              className="text-4xl font-bold leading-tight"
+              titles={{
+                title_english: (anime as any).title_english,
+                title_preferred: (anime as any).title_preferred,
+                title: anime.title,
+                title_native: (anime as any).title_native,
+              }}
+              fallback={anime.title}
+            />
 
-                  <AnimeQuickLogBox
-                    animeId={anime.id}
+            <div className="relative w-full">
+              <div className="absolute right-0 top-6 flex flex-col items-end gap-2">
+                <ActionBox
+                  key={actionBoxNonce}
+                  animeId={anime.id}
+                  onOpenLog={() => setLogOpen(true)}
+                  onShowActivity={() => router.push(`/anime/${anime.slug}/activity`)}
+                />
+
+                <AnimeQuickLogBox
+                  animeId={anime.id}
+                  totalEpisodes={anime.total_episodes}
+                  refreshToken={quickLogRefreshToken}
+                  onOpenLog={(episodeId, episodeNumber) => {
+                    setSelectedEpisodeId(episodeId ?? null);
+                    setSelectedEpisodeNumber(
+                      typeof episodeNumber === "number" ? episodeNumber : null
+                    );
+                    setLogOpen(true);
+                  }}
+                />
+              </div>
+
+              <div className="min-w-0 pr-[270px] pl-1">
+                {typeof a.description === "string" && a.description.trim() ? (
+                  <div className="mt-6 mb-3">
+                    <p className="whitespace-pre-line text-base text-black">
+                      {cleanSynopsis(a.description)}
+                    </p>
+                  </div>
+                ) : null}
+
+                <div className="mt-4 min-w-0 overflow-hidden">
+                  <EpisodeNavigator
+                    slug={slug}
                     totalEpisodes={anime.total_episodes}
-                    refreshToken={quickLogRefreshToken}
-                    onOpenLog={(episodeId, episodeNumber) => {
-                      setSelectedEpisodeId(episodeId ?? null);
-                      setSelectedEpisodeNumber(
-                        typeof episodeNumber === "number" ? episodeNumber : null
-                      );
-                      setLogOpen(true);
-                    }}
+                    currentEpisodeNumber={null}
                   />
                 </div>
 
-                <div className="min-w-0 pr-[270px] pl-1">
-                  {typeof a.description === "string" && a.description.trim() ? (
-                    <div className="mt-6 mb-3">
-                      <p className="whitespace-pre-line text-base text-black">
-                        {cleanSynopsis(a.description)}
-                      </p>
-                    </div>
-                  ) : null}
+                <CharacterNavigator slug={slug} className="mt-4" />
 
-                  <div className="mt-4 min-w-0 overflow-hidden">
-                    <EpisodeNavigator
-                      slug={slug}
-                      totalEpisodes={anime.total_episodes}
-                      currentEpisodeNumber={null}
-                    />
-                  </div>
-
-                  <CharacterNavigator slug={slug} className="mt-4" />
-
-                  <div className="mt-6">
-                    <FeedShell>
+                <div className="mt-6">
+                  <FeedShell>
+                    {anime.id ? (
                       <PostFeed key={feedNonce} animeId={anime.id} />
-                    </FeedShell>
-                  </div>
+                    ) : (
+                      <div className="rounded-md bg-gray-100/60 p-4">
+                        <div className="space-y-3">
+                          <div className="h-4 w-full rounded bg-gray-200 animate-pulse" />
+                          <div className="h-4 w-[96%] rounded bg-gray-200 animate-pulse" />
+                          <div className="h-4 w-[88%] rounded bg-gray-200 animate-pulse" />
+                        </div>
+                      </div>
+                    )}
+                  </FeedShell>
                 </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </>
+
+      <Link href="/" className="text-xs text-blue-400 hover:text-blue-300">
+        ← Back home
+      </Link>
+    </div>
   );
 
   const phoneView = (
     <AnimePhoneLayout
       slug={slug}
       anime={anime as any}
-      backdropUrl={phoneBackdropUrl}
+      backdropUrl={
+        backdropResolved
+          ? backdropUrl ?? FALLBACK_BACKDROP_SRC
+          : TRANSPARENT_BACKDROP_DATA_URI
+      }
       tags={tags}
       tagsLoading={tagsLoading}
       showSpoilers={showSpoilers}
@@ -562,7 +752,11 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
       cleanSynopsis={cleanSynopsis}
       actionBoxNonce={actionBoxNonce}
       episodeLogsNonce={episodeLogsNonce}
-      onOpenLog={() => setLogOpen(true)}
+      onOpenLog={() => {
+        setSelectedEpisodeId(null);
+        setSelectedEpisodeNumber(null);
+        setLogOpen(true);
+      }}
       onShowActivity={() => router.push(`/anime/${anime.slug}/activity`)}
       onOpenLogForEpisode={(episodeId, episodeNumber) => {
         setSelectedEpisodeId(episodeId ?? null);
@@ -614,64 +808,3 @@ const AnimePage: NextPage<AnimePageProps> = ({ initialBackdropUrl }) => {
 (AnimePage as any).headerTransparent = true;
 
 export default AnimePage;
-
-export const getServerSideProps: GetServerSideProps<AnimePageProps> = async (
-  ctx
-) => {
-  const raw = ctx.params?.slug;
-  const slug =
-    typeof raw === "string"
-      ? raw
-      : Array.isArray(raw) && raw[0]
-      ? raw[0]
-      : null;
-
-  if (!slug) {
-    return { props: { initialBackdropUrl: null } };
-  }
-
-  const { data: animeRow, error: animeErr } = await supabaseAdmin
-    .from("anime")
-    .select("id")
-    .eq("slug", slug)
-    .maybeSingle();
-
-  if (animeErr || !animeRow?.id) {
-    return { props: { initialBackdropUrl: null } };
-  }
-
-  const { data: arts, error: artErr } = await supabaseAdmin
-    .from("anime_artwork")
-    .select("url, is_primary, vote, width")
-    .eq("anime_id", animeRow.id)
-    .in("kind", ["backdrop", "3"])
-    .limit(50);
-
-  if (artErr || !arts || arts.length === 0) {
-    return { props: { initialBackdropUrl: null } };
-  }
-
-  const sorted = [...arts].sort((a: any, b: any) => {
-    const ap = a.is_primary ? 1 : 0;
-    const bp = b.is_primary ? 1 : 0;
-    if (bp !== ap) return bp - ap;
-
-    const av = typeof a.vote === "number" ? a.vote : -1;
-    const bv = typeof b.vote === "number" ? b.vote : -1;
-    if (bv !== av) return bv - av;
-
-    const aw = typeof a.width === "number" ? a.width : -1;
-    const bw = typeof b.width === "number" ? b.width : -1;
-    return bw - aw;
-  });
-
-  const topN = sorted.slice(0, Math.min(12, sorted.length));
-  const pick = topN[Math.floor(Math.random() * topN.length)];
-  const rawUrl = pick?.url ?? null;
-
-  return {
-    props: {
-      initialBackdropUrl: rawUrl ? normalizeBackdropUrl(rawUrl) : null,
-    },
-  };
-};
