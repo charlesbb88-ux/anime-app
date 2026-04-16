@@ -1,9 +1,8 @@
 // pages/manga/[slug]/chapter/[chapterNumber].tsx
 
 import { useRouter } from "next/router";
-import type { NextPage, GetServerSideProps } from "next";
+import type { NextPage } from "next";
 import Link from "next/link";
-import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 
 import type { Manga, MangaChapter } from "@/lib/types";
@@ -20,10 +19,8 @@ import EnglishTitle from "@/components/EnglishTitle";
 import { pickEnglishTitle } from "@/lib/pickEnglishTitle";
 
 import { supabase } from "@/lib/supabaseClient";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 import FeedShell from "@/components/FeedShell";
-
 import MangaChapterSummary from "@/components/manga/MangaChapterSummary";
 
 import ResponsiveSwitch from "@/components/ResponsiveSwitch";
@@ -55,60 +52,17 @@ type VolumeMapRow = {
   mapping: Record<string, string[]> | null;
 };
 
-function isNumericLike2(s: string) {
-  return /^(\d+)(\.\d+)?$/.test(String(s).trim());
-}
+const TRANSPARENT_BACKDROP_DATA_URI =
+  "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=";
 
-function normVol(v: any): string | null {
-  const s0 = String(v ?? "").trim();
-  if (!s0) return null;
-  if (s0.toLowerCase() === "none") return null;
-
-  if (/^\d+(\.\d+)?$/.test(s0)) {
-    const n = Number(s0);
-    if (!Number.isFinite(n) || n <= 0) return null;
-    return String(Math.trunc(n));
-  }
-
-  const m = s0.match(/(\d+)/);
-  if (m?.[1]) {
-    const n = Number(m[1]);
-    if (Number.isFinite(n) && n > 0) return String(Math.trunc(n));
-  }
-
-  return s0;
-}
-
-function pickBestCoverUrl(rows: CoverRow[]): string | null {
-  const usable = (rows || []).filter((r) => r?.cached_url);
-  if (!usable.length) return null;
-
-  const mains = usable.filter((r) => r.is_main);
-  const pool = mains.length ? mains : usable;
-
-  const pref = ["en", "ja"];
-  for (const p of pref) {
-    const hit = pool.find(
-      (r) => (r.locale || "").toLowerCase() === p && r.cached_url
-    );
-    if (hit?.cached_url) return hit.cached_url;
-  }
-
-  return pool[0].cached_url ?? null;
-}
-
-type MangaChapterPageProps = {
-  initialBackdropUrl: string | null;
-};
-
-function normalizeBackdropUrl(url: string) {
+function normalizeBackdropUrl(url: string): string {
   if (url.includes("https://image.tmdb.org/t/p/original/")) {
     return url.replace("/t/p/original/", "/t/p/w1280/");
   }
   return url;
 }
 
-function cleanSynopsis(raw: string) {
+function cleanSynopsis(raw: string): string {
   let s = raw
     .replace(/\r\n/g, "\n")
     .replace(/<br\s*\/?>/gi, "\n")
@@ -122,13 +76,261 @@ function cleanSynopsis(raw: string) {
     .replace(/\n\*\*Additional Links:\*\*[\s\S]*$/m, "");
 
   s = s.replace(/^\s*[-*_]{3,}\s*$/gm, "");
+
   return s
     .replace(/\n{3,}/g, "\n\n")
     .replace(/\n[ \t]+\n/g, "\n\n")
     .trim();
 }
 
-const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl }) => {
+function formatSafetyPill(text: string): string {
+  return text
+    .split(" ")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function isNumericLike2(s: string): boolean {
+  return /^(\d+)(\.\d+)?$/.test(String(s).trim());
+}
+
+function firstString(value: string | string[] | undefined): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    const first = value[0];
+    return typeof first === "string" ? first : "";
+  }
+  return "";
+}
+
+function firstChar(value: string): string {
+  return value.length > 0 ? value.charAt(0) : "?";
+}
+
+function normVol(v: unknown): string | null {
+  const s0 = String(v ?? "").trim();
+  if (!s0) return null;
+  if (s0.toLowerCase() === "none") return null;
+
+  if (/^\d+(\.\d+)?$/.test(s0)) {
+    const n = Number(s0);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return String(Math.trunc(n));
+  }
+
+  const m = s0.match(/(\d+)/);
+  const captured = m?.[1];
+  if (typeof captured === "string" && captured.length > 0) {
+    const n = Number(captured);
+    if (Number.isFinite(n) && n > 0) return String(Math.trunc(n));
+  }
+
+  return s0;
+}
+
+function pickBestCoverUrl(rows: CoverRow[]): string | null {
+  const usable = rows.filter(
+    (r) => typeof r.cached_url === "string" && r.cached_url.length > 0
+  );
+  if (usable.length === 0) return null;
+
+  const mains = usable.filter((r) => r.is_main === true);
+  const pool = mains.length > 0 ? mains : usable;
+
+  const pref = ["en", "ja"];
+  for (const p of pref) {
+    const hit = pool.find(
+      (r) =>
+        typeof r.locale === "string" &&
+        r.locale.toLowerCase() === p &&
+        typeof r.cached_url === "string"
+    );
+    if (hit && typeof hit.cached_url === "string") {
+      return hit.cached_url;
+    }
+  }
+
+  const first = pool.find((r) => typeof r.cached_url === "string");
+  return first && typeof first.cached_url === "string" ? first.cached_url : null;
+}
+
+function getCoverUrlsStorageKey(mangaId: string): string {
+  return `manga_backdrop_urls_${mangaId}`;
+}
+
+function getCoverIndexStorageKey(mangaId: string): string {
+  return `manga_backdrop_index_${mangaId}`;
+}
+
+function readStoredCoverUrls(mangaId: string): string[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.sessionStorage.getItem(getCoverUrlsStorageKey(mangaId));
+    if (!raw) return [];
+
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    const result: string[] = [];
+    for (const item of parsed) {
+      if (typeof item === "string") {
+        const trimmed = item.trim();
+        if (trimmed.length > 0) result.push(trimmed);
+      }
+    }
+    return result;
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredCoverUrls(mangaId: string, urls: string[]): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.sessionStorage.setItem(
+      getCoverUrlsStorageKey(mangaId),
+      JSON.stringify(urls)
+    );
+  } catch {}
+}
+
+function getNextRotatingCover(mangaId: string, urls: string[]): string | null {
+  const firstUrl = urls.find((u) => typeof u === "string" && u.length > 0);
+  if (!firstUrl) return null;
+
+  if (typeof window === "undefined") {
+    return firstUrl;
+  }
+
+  try {
+    const key = getCoverIndexStorageKey(mangaId);
+    const raw = window.sessionStorage.getItem(key);
+    const prevIndex = raw !== null ? Number(raw) : -1;
+    const safePrevIndex =
+      Number.isFinite(prevIndex) && prevIndex >= -1 ? prevIndex : -1;
+
+    const nextIndex = (safePrevIndex + 1) % urls.length;
+    const maybeUrl = urls[nextIndex];
+    const nextUrl =
+      typeof maybeUrl === "string" && maybeUrl.length > 0 ? maybeUrl : firstUrl;
+
+    window.sessionStorage.setItem(key, String(nextIndex));
+    return nextUrl;
+  } catch {
+    return firstUrl;
+  }
+}
+
+function getBannerFallback(manga: Manga | null): string | null {
+  const raw = (manga as any)?.banner_image_url;
+  return typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : null;
+}
+
+function BackdropFrame({
+  url,
+  showOverlay = true,
+}: {
+  url: string | null;
+  showOverlay?: boolean;
+}) {
+  return (
+    <div className="relative h-[620px] w-full overflow-hidden bg-gray-200">
+      {url ? (
+        <img
+          src={url}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover object-[50%_25%]"
+        />
+      ) : null}
+
+      {showOverlay ? (
+        <img
+          src="/overlays/my-overlay.png"
+          alt=""
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function MangaChapterInstantShell() {
+  return (
+    <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
+      <BackdropFrame url={null} showOverlay />
+
+      <div className="-mt-5 relative z-10 px-3">
+        <div className="mb-8 flex flex-row gap-7">
+          <div className="flex-shrink-0 w-56">
+            <div className="h-84 w-56 rounded-md border-3 border-black/10 bg-gray-300 animate-pulse" />
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <div className="h-6 w-20 rounded-full bg-gray-200 animate-pulse" />
+              <div className="h-6 w-24 rounded-full bg-gray-200 animate-pulse" />
+              <div className="h-6 w-16 rounded-full bg-gray-200 animate-pulse" />
+            </div>
+
+            <div className="mt-5 space-y-2">
+              <div className="h-7 w-16 rounded bg-gray-200 animate-pulse" />
+              <div className="h-7 w-full rounded-full bg-gray-200 animate-pulse" />
+              <div className="h-7 w-[92%] rounded-full bg-gray-200 animate-pulse" />
+              <div className="h-7 w-[84%] rounded-full bg-gray-200 animate-pulse" />
+            </div>
+
+            <div className="mt-4 rounded-md bg-gray-100/60 p-3">
+              <div className="space-y-3">
+                <div className="h-4 w-24 rounded bg-gray-200 animate-pulse" />
+                <div className="h-4 w-full rounded bg-gray-200 animate-pulse" />
+                <div className="h-4 w-[88%] rounded bg-gray-200 animate-pulse" />
+                <div className="h-4 w-[76%] rounded bg-gray-200 animate-pulse" />
+              </div>
+            </div>
+          </div>
+
+          <div className="min-w-100 flex-1">
+            <div className="mb-0 pl-1">
+              <div className="mt-2 h-12 w-[420px] max-w-full rounded bg-gray-300 animate-pulse" />
+            </div>
+
+            <div className="relative w-full">
+              <div className="absolute right-0 top-6 flex flex-col items-end gap-2">
+                <div className="h-12 w-[220px] rounded bg-gray-200 animate-pulse" />
+                <div className="h-24 w-[220px] rounded bg-gray-200 animate-pulse" />
+              </div>
+
+              <div className="min-w-0 pr-[270px] pl-1">
+                <div className="mt-0 h-7 w-36 rounded bg-gray-200 animate-pulse" />
+
+                <div className="mt-6 mb-3 min-h-[55px]">
+                  <div className="space-y-3">
+                    <div className="h-4 w-full rounded bg-gray-200 animate-pulse" />
+                    <div className="h-4 w-[92%] rounded bg-gray-200 animate-pulse" />
+                  </div>
+                </div>
+
+                <div className="mt-10 h-12 w-full rounded bg-gray-200 animate-pulse" />
+                <div className="mt-3 h-4 w-44 rounded bg-gray-200 animate-pulse" />
+
+                <div className="mt-6 rounded-md bg-gray-100/60 p-4">
+                  <div className="space-y-3">
+                    <div className="h-4 w-full rounded bg-gray-200 animate-pulse" />
+                    <div className="h-4 w-[96%] rounded bg-gray-200 animate-pulse" />
+                    <div className="h-4 w-[88%] rounded bg-gray-200 animate-pulse" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          {/* end right col */}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const MangaChapterPage: NextPage = () => {
   const router = useRouter();
   const { slug, chapterNumber } = router.query;
 
@@ -145,65 +347,46 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
   } | null>(null);
 
   const [chapter, setChapter] = useState<MangaChapter | null>(null);
-
-  // ✅ Clear old community summary immediately when switching chapters
-  useEffect(() => {
-    setCommunityTopSummary(null);
-  }, [chapter?.id]);
-
   const [isChapterLoading, setIsChapterLoading] = useState(false);
   const [chapterError, setChapterError] = useState<string | null>(null);
 
-  // ✅ backdrop pool (SSR first, then can update client-side if you want)
-  const [backdropUrl, setBackdropUrl] = useState<string | null>(initialBackdropUrl);
+  const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
 
-  // ✅ tags (same as main manga page)
   const [tags, setTags] = useState<MangaTag[]>([]);
   const [tagsLoading, setTagsLoading] = useState(false);
   const [showSpoilers, setShowSpoilers] = useState(false);
 
-  // ✅ open/close the log modal
   const [logOpen, setLogOpen] = useState(false);
-
-  // ✅ which chapter is being logged (defaults to THIS page chapter)
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
-  const [selectedChapterNumber, setSelectedChapterNumber] = useState<number | null>(null);
+  const [selectedChapterNumber, setSelectedChapterNumber] = useState<number | null>(
+    null
+  );
 
-  // ✅ Force PostFeed refresh after saving review/log (no PostFeed changes)
   const [feedNonce, setFeedNonce] = useState(0);
-
-  // ✅ force ActionBox to remount so marks refresh immediately (no page refresh)
   const [actionBoxNonce, setActionBoxNonce] = useState(0);
-
-  // ✅ force QuickLogBox to refresh immediately after saving (no page refresh)
   const [chapterLogsNonce, setChapterLogsNonce] = useState(0);
 
-  // ✅ combined token so either marks OR logs updates will refresh QuickLogBox
   const quickLogRefreshToken = useMemo(
     () => actionBoxNonce * 100000 + chapterLogsNonce,
     [actionBoxNonce, chapterLogsNonce]
   );
 
-  // Normalize slug + chapterNumber to strings
-  const slugString = useMemo(() => {
-    return Array.isArray(slug) ? slug[0] : slug ?? "";
-  }, [slug]);
+  useEffect(() => {
+    setCommunityTopSummary(null);
+  }, [chapter?.id]);
 
-  const chapterNumberString = useMemo(() => {
-    return Array.isArray(chapterNumber) ? chapterNumber[0] : chapterNumber ?? "";
-  }, [chapterNumber]);
+  const slugString = useMemo(() => firstString(slug), [slug]);
+  const chapterNumberString = useMemo(() => firstString(chapterNumber), [chapterNumber]);
 
-  // ✅ allow decimals (0.5, 14.5, etc.)
-  const trimmed = String(chapterNumberString).trim();
-  const isNumericLike = /^(\d+)(\.\d+)?$/.test(trimmed);
-  const chapterNum = isNumericLike ? Number(trimmed) : NaN;
+  const trimmedChapterNumber = chapterNumberString.trim();
+  const isNumericChapter = isNumericLike2(trimmedChapterNumber);
+  const chapterNum = isNumericChapter ? Number(trimmedChapterNumber) : NaN;
   const isValidChapterNumber = Number.isFinite(chapterNum) && chapterNum > 0;
 
   const chapterPosterUrl = useMemo(() => {
     if (!isValidChapterNumber) return null;
     if (!volumeMapLoaded) return null;
 
-    // group covers by volume -> best url
     const byVol: Record<string, CoverRow[]> = {};
     for (const r of coverRows) {
       const v = normVol(r.volume);
@@ -217,7 +400,6 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
       coverUrlByVolume[v] = pickBestCoverUrl(byVol[v]);
     }
 
-    // build nav groups like ChapterNavigator does
     const totalRaw = (manga as any)?.total_chapters;
     const total =
       typeof totalRaw === "number" && Number.isFinite(totalRaw) && totalRaw > 0
@@ -230,27 +412,32 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
       chunkSize: 25,
     });
 
-    // map chapter -> cover (with "carry forward last volume cover" behavior)
     const chapterCoverByNumber: Record<number, string | null> = {};
     let lastVolumeCover: string | null = null;
 
     for (const g of navGroups) {
       if (g.kind === "volume") {
         const key = String(g.key || "");
-        const rawVol =
-          key.startsWith("vol:") ? key.slice(4) : key.startsWith("vol-") ? key.slice(4) : key;
+        const rawVol = key.startsWith("vol:")
+          ? key.slice(4)
+          : key.startsWith("vol-")
+            ? key.slice(4)
+            : key;
 
         const v = normVol(rawVol);
         const cover = v ? coverUrlByVolume[v] ?? null : null;
         if (cover) lastVolumeCover = cover;
 
-        for (const ch of g.chapters) chapterCoverByNumber[ch] = cover;
+        for (const ch of g.chapters) {
+          chapterCoverByNumber[ch] = cover;
+        }
       } else {
-        for (const ch of g.chapters) chapterCoverByNumber[ch] = lastVolumeCover;
+        for (const ch of g.chapters) {
+          chapterCoverByNumber[ch] = lastVolumeCover;
+        }
       }
     }
 
-    // ✅ the one we want for THIS page's chapter
     return chapterCoverByNumber[chapterNum] ?? null;
   }, [
     isValidChapterNumber,
@@ -261,7 +448,6 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
     manga,
   ]);
 
-  // Load manga by slug
   useEffect(() => {
     if (!router.isReady) return;
     if (!slugString) return;
@@ -271,6 +457,13 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
     const loadManga = async () => {
       setIsMangaLoading(true);
       setMangaError(null);
+      setManga(null);
+      setBackdropUrl(null);
+      setTags([]);
+      setShowSpoilers(false);
+      setVolumeMap(null);
+      setVolumeMapLoaded(false);
+      setCoverRows([]);
 
       const { data, error } = await getMangaBySlug(slugString);
 
@@ -298,17 +491,28 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
     };
   }, [router.isReady, slugString]);
 
-  // ✅ Backdrop: optional client refresh if SSR didn't provide one
   useEffect(() => {
-    const mangaId = manga?.id;
-    if (!mangaId) return;
+    if (!manga?.id || typeof manga.id !== "string" || manga.id.trim().length === 0) {
+      setBackdropUrl(null);
+      return;
+    }
 
-    // keep SSR backdrop if provided
-    if (backdropUrl) return;
+    const mangaId: string = manga.id;
 
     let cancelled = false;
 
     async function run() {
+      const storedUrls = readStoredCoverUrls(mangaId);
+
+      if (storedUrls.length > 0) {
+        const immediatePick = getNextRotatingCover(mangaId, storedUrls);
+        if (!cancelled && typeof immediatePick === "string") {
+          const normalizedImmediatePick = normalizeBackdropUrl(immediatePick);
+          setBackdropUrl(normalizedImmediatePick);
+        }
+        return;
+      }
+
       const { data, error } = await supabase
         .from("manga_covers")
         .select("cached_url")
@@ -319,30 +523,34 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
       if (cancelled) return;
 
       if (error) {
-        console.warn("[MangaChapterPage] manga_covers select failed:", error);
+        setBackdropUrl(getBannerFallback(manga));
         return;
       }
 
-      const urls =
-        Array.isArray(data)
-          ? (data as any[])
-            .map((r) => (typeof r?.cached_url === "string" ? r.cached_url.trim() : ""))
-            .filter(Boolean)
-          : [];
+      const urls: string[] = [];
+      if (Array.isArray(data)) {
+        for (const row of data) {
+          const rawUrl = (row as any)?.cached_url;
+          if (typeof rawUrl === "string") {
+            const trimmed = rawUrl.trim();
+            if (trimmed.length > 0) urls.push(trimmed);
+          }
+        }
+      }
 
       if (urls.length === 0) {
-        const fallback =
-          typeof (manga as any)?.banner_image_url === "string" &&
-            (manga as any).banner_image_url.trim()
-            ? (manga as any).banner_image_url.trim()
-            : null;
-
-        setBackdropUrl(fallback);
+        setBackdropUrl(getBannerFallback(manga));
         return;
       }
 
-      const pick = urls[Math.floor(Math.random() * urls.length)];
-      setBackdropUrl(normalizeBackdropUrl(pick));
+      writeStoredCoverUrls(mangaId, urls);
+
+      const pick = getNextRotatingCover(mangaId, urls);
+      if (typeof pick === "string") {
+        setBackdropUrl(normalizeBackdropUrl(pick));
+      } else {
+        setBackdropUrl(null);
+      }
     }
 
     run();
@@ -350,9 +558,8 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
     return () => {
       cancelled = true;
     };
-  }, [manga?.id, backdropUrl, manga]);
+  }, [manga]);
 
-  // ✅ Tags: same fetch + spoiler toggle behavior as main manga page
   useEffect(() => {
     if (!manga?.id) {
       setTags([]);
@@ -392,7 +599,6 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
     };
   }, [manga?.id]);
 
-  // ✅ Volume map + covers (used to pick the "current chapter's volume cover" poster)
   useEffect(() => {
     const mangaId = manga?.id;
     if (!mangaId) {
@@ -409,7 +615,6 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
       setVolumeMapLoaded(false);
       setCoverRows([]);
 
-      // volume map
       const { data: vm, error: vmErr } = await supabase
         .from("manga_volume_chapter_map")
         .select("mapping")
@@ -427,7 +632,6 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
         setVolumeMapLoaded(true);
       }
 
-      // covers
       const { data: covers, error: coverErr } = await supabase
         .from("manga_covers")
         .select("volume, locale, cached_url, is_main")
@@ -441,23 +645,25 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
         return;
       }
 
-      setCoverRows(
-        (covers as any[]).map((r) => ({
+      const normalized: CoverRow[] = [];
+      for (const r of covers as any[]) {
+        normalized.push({
           volume: r?.volume ?? null,
           locale: r?.locale ?? null,
           cached_url: r?.cached_url ?? null,
           is_main: r?.is_main ?? null,
-        }))
-      );
+        });
+      }
+      setCoverRows(normalized);
     }
 
     run();
+
     return () => {
       cancelled = true;
     };
   }, [manga?.id]);
 
-  // Load chapter after manga + valid chapter number
   useEffect(() => {
     if (!manga) return;
     if (!isValidChapterNumber) return;
@@ -495,26 +701,22 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
     };
   }, [manga, chapterNum, isValidChapterNumber]);
 
-  // ✅ default modal target to THIS page chapter
   useEffect(() => {
     setSelectedChapterId(chapter?.id ?? null);
     setSelectedChapterNumber(Number.isFinite(chapterNum) ? chapterNum : null);
   }, [chapter?.id, chapterNum]);
 
-  if (!router.isReady) {
-    return (
-      <div className="mx-auto max-w-5xl px-4 py-8">
-        <h1 className="mb-4 text-2xl font-bold">Loading chapter...</h1>
-        <p className="text-sm text-gray-400">Please wait while we fetch this chapter.</p>
-      </div>
-    );
+  if (!router.isReady || isMangaLoading) {
+    return <MangaChapterInstantShell />;
   }
 
   if (!slugString || !isValidChapterNumber) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 text-center">
         <h1 className="mb-4 text-2xl font-bold">Invalid chapter URL</h1>
-        <p className="mb-4 text-gray-400">The chapter number or manga slug in the URL is not valid.</p>
+        <p className="mb-4 text-gray-400">
+          The chapter number or manga slug in the URL is not valid.
+        </p>
         <Link
           href="/"
           className="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
@@ -525,21 +727,14 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
     );
   }
 
-  if (isMangaLoading) {
-    return (
-      <div className="mx-auto max-w-5xl px-4 py-8">
-        <h1 className="mb-4 text-2xl font-bold">Loading manga...</h1>
-        <p className="text-sm text-gray-400">Please wait while we fetch this manga.</p>
-      </div>
-    );
-  }
-
   if (!manga) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 text-center">
         <h1 className="mb-4 text-2xl font-bold">Manga not found</h1>
         {mangaError && <p className="mb-2 text-gray-300">{mangaError}</p>}
-        <p className="mb-4 text-gray-400">We couldn&apos;t find a manga with that URL.</p>
+        <p className="mb-4 text-gray-400">
+          We couldn&apos;t find a manga with that URL.
+        </p>
         <Link
           href="/"
           className="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
@@ -552,7 +747,6 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
 
   const m: any = manga;
 
-  // ✅ match manga page title logic
   const picked = pickEnglishTitle(
     {
       title_english: (manga as any).title_english ?? null,
@@ -569,343 +763,326 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
 
   const displayPrimaryTitle = picked?.value ?? manga.title ?? "Untitled";
 
-  const secondaryTitle =
-    typeof (manga as any).title_preferred === "string" &&
-      (manga as any).title_preferred.trim() &&
-      (manga as any).title_preferred.trim() !== displayPrimaryTitle
-      ? (manga as any).title_preferred.trim()
-      : null;
-
-  const showSecondaryTitle = Boolean(secondaryTitle);
-
   const genres: string[] = Array.isArray((m as any)?.genres) ? (m as any).genres : [];
 
   const safetyPills: string[] = [
-    ...(typeof (m as any)?.content_rating === "string" && (m as any).content_rating.trim()
+    ...(typeof (m as any)?.content_rating === "string" &&
+    (m as any).content_rating.trim()
       ? [(m as any).content_rating.trim()]
       : []),
     ...(Array.isArray((m as any)?.content_warnings)
       ? (m as any).content_warnings.filter(
-        (x: unknown): x is string => typeof x === "string" && x.trim().length > 0
-      )
+          (x: unknown): x is string =>
+            typeof x === "string" && x.trim().length > 0
+        )
       : []),
   ];
 
   const uniqueSafetyPills = Array.from(new Set(safetyPills));
-
   const hasGenres = genres.length > 0 || uniqueSafetyPills.length > 0;
 
-  function formatSafetyPill(text: string) {
-    return text
-      .split(" ")
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-      .join(" ");
-  }
-
-  const spoilerTags = tags.filter((t) => t.is_general_spoiler === true || t.is_media_spoiler === true);
+  const spoilerTags = tags.filter(
+    (t) => t.is_general_spoiler === true || t.is_media_spoiler === true
+  );
   const spoilerCount = spoilerTags.length;
 
   const desktopView = (
-    <>
-      <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
-        {/* Backdrop (same as manga page) */}
-        {backdropUrl && (
-          <div className="relative h-[620px] w-full overflow-hidden">
-            <Image
-              src={backdropUrl}
-              alt=""
-              width={1920}
-              height={1080}
-              priority
-              unoptimized
-              sizes="100vw"
-              className="h-full w-full object-cover object-[50%_25%]"
-            />
+    <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
+      <BackdropFrame url={backdropUrl} showOverlay />
 
-            <img
-              src="/overlays/my-overlay.png"
-              alt=""
-              className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-            />
-          </div>
-        )}
+      <div className="-mt-5 relative z-10 px-3">
+        <div className="mb-8 flex flex-row gap-7">
+          <div className="flex-shrink-0 w-56">
+            {chapterPosterUrl || (manga as any).image_url ? (
+              <img
+                src={chapterPosterUrl ?? (manga as any).image_url}
+                alt={manga.title ?? slugString}
+                className="h-84 w-56 rounded-md object-cover border-3 border-black/100"
+              />
+            ) : (
+              <div className="flex h-64 w-56 items-center justify-center rounded-lg bg-gray-800 text-4xl font-bold text-gray-200">
+                {firstChar(manga.title ?? slugString).toUpperCase()}
+              </div>
+            )}
 
-        {/* Top section (same as manga page) */}
-        <div className="-mt-5 relative z-10 px-3">
-          <div className="mb-8 flex flex-row gap-7">
-            {/* LEFT COLUMN */}
-            <div className="flex-shrink-0 w-56">
-              {/* Poster */}
-              {chapterPosterUrl || (manga as any).image_url ? (
-                <img
-                  src={chapterPosterUrl ?? (manga as any).image_url}
-                  alt={manga?.title ?? slugString}
-                  className="h-84 w-56 rounded-md object-cover border-3 border-black/100"
-                />
-              ) : (
-                <div className="flex h-64 w-56 items-center justify-center rounded-lg bg-gray-800 text-4xl font-bold text-gray-200">
-                  {(manga?.title?.[0] ?? slugString?.[0] ?? "?").toUpperCase()}
-                </div>
-              )}
-
-              {/* Genres (same placement as manga page) */}
-              {hasGenres && (
-                <div className="mt-4">
-                  <h2 className="mb-1 text-sm font-semibold text-black-300">Genres</h2>
-                  <div className="flex flex-wrap gap-2">
-                    {genres.map((g) => (
-                      <span
-                        key={`genre-${g}`}
-                        className="rounded-full bg-black px-3 py-1 text-xs text-gray-100"
-                      >
-                        {g}
-                      </span>
-                    ))}
-
-                    {uniqueSafetyPills.map((pill) => (
-                      <span
-                        key={`safety-${pill}`}
-                        className="rounded-full bg-red-700 px-3 py-1 text-xs text-white"
-                      >
-                        {formatSafetyPill(pill)}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Tags (✅ ONLY render if tags exist) */}
-              {tags.length > 0 && (
-                <div className="mt-5">
-                  <div className="mb-1 flex items-center gap-2">
-                    <h2 className="text-base font-semibold text-black-300">Tags</h2>
-                    {tagsLoading && (
-                      <span className="text-[10px] uppercase tracking-wide text-gray-500">
-                        Loading…
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <div className="flex w-full flex-col gap-1">
-                      {tags.map((tag) => {
-                        const isSpoiler =
-                          tag.is_general_spoiler === true || tag.is_media_spoiler === true;
-
-                        if (isSpoiler && !showSpoilers) return null;
-
-                        let percent: number | null = null;
-                        if (typeof tag.rank === "number") {
-                          percent = Math.max(0, Math.min(100, Math.round(tag.rank)));
-                        }
-
-                        return (
-                          <div key={tag.id} className="group relative inline-flex">
-                            <span
-                              className="
-                                relative inline-flex w-full items-center justify-between
-                                rounded-full border border-gray-700 bg-gray-900/80
-                                px-3 py-[3px] text-[13px] font-medium
-                                whitespace-nowrap overflow-hidden
-                              "
-                            >
-                              {percent !== null && (
-                                <span
-                                  className="pointer-events-none absolute inset-y-0 left-0 bg-black"
-                                  style={{ width: `${percent}%` }}
-                                />
-                              )}
-
-                              <span
-                                className={`relative ${isSpoiler ? "text-red-400" : "text-gray-100"
-                                  }`}
-                              >
-                                {tag.name}
-                              </span>
-
-                              {percent !== null && (
-                                <span className="relative text-[11px] font-semibold text-gray-200">
-                                  {percent}%
-                                </span>
-                              )}
-                            </span>
-
-                            {tag.description && (
-                              <div
-                                className="
-                                  pointer-events-none absolute left-0 top-full z-20 mt-1 w-64
-                                  rounded-md bg-black px-3 py-2 text-xs text-gray-100 shadow-lg
-                                  opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0
-                                  transition duration-200 delay-150
-                                "
-                              >
-                                {tag.description}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {spoilerCount > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setShowSpoilers((prev) => !prev)}
-                      className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
+            {hasGenres && (
+              <div className="mt-4">
+                <h2 className="mb-1 text-sm font-semibold text-black-300">Genres</h2>
+                <div className="flex flex-wrap gap-2">
+                  {genres.map((g) => (
+                    <span
+                      key={`genre-${g}`}
+                      className="rounded-full bg-black px-3 py-1 text-xs text-gray-100"
                     >
-                      {showSpoilers
-                        ? `Hide ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`
-                        : `Show ${spoilerCount} spoiler tag${spoilerCount === 1 ? "" : "s"}`}
-                    </button>
+                      {g}
+                    </span>
+                  ))}
+
+                  {uniqueSafetyPills.map((pill) => (
+                    <span
+                      key={`safety-${pill}`}
+                      className="rounded-full bg-red-700 px-3 py-1 text-xs text-white"
+                    >
+                      {formatSafetyPill(pill)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {tags.length > 0 && (
+              <div className="mt-5">
+                <div className="mb-1 flex items-center gap-2">
+                  <h2 className="text-base font-semibold text-black-300">Tags</h2>
+                  {tagsLoading && (
+                    <span className="text-[10px] uppercase tracking-wide text-gray-500">
+                      Loading…
+                    </span>
                   )}
                 </div>
-              )}
 
-              {/* Meta box (same spot as manga page) */}
-              <div className="mt-4">
-                <MangaMetaBox
-                  titleEnglish={(manga as any).title_english ?? null}
-                  titlePreferred={(manga as any).title_preferred ?? null}
-                  titleNative={(manga as any).title_native ?? null}
-                  totalVolumes={(manga as any).total_volumes ?? null}
-                  totalChapters={(manga as any).total_chapters ?? null}
-                  format={(m as any).format ?? null}
-                  status={(m as any).status ?? null}
-                  startDate={(m as any).start_date ?? null}
-                  endDate={(m as any).end_date ?? null}
-                  season={(m as any).season ?? null}
-                  seasonYear={(m as any).season_year ?? null}
-                  averageScore={(m as any).average_score ?? null}
-                />
-              </div>
-            </div>
+                <div className="flex flex-col gap-1">
+                  <div className="flex w-full flex-col gap-1">
+                    {tags.map((tag) => {
+                      const isSpoiler =
+                        tag.is_general_spoiler === true ||
+                        tag.is_media_spoiler === true;
 
-            {/* RIGHT COLUMN */}
-            <div className="min-w-100 flex-1">
-              <div className="mb-0 pl-1">
-                <EnglishTitle
-                  as="h1"
-                  className="text-4xl font-bold leading-tight"
-                  titles={{
-                    title_english: (manga as any).title_english ?? null,
-                    title_preferred: (manga as any).title_preferred ?? null,
-                    title: manga.title ?? null,
-                    title_native: (manga as any).title_native ?? null,
-                  }}
-                  fallback={manga.title ?? (manga as any).title_native ?? "Untitled"}
-                />
-              </div>
+                      if (isSpoiler && !showSpoilers) return null;
 
-              <div className="relative w-full">
-                <div className="absolute right-0 top-6 flex flex-col items-end gap-2">
-                  <MangaActionBox
-                    key={actionBoxNonce}
-                    mangaId={manga?.id ?? null}
-                    mangaChapterId={chapter?.id ?? null}
-                    onOpenLog={() => {
-                      setSelectedChapterId(chapter?.id ?? null);
-                      setSelectedChapterNumber(Number.isFinite(chapterNum) ? chapterNum : null);
-                      setLogOpen(true);
-                    }}
-                    onShowActivity={() =>
-                      router.push(`/manga/${slugString}/chapter/${chapterNum}/activity`)
-                    }
-                  />
-
-                  <MangaQuickLogBox
-                    mangaId={manga?.id ?? ""}
-                    totalChapters={(manga as any)?.total_chapters ?? null}
-                    refreshToken={quickLogRefreshToken}
-                    onOpenLog={(chapterId, chapterNumber) => {
-                      setSelectedChapterId(chapterId ?? null);
-
-                      const n =
-                        typeof chapterNumber === "number" && Number.isFinite(chapterNumber)
-                          ? chapterNumber
+                      const percent =
+                        typeof tag.rank === "number"
+                          ? Math.max(0, Math.min(100, Math.round(tag.rank)))
                           : null;
 
-                      setSelectedChapterNumber(n);
-                      setLogOpen(true);
-                    }}
+                      return (
+                        <div key={tag.id} className="group relative inline-flex">
+                          <span
+                            className="
+                              relative inline-flex w-full items-center justify-between
+                              rounded-full border border-gray-700 bg-gray-900/80
+                              px-3 py-[3px] text-[13px] font-medium
+                              whitespace-nowrap overflow-hidden
+                            "
+                          >
+                            {percent !== null && (
+                              <span
+                                className="pointer-events-none absolute inset-y-0 left-0 bg-black"
+                                style={{ width: `${percent}%` }}
+                              />
+                            )}
+
+                            <span
+                              className={`relative ${
+                                isSpoiler ? "text-red-400" : "text-gray-100"
+                              }`}
+                            >
+                              {tag.name}
+                            </span>
+
+                            {percent !== null && (
+                              <span className="relative text-[11px] font-semibold text-gray-200">
+                                {percent}%
+                              </span>
+                            )}
+                          </span>
+
+                          {tag.description && (
+                            <div
+                              className="
+                                pointer-events-none absolute left-0 top-full z-20 mt-1 w-64
+                                rounded-md bg-black px-3 py-2 text-xs text-gray-100 shadow-lg
+                                opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0
+                                transition duration-200 delay-150
+                              "
+                            >
+                              {tag.description}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {spoilerCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSpoilers((prev) => !prev)}
+                    className="mt-2 text-sm font-medium text-blue-400 hover:text-blue-300"
+                  >
+                    {showSpoilers
+                      ? `Hide ${spoilerCount} spoiler tag${
+                          spoilerCount === 1 ? "" : "s"
+                        }`
+                      : `Show ${spoilerCount} spoiler tag${
+                          spoilerCount === 1 ? "" : "s"
+                        }`}
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div className="mt-4">
+              <MangaMetaBox
+                titleEnglish={(manga as any).title_english ?? null}
+                titlePreferred={(manga as any).title_preferred ?? null}
+                titleNative={(manga as any).title_native ?? null}
+                totalVolumes={(manga as any).total_volumes ?? null}
+                totalChapters={(manga as any).total_chapters ?? null}
+                format={(m as any).format ?? null}
+                status={(m as any).status ?? null}
+                startDate={(m as any).start_date ?? null}
+                endDate={(m as any).end_date ?? null}
+                season={(m as any).season ?? null}
+                seasonYear={(m as any).season_year ?? null}
+                averageScore={(m as any).average_score ?? null}
+              />
+            </div>
+          </div>
+
+          <div className="min-w-100 flex-1">
+            <div className="mb-0 pl-1">
+              <EnglishTitle
+                as="h1"
+                className="text-4xl font-bold leading-tight"
+                titles={{
+                  title_english: (manga as any).title_english ?? null,
+                  title_preferred: (manga as any).title_preferred ?? null,
+                  title: manga.title ?? null,
+                  title_native: (manga as any).title_native ?? null,
+                }}
+                fallback={manga.title ?? (manga as any).title_native ?? "Untitled"}
+              />
+            </div>
+
+            <div className="relative w-full">
+              <div className="absolute right-0 top-6 flex flex-col items-end gap-2">
+                <MangaActionBox
+                  key={actionBoxNonce}
+                  mangaId={manga.id}
+                  mangaChapterId={chapter?.id ?? null}
+                  onOpenLog={() => {
+                    setSelectedChapterId(chapter?.id ?? null);
+                    setSelectedChapterNumber(
+                      Number.isFinite(chapterNum) ? chapterNum : null
+                    );
+                    setLogOpen(true);
+                  }}
+                  onShowActivity={() =>
+                    router.push(`/manga/${slugString}/chapter/${chapterNum}/activity`)
+                  }
+                />
+
+                <MangaQuickLogBox
+                  mangaId={manga.id}
+                  totalChapters={(manga as any)?.total_chapters ?? null}
+                  refreshToken={quickLogRefreshToken}
+                  onOpenLog={(chapterId, chapterNumberValue) => {
+                    setSelectedChapterId(chapterId ?? null);
+
+                    const n =
+                      typeof chapterNumberValue === "number" &&
+                      Number.isFinite(chapterNumberValue)
+                        ? chapterNumberValue
+                        : null;
+
+                    setSelectedChapterNumber(n);
+                    setLogOpen(true);
+                  }}
+                />
+              </div>
+
+              <div className="min-w-0 pr-[270px] pl-1">
+                <h2 className="mt-0 text-xl font-semibold leading-snug text-black">
+                  Chapter {chapterNum}
+                </h2>
+                {chapterError && (
+                  <p className="mt-1 text-xs text-red-500">{chapterError}</p>
+                )}
+
+                <div className="mt-6 mb-3 min-h-[55px]">
+                  {chapter ? (
+                    <>
+                      {communityTopSummary ? (
+                        <div>
+                          {communityTopSummary.contains_spoilers && (
+                            <div className="mb-2 inline-flex rounded-full bg-red-900/40 px-2 py-0.5 text-[11px] font-semibold text-red-200">
+                              Spoilers
+                            </div>
+                          )}
+
+                          <div className="whitespace-pre-line text-base text-black">
+                            {communityTopSummary.content}
+                            <span className="ml-2 inline-flex align-baseline">
+                              <MangaChapterSummary
+                                chapterId={chapter.id}
+                                onTopSummary={setCommunityTopSummary}
+                                mode="icon"
+                              />
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <MangaChapterSummary
+                          chapterId={chapter.id}
+                          onTopSummary={setCommunityTopSummary}
+                        />
+                      )}
+                    </>
+                  ) : isChapterLoading ? (
+                    <div className="space-y-3">
+                      <div className="h-4 w-full rounded bg-gray-200 animate-pulse" />
+                      <div className="h-4 w-[92%] rounded bg-gray-200 animate-pulse" />
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="mt-10 min-w-0 overflow-hidden">
+                  <ChapterNavigator
+                    slug={slugString}
+                    totalChapters={(manga as any)?.total_chapters ?? null}
+                    currentChapterNumber={chapterNum}
                   />
                 </div>
 
-                <div className="min-w-0 pr-[270px] pl-1">
-                  <h2 className="mt-0 text-xl font-semibold leading-snug text-black">
-                    Chapter {chapterNum}
-                  </h2>
-                  {chapterError && <p className="mt-1 text-xs text-red-500">{chapterError}</p>}
+                <div className="mt-1">
+                  <Link
+                    href={`/manga/${slugString}`}
+                    className="text-xs text-black hover:underline"
+                  >
+                    ← Back to manga main page
+                  </Link>
+                </div>
 
-                  <div className="mt-6 mb-3 min-h-[55px]">
-                    {chapter && (
-                      <>
-                        {communityTopSummary ? (
-                          <div>
-                            {communityTopSummary.contains_spoilers && (
-                              <div className="mb-2 inline-flex rounded-full bg-red-900/40 px-2 py-0.5 text-[11px] font-semibold text-red-200">
-                                Spoilers
-                              </div>
-                            )}
-
-                            <div className="whitespace-pre-line text-base text-black">
-                              {communityTopSummary.content}
-                              <span className="inline-flex align-baseline ml-2">
-                                <MangaChapterSummary
-                                  chapterId={chapter.id}
-                                  onTopSummary={setCommunityTopSummary}
-                                  mode="icon"
-                                />
-                              </span>
-                            </div>
-                          </div>
-                        ) : (
-                          <MangaChapterSummary
-                            chapterId={chapter.id}
-                            onTopSummary={setCommunityTopSummary}
-                          />
-                        )}
-                      </>
+                <div className="mt-6">
+                  <FeedShell>
+                    {manga.id && chapter?.id ? (
+                      <PostFeed
+                        key={feedNonce}
+                        mangaId={manga.id}
+                        mangaChapterId={chapter.id}
+                      />
+                    ) : (
+                      <div className="rounded-md bg-gray-100/60 p-4">
+                        <div className="space-y-3">
+                          <div className="h-4 w-full rounded bg-gray-200 animate-pulse" />
+                          <div className="h-4 w-[96%] rounded bg-gray-200 animate-pulse" />
+                          <div className="h-4 w-[88%] rounded bg-gray-200 animate-pulse" />
+                        </div>
+                      </div>
                     )}
-                  </div>
-
-                  <div className="mt-10 min-w-0 overflow-hidden">
-                    <ChapterNavigator
-                      slug={slugString}
-                      totalChapters={(manga as any)?.total_chapters ?? null}
-                      currentChapterNumber={chapterNum}
-                    />
-                  </div>
-
-                  <div className="mt-1">
-                    <Link
-                      href={`/manga/${slugString}`}
-                      className="text-xs text-black hover:underline"
-                    >
-                      ← Back to manga main page
-                    </Link>
-                  </div>
-
-                  <div className="mt-6">
-                    <FeedShell>
-                      {manga?.id && chapter?.id ? (
-                        <PostFeed key={feedNonce} mangaId={manga.id} mangaChapterId={chapter.id} />
-                      ) : (
-                        <p className="text-sm text-gray-500">Loading discussion…</p>
-                      )}
-                    </FeedShell>
-                  </div>
+                  </FeedShell>
                 </div>
               </div>
             </div>
-            {/* end right col */}
           </div>
-        </div>
-
-        <div className="mt-3 flex items-center gap-4">
+          {/* end right col */}
         </div>
       </div>
-    </>
+
+      <div className="mt-3 flex items-center gap-4"></div>
+    </div>
   );
 
   const phoneView = (
@@ -914,7 +1091,7 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
       chapterNum={chapterNum}
       manga={manga as any}
       chapter={chapter as any}
-      backdropUrl={backdropUrl}
+      backdropUrl={backdropUrl ?? TRANSPARENT_BACKDROP_DATA_URI}
       chapterPosterUrl={chapterPosterUrl}
       tags={tags}
       tagsLoading={tagsLoading}
@@ -922,12 +1099,21 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
       setShowSpoilers={setShowSpoilers}
       actionBoxNonce={actionBoxNonce}
       chapterLogsNonce={quickLogRefreshToken}
-      onOpenLog={() => setLogOpen(true)}
-      onShowActivity={() => router.push(`/manga/${slugString}/chapter/${chapterNum}/activity`)}
-      onOpenLogForChapter={(chapterId, chapterNumber) => {
+      onOpenLog={() => {
+        setSelectedChapterId(chapter?.id ?? null);
+        setSelectedChapterNumber(Number.isFinite(chapterNum) ? chapterNum : null);
+        setLogOpen(true);
+      }}
+      onShowActivity={() =>
+        router.push(`/manga/${slugString}/chapter/${chapterNum}/activity`)
+      }
+      onOpenLogForChapter={(chapterId, chapterNumberValue) => {
         setSelectedChapterId(chapterId ?? null);
         setSelectedChapterNumber(
-          typeof chapterNumber === "number" && Number.isFinite(chapterNumber) ? chapterNumber : null
+          typeof chapterNumberValue === "number" &&
+            Number.isFinite(chapterNumberValue)
+            ? chapterNumberValue
+            : null
         );
         setLogOpen(true);
       }}
@@ -968,56 +1154,6 @@ const MangaChapterPage: NextPage<MangaChapterPageProps> = ({ initialBackdropUrl 
   );
 };
 
-// ✅ make header transparent (same as main manga page)
 (MangaChapterPage as any).headerTransparent = true;
 
 export default MangaChapterPage;
-
-export const getServerSideProps: GetServerSideProps<MangaChapterPageProps> = async (ctx) => {
-  const raw = ctx.params?.slug;
-  const slug =
-    typeof raw === "string" ? raw : Array.isArray(raw) && raw[0] ? raw[0] : null;
-
-  if (!slug) {
-    return { props: { initialBackdropUrl: null } };
-  }
-
-  // 1) Get manga id by slug (server-side)
-  const { data: mangaRow, error: mangaErr } = await supabaseAdmin
-    .from("manga")
-    .select("id")
-    .eq("slug", slug)
-    .maybeSingle();
-
-  if (mangaErr || !mangaRow?.id) {
-    return { props: { initialBackdropUrl: null } };
-  }
-
-  // 2) Pull cached images for this manga from public.manga_covers
-  const { data: covers, error: coverErr } = await supabaseAdmin
-    .from("manga_covers")
-    .select("cached_url")
-    .eq("manga_id", mangaRow.id)
-    .not("cached_url", "is", null)
-    .limit(200);
-
-  if (coverErr || !covers || covers.length === 0) {
-    return { props: { initialBackdropUrl: null } };
-  }
-
-  const urls = covers
-    .map((c: any) => (typeof c.cached_url === "string" ? c.cached_url.trim() : ""))
-    .filter(Boolean);
-
-  if (urls.length === 0) {
-    return { props: { initialBackdropUrl: null } };
-  }
-
-  const pick = urls[Math.floor(Math.random() * urls.length)];
-
-  return {
-    props: {
-      initialBackdropUrl: normalizeBackdropUrl(pick),
-    },
-  };
-};
