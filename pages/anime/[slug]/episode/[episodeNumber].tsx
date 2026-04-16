@@ -20,7 +20,6 @@ import AnimeMetaBox from "@/components/anime/AnimeMetaBox";
 import AnimeQuickLogBox from "@/components/anime/AnimeQuickLogBox";
 import ResponsiveSwitch from "@/components/ResponsiveSwitch";
 import AnimeEpisodePhoneLayout from "@/components/anime/AnimeEpisodePhoneLayout";
-import SmartBackdropImage from "@/components/SmartBackdropImage";
 
 import { pickEnglishTitle } from "@/lib/pickEnglishTitle";
 import { FALLBACK_BACKDROP_SRC } from "@/lib/fallbacks";
@@ -98,6 +97,7 @@ function readStoredBackdropUrls(animeId: string, episodeNumber: number): string[
         }
       }
     }
+
     return result;
   } catch {
     return [];
@@ -286,6 +286,7 @@ const AnimeEpisodePage: NextPage = () => {
   const [quickLogRefreshToken, setQuickLogRefreshToken] = useState(0);
 
   const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
+  const [backdropLoaded, setBackdropLoaded] = useState(false);
 
   const slugString = useMemo(() => firstString(slug), [slug]);
   const episodeNumberString = useMemo(
@@ -345,9 +346,10 @@ const AnimeEpisodePage: NextPage = () => {
       setIsAnimeLoading(true);
       setAnimeError(null);
       setAnime(null);
-      setBackdropUrl(null);
       setTags([]);
       setShowSpoilers(false);
+      setBackdropUrl(null);
+      setBackdropLoaded(false);
 
       const { data, error } = await getAnimeBySlug(slugString);
 
@@ -378,6 +380,7 @@ const AnimeEpisodePage: NextPage = () => {
   useEffect(() => {
     if (!anime?.id || !isValidEpisodeNumber) {
       setBackdropUrl(null);
+      setBackdropLoaded(true);
       return;
     }
 
@@ -385,6 +388,8 @@ const AnimeEpisodePage: NextPage = () => {
     let cancelled = false;
 
     async function run() {
+      setBackdropLoaded(false);
+
       const storedUrls = readStoredBackdropUrls(animeId, episodeNum);
 
       if (storedUrls.length > 0) {
@@ -393,8 +398,14 @@ const AnimeEpisodePage: NextPage = () => {
           episodeNum,
           storedUrls
         );
-        if (!cancelled && typeof immediatePick === "string") {
-          setBackdropUrl(normalizeBackdropUrl(immediatePick));
+
+        if (!cancelled) {
+          setBackdropUrl(
+            typeof immediatePick === "string"
+              ? normalizeBackdropUrl(immediatePick)
+              : FALLBACK_BACKDROP_SRC
+          );
+          setBackdropLoaded(true);
         }
         return;
       }
@@ -409,7 +420,8 @@ const AnimeEpisodePage: NextPage = () => {
       if (cancelled) return;
 
       if (epErr || !epRow?.id) {
-        setBackdropUrl(null);
+        setBackdropUrl(FALLBACK_BACKDROP_SRC);
+        setBackdropLoaded(true);
         return;
       }
 
@@ -422,7 +434,8 @@ const AnimeEpisodePage: NextPage = () => {
       if (cancelled) return;
 
       if (artsErr || !Array.isArray(arts) || arts.length === 0) {
-        setBackdropUrl(null);
+        setBackdropUrl(FALLBACK_BACKDROP_SRC);
+        setBackdropLoaded(true);
         return;
       }
 
@@ -437,18 +450,19 @@ const AnimeEpisodePage: NextPage = () => {
       }
 
       if (urls.length === 0) {
-        setBackdropUrl(null);
+        setBackdropUrl(FALLBACK_BACKDROP_SRC);
+        setBackdropLoaded(true);
         return;
       }
 
       writeStoredBackdropUrls(animeId, episodeNum, urls);
 
       const pick = getNextRotatingBackdrop(animeId, episodeNum, urls);
-      if (typeof pick === "string") {
-        setBackdropUrl(normalizeBackdropUrl(pick));
-      } else {
-        setBackdropUrl(null);
-      }
+
+      setBackdropUrl(
+        typeof pick === "string" ? normalizeBackdropUrl(pick) : FALLBACK_BACKDROP_SRC
+      );
+      setBackdropLoaded(true);
     }
 
     run();
@@ -573,22 +587,15 @@ const AnimeEpisodePage: NextPage = () => {
 
   const desktopView = (
     <div className="mx-auto max-w-6xl px-4 pt-0 pb-8">
-      <div className="relative h-[620px] w-full overflow-hidden">
-        <SmartBackdropImage
-          src={backdropUrl}
-          posterFallbackSrc={anime.image_url ?? null}
-          finalFallbackSrc={FALLBACK_BACKDROP_SRC}
-          alt=""
-          width={1920}
-          height={1080}
-          priority
-          sizes="100vw"
-          className="h-full w-full object-cover object-bottom"
-          posterFallbackObjectPosition="50% 30%"
-          finalFallbackObjectPosition="50% 13%"
-          deferFinalUntilPosterResolved
-          posterResolved={!isAnimeLoading}
-        />
+      <div className="relative h-[620px] w-full overflow-hidden bg-gray-200">
+        {backdropLoaded && backdropUrl ? (
+          <img
+            src={backdropUrl}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover object-bottom"
+          />
+        ) : null}
+
         <img
           src="/overlays/my-overlay.png"
           alt=""
@@ -891,7 +898,7 @@ const AnimeEpisodePage: NextPage = () => {
       episodeNum={episodeNum}
       anime={anime as any}
       episode={episode as any}
-      backdropUrl={backdropUrl ?? TRANSPARENT_BACKDROP_DATA_URI}
+      backdropUrl={backdropLoaded ? backdropUrl ?? FALLBACK_BACKDROP_SRC : TRANSPARENT_BACKDROP_DATA_URI}
       tags={tags}
       tagsLoading={tagsLoading}
       showSpoilers={showSpoilers}
