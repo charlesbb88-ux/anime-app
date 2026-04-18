@@ -11,6 +11,65 @@ type SendDirectMessageResult =
       error: string;
     };
 
+export type MyThreadMessage = {
+  id: string;
+  threadId: string;
+  authorUserId: string;
+  body: string;
+  createdAt: string;
+  editedAt: string | null;
+  deletedAt: string | null;
+};
+
+export type MyThreadResult =
+  | {
+      ok: true;
+      thread: {
+        id: string;
+        ownerUserId: string;
+        senderUserId: string;
+        createdAt: string;
+        updatedAt: string;
+        lastMessageAt: string;
+        ownerLastReadAt: string | null;
+        senderLastReadAt: string | null;
+        owner: {
+          userId: string;
+          username: string | null;
+          avatarUrl: string | null;
+        } | null;
+        sender: {
+          userId: string;
+          username: string | null;
+          avatarUrl: string | null;
+        } | null;
+      } | null;
+      messages: MyThreadMessage[];
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+async function getAccessToken(): Promise<string> {
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession();
+
+  if (sessionError) {
+    throw new Error(sessionError.message);
+  }
+
+  const accessToken = session?.access_token;
+
+  if (!accessToken) {
+    throw new Error("You must be logged in to send a message");
+  }
+
+  return accessToken;
+}
+
 export async function sendDirectMessageToOwner(
   body: string
 ): Promise<SendDirectMessageResult> {
@@ -23,26 +82,7 @@ export async function sendDirectMessageToOwner(
     };
   }
 
-  const {
-    data: { session },
-    error: sessionError,
-  } = await supabase.auth.getSession();
-
-  if (sessionError) {
-    return {
-      ok: false,
-      error: sessionError.message,
-    };
-  }
-
-  const accessToken = session?.access_token;
-
-  if (!accessToken) {
-    return {
-      ok: false,
-      error: "You must be logged in to send a message",
-    };
-  }
+  const accessToken = await getAccessToken();
 
   const response = await fetch("/api/direct-messages/send", {
     method: "POST",
@@ -55,7 +95,18 @@ export async function sendDirectMessageToOwner(
     }),
   });
 
-  const data = (await response.json()) as SendDirectMessageResult;
+  return response.json();
+}
 
-  return data;
+export async function fetchMyThreadWithOwner(): Promise<MyThreadResult> {
+  const accessToken = await getAccessToken();
+
+  const response = await fetch("/api/direct-messages/my-thread", {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  return response.json();
 }

@@ -1,11 +1,12 @@
 // components/profile/ProfileHeader.tsx
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import ProfileMediaHeaderLayout from "@/components/layouts/ProfileMediaHeaderLayout";
 import FollowButton from "@/components/profile/FollowButton";
 import ProfileStatsBarConnected from "@/components/profile/ProfileStatsBarConnected";
+import SendMessageModal from "@/components/dm/SendMessageModal";
 
 type MediaHeaderProps = React.ComponentProps<typeof ProfileMediaHeaderLayout>;
 
@@ -51,58 +52,78 @@ export default function ProfileHeader({
 
   activeTab = "posts",
 }: Props) {
-  return (
-    <ProfileMediaHeaderLayout
-      backdropUrl={backdropUrl}
-      backdropPosX={backdropPosX}
-      backdropPosY={backdropPosY}
-      backdropZoom={backdropZoom}
-      username={username}
-      avatarUrl={avatarUrl}
-      isPro={isPro}
-      hideTabs
-      belowUsername={
-        !isOwner ? (
-          <div className="inline-flex items-center justify-start">
-            <FollowButton viewerUserId={viewerUserId} profileId={profileId} isOwner={isOwner} />
-          </div>
-        ) : null
-      }
-      rightPinned={
-        <div className="flex flex-col items-end gap-1.5 md:gap-1">
-          {isOwner ? (
-            <Link
-              href="/settings"
-              className={[
-                "inline-flex items-center justify-center",
-                "h-[24px] px-1.5 text-[10px] md:h-[30px] md:px-2 md:text-sm",
-                "rounded-md",
-                "bg-black/90 backdrop-blur-md",
-                "ring-1 ring-white/10",
-                "text-white font-semibold",
-                "transition-colors",
-                "hover:bg-black/80 active:bg-white/10",
-                "focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-0",
-              ].join(" ")}
-            >
-              Edit profile
-            </Link>
-          ) : (
-            // ✅ spacer to keep stats row vertically aligned
-            <div className="h-[26px] md:h-[30px]" />
-          )}
+  const [messageOpen, setMessageOpen] = useState(false);
+  const siteOwnerId = process.env.NEXT_PUBLIC_SITE_OWNER_USER_ID ?? "";
 
-          <ProfileStatsBarConnected
-            profileId={profileId}
-            followersCount={followersCount}
-            followingCount={followingCount}
-            onFollowersClick={onFollowersClick}
-            onFollowingClick={onFollowingClick}
-          />
-        </div>
-      }
-      reserveRightClassName="pr-[260px]"
-      activeTab={activeTab}
-    />
+  console.log("ProfileHeader profileId:", profileId);
+  console.log("ProfileHeader siteOwnerId:", siteOwnerId);
+  console.log("ProfileHeader show message button:", !isOwner && profileId === siteOwnerId);
+
+  return (
+    <>
+      <ProfileMediaHeaderLayout
+        backdropUrl={backdropUrl}
+        backdropPosX={backdropPosX}
+        backdropPosY={backdropPosY}
+        backdropZoom={backdropZoom}
+        username={username}
+        avatarUrl={avatarUrl}
+        isPro={isPro}
+        hideTabs
+        belowUsername={
+          !isOwner ? (
+            <div className="inline-flex items-center justify-start gap-2">
+              <FollowButton viewerUserId={viewerUserId} profileId={profileId} isOwner={isOwner} />
+
+              {profileId === siteOwnerId ? (
+                <button
+                  type="button"
+                  onClick={() => setMessageOpen(true)}
+                  className="inline-flex items-center justify-center rounded-[10px] bg-white px-3.5 py-2 font-bold text-black transition-opacity hover:opacity-90"
+                >
+                  Message
+                </button>
+              ) : null}
+            </div>
+          ) : null
+        }
+        rightPinned={
+          <div className="flex flex-col items-end gap-1.5 md:gap-1">
+            {isOwner ? (
+              <Link
+                href="/settings"
+                className={[
+                  "inline-flex items-center justify-center",
+                  "h-[24px] px-1.5 text-[10px] md:h-[30px] md:px-2 md:text-sm",
+                  "rounded-md",
+                  "bg-black/90 backdrop-blur-md",
+                  "ring-1 ring-white/10",
+                  "text-white font-semibold",
+                  "transition-colors",
+                  "hover:bg-black/80 active:bg-white/10",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-0",
+                ].join(" ")}
+              >
+                Edit profile
+              </Link>
+            ) : (
+              <div className="h-[26px] md:h-[30px]" />
+            )}
+
+            <ProfileStatsBarConnected
+              profileId={profileId}
+              followersCount={followersCount}
+              followingCount={followingCount}
+              onFollowersClick={onFollowersClick}
+              onFollowingClick={onFollowingClick}
+            />
+          </div>
+        }
+        reserveRightClassName="pr-[260px]"
+        activeTab={activeTab}
+      />
+
+      <SendMessageModal open={messageOpen} onClose={() => setMessageOpen(false)} />
+    </>
   );
 }
