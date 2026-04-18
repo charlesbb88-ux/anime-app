@@ -26,11 +26,15 @@ export default function App({ Component, pageProps }: AppPropsWithHeader) {
     <UsernameGate>
       <>
         <Head>
+          <title>Inkbased</title>
+
           <meta
             name="viewport"
             content="width=device-width, initial-scale=1"
             key="viewport"
           />
+
+          <link rel="icon" href="/favicon.png" />
         </Head>
 
         <div className="min-h-screen font-sans">
