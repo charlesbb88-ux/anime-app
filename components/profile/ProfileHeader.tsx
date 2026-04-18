@@ -80,9 +80,15 @@ export default function ProfileHeader({
                 <button
                   type="button"
                   onClick={() => setMessageOpen(true)}
-                  className="inline-flex items-center justify-center rounded-[10px] bg-black px-2 py-1 font-bold text-white transition-opacity hover:opacity-90"
+                  className="
+    inline-flex items-center justify-center
+    rounded-[6px] bg-black
+    px-2 py-1 md:px-2 md:py-1
+    font-bold text-white
+    transition-opacity hover:opacity-90
+  "
                 >
-                  <MessageSquare size={16} />
+                  <MessageSquare size={15} className="md:w-[18px] md:h-[18px]" />
                 </button>
               ) : null}
             </div>
