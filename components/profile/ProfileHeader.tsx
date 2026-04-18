@@ -55,10 +55,6 @@ export default function ProfileHeader({
   const [messageOpen, setMessageOpen] = useState(false);
   const siteOwnerId = process.env.NEXT_PUBLIC_SITE_OWNER_USER_ID ?? "";
 
-  console.log("ProfileHeader profileId:", profileId);
-  console.log("ProfileHeader siteOwnerId:", siteOwnerId);
-  console.log("ProfileHeader show message button:", !isOwner && profileId === siteOwnerId);
-
   return (
     <>
       <ProfileMediaHeaderLayout
@@ -73,7 +69,11 @@ export default function ProfileHeader({
         belowUsername={
           !isOwner ? (
             <div className="inline-flex items-center justify-start gap-2">
-              <FollowButton viewerUserId={viewerUserId} profileId={profileId} isOwner={isOwner} />
+              <FollowButton
+                viewerUserId={viewerUserId}
+                profileId={profileId}
+                isOwner={isOwner}
+              />
 
               {profileId === siteOwnerId ? (
                 <button
@@ -123,7 +123,10 @@ export default function ProfileHeader({
         activeTab={activeTab}
       />
 
-      <SendMessageModal open={messageOpen} onClose={() => setMessageOpen(false)} />
+      <SendMessageModal
+        open={messageOpen}
+        onClose={() => setMessageOpen(false)}
+      />
     </>
   );
 }
