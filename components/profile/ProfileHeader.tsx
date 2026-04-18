@@ -7,6 +7,7 @@ import ProfileMediaHeaderLayout from "@/components/layouts/ProfileMediaHeaderLay
 import FollowButton from "@/components/profile/FollowButton";
 import ProfileStatsBarConnected from "@/components/profile/ProfileStatsBarConnected";
 import SendMessageModal from "@/components/dm/SendMessageModal";
+import { MessageSquare } from "lucide-react";
 
 type MediaHeaderProps = React.ComponentProps<typeof ProfileMediaHeaderLayout>;
 
@@ -79,9 +80,9 @@ export default function ProfileHeader({
                 <button
                   type="button"
                   onClick={() => setMessageOpen(true)}
-                  className="inline-flex items-center justify-center rounded-[10px] bg-white px-3.5 py-2 font-bold text-black transition-opacity hover:opacity-90"
+                  className="inline-flex items-center justify-center rounded-[10px] bg-black px-2 py-1 font-bold text-white transition-opacity hover:opacity-90"
                 >
-                  Message
+                  <MessageSquare size={14} />
                 </button>
               ) : null}
             </div>
