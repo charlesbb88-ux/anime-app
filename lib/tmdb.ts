@@ -97,6 +97,26 @@ export type TmdbSeasonDetails = {
   episodes: TmdbSeasonEpisode[];
 };
 
+export type TmdbMovieDetails = {
+  id: number;
+  title: string | null;
+  original_title: string | null;
+  overview: string | null;
+  release_date: string | null;
+  poster_path: string | null;
+  backdrop_path: string | null;
+};
+
+export async function getTmdbMovieDetails(movieId: number) {
+  const path = `/movie/${movieId}?language=en-US`;
+  return tmdbGet<TmdbMovieDetails>(path);
+}
+
+export async function getTmdbMovieImages(movieId: number) {
+  const path = `/movie/${movieId}/images`;
+  return tmdbGet<TmdbImagesResponse>(path);
+}
+
 const TMDB_API_BASE = "https://api.themoviedb.org/3";
 
 /* ----------------- Auth headers -----------------

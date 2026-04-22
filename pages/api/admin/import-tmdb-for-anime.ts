@@ -7,9 +7,12 @@ import {
   getTmdbSeasonDetails,
   getTmdbSeasonImages,
   getTmdbEpisodeImages,
+  getTmdbMovieDetails,
+  getTmdbMovieImages,
   tmdbImageUrl,
   type TmdbImagesResponse,
   type TmdbTvDetails,
+  type TmdbMovieDetails,
 } from "@/lib/tmdb";
 
 type AnimeRow = {
@@ -55,10 +58,17 @@ type InsertEpisodeArtwork = {
   is_primary: boolean;
 };
 
+type TmdbMediaType = "tv" | "movie";
+
 function parsePositiveInt(v: unknown): number | null {
   const n = typeof v === "string" ? parseInt(v, 10) : typeof v === "number" ? v : NaN;
   if (!Number.isFinite(n) || n <= 0) return null;
   return n;
+}
+
+function parseMediaType(v: unknown): TmdbMediaType | null {
+  if (v === "tv" || v === "movie") return v;
+  return null;
 }
 
 function hasMeaningfulText(v: unknown) {
@@ -89,41 +99,59 @@ function mapImages(
   primaryFilePath: string | null
 ): InsertAnimeArtwork[] {
   const arr = (images?.[key] ?? []) as any[];
+
   return arr
     .map((it) => {
       const url = tmdbImageUrl(it.file_path, "original");
+      if (!url) return null;
+
       return {
         anime_id: animeId,
         source: "tmdb",
         kind,
-        url: url!,
+        url,
         lang: it.iso_639_1 ?? null,
         width: it.width ?? null,
         height: it.height ?? null,
         vote: it.vote_average ?? null,
         is_primary: primaryFilePath ? it.file_path === primaryFilePath : false,
-      };
+      } satisfies InsertAnimeArtwork;
     })
-    .filter((r) => !!r.url);
+    .filter(Boolean) as InsertAnimeArtwork[];
 }
 
 function bestVotedPrimary<T extends { vote: number | null; is_primary: boolean }>(rows: T[]) {
-  const hasPrimary = rows.some((r) => r.is_primary);
-  if (hasPrimary) return rows;
+  const copy = rows.map((r) => ({ ...r }));
+  const hasPrimary = copy.some((r) => r.is_primary);
+  if (hasPrimary) return copy;
 
   let bestIdx = -1;
   let bestVote = -Infinity;
 
-  for (let i = 0; i < rows.length; i++) {
-    const v = rows[i].vote ?? -Infinity;
+  for (let i = 0; i < copy.length; i++) {
+    const v = copy[i].vote ?? -Infinity;
     if (v > bestVote) {
       bestVote = v;
       bestIdx = i;
     }
   }
 
-  if (bestIdx >= 0) rows[bestIdx].is_primary = true;
-  return rows;
+  if (bestIdx >= 0) copy[bestIdx].is_primary = true;
+  return copy;
+}
+
+function dedupeArtworkRows(rows: InsertAnimeArtwork[]) {
+  const seen = new Set<string>();
+  const out: InsertAnimeArtwork[] = [];
+
+  for (const row of rows) {
+    const key = `${row.anime_id}||${row.source}||${row.kind}||${row.url}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+
+  return out;
 }
 
 async function getAnimeByAniListId(anilistId: number) {
@@ -141,31 +169,58 @@ async function getAnimeByAniListId(anilistId: number) {
   return data as AnimeRow;
 }
 
-async function setTmdbIdOnAnime(animeId: string, tmdbId: number) {
+async function setTmdbOnAnime(animeId: string, tmdbId: number, tmdbMediaType: TmdbMediaType) {
+  const patch: Record<string, any> = {
+    tmdb_id: tmdbId,
+  };
+
+  // only include this if your anime table actually has a tmdb_media_type column
+  patch.tmdb_media_type = tmdbMediaType;
+
   const { error } = await supabaseAdmin
     .from("anime")
-    .update({ tmdb_id: tmdbId })
+    .update(patch)
     .eq("id", animeId);
 
-  if (error) throw error;
+  if (error) {
+    // fallback in case tmdb_media_type column does not exist yet
+    if (String(error.message || "").toLowerCase().includes("tmdb_media_type")) {
+      const { error: fallbackError } = await supabaseAdmin
+        .from("anime")
+        .update({ tmdb_id: tmdbId })
+        .eq("id", animeId);
+
+      if (fallbackError) throw fallbackError;
+      return;
+    }
+
+    throw error;
+  }
 }
 
-async function importSeriesArtworkForAnime(animeId: string, tvId: number) {
-  const { data: existing, error: eExist } = await supabaseAdmin
+async function insertAnimeArtworkSafely(rows: InsertAnimeArtwork[]) {
+  if (rows.length === 0) return 0;
+
+  const deduped = dedupeArtworkRows(rows);
+
+  const { error } = await supabaseAdmin
     .from("anime_artwork")
-    .select("url")
-    .eq("anime_id", animeId)
-    .eq("source", "tmdb");
+    .upsert(deduped, {
+      onConflict: "anime_id,source,kind,url",
+      ignoreDuplicates: true,
+    });
 
-  if (eExist) throw eExist;
+  if (error) throw error;
 
-  const existingSet = new Set((existing ?? []).map((r: any) => r.url));
+  return deduped.length;
+}
 
+async function importTvSeriesArtworkForAnime(animeId: string, tvId: number) {
   const { data: details, error: eDet } = await getTmdbTvDetails(tvId);
-  if (eDet || !details) throw new Error(eDet || "No TMDB details");
+  if (eDet || !details) throw new Error(eDet || "No TMDB TV details");
 
   const { data: images, error: eImg } = await getTmdbTvImages(tvId);
-  if (eImg || !images) throw new Error(eImg || "No TMDB images");
+  if (eImg || !images) throw new Error(eImg || "No TMDB TV images");
 
   const d = details as TmdbTvDetails;
 
@@ -194,17 +249,63 @@ async function importSeriesArtworkForAnime(animeId: string, tvId: number) {
   }
 
   const all = [...posters, ...backdrops, ...logos, ...seasonRows];
-  const toInsert = all.filter((r) => !existingSet.has(r.url));
-
-  if (toInsert.length > 0) {
-    const { error: eIns } = await supabaseAdmin.from("anime_artwork").insert(toInsert);
-    if (eIns) throw eIns;
-  }
+  const inserted = await insertAnimeArtworkSafely(all);
 
   return {
-    inserted: toInsert.length,
+    inserted,
     totalFetched: all.length,
   };
+}
+
+async function importMovieArtworkForAnime(animeId: string, movieId: number) {
+  const { data: details, error: eDet } = await getTmdbMovieDetails(movieId);
+  if (eDet || !details) throw new Error(eDet || "No TMDB movie details");
+
+  const { data: images, error: eImg } = await getTmdbMovieImages(movieId);
+  if (eImg || !images) throw new Error(eImg || "No TMDB movie images");
+
+  const d = details as TmdbMovieDetails;
+
+  let posters = mapImages(animeId, "poster", images, "posters", d.poster_path);
+  let backdrops = mapImages(animeId, "backdrop", images, "backdrops", d.backdrop_path);
+  let logos = mapImages(animeId, "logo", images, "logos", null);
+
+  posters = bestVotedPrimary(posters);
+  backdrops = bestVotedPrimary(backdrops);
+  logos = bestVotedPrimary(logos);
+
+  const all = [...posters, ...backdrops, ...logos];
+  const inserted = await insertAnimeArtworkSafely(all);
+
+  return {
+    inserted,
+    totalFetched: all.length,
+  };
+}
+
+async function importMovieDetailsForAnime(animeId: string, movieId: number) {
+  const { data: movie, error } = await getTmdbMovieDetails(movieId);
+  if (error || !movie) throw new Error(error || "No TMDB movie details");
+
+  const patch: Record<string, any> = {};
+if (hasMeaningfulText(movie.title)) {
+  patch.title = movie.title;
+}
+
+  // If you do not want TMDB overwriting anime title ever, delete the block above and just return updated: 0
+
+  if (Object.keys(patch).length === 0) {
+    return { updated: 0 };
+  }
+
+  const { error: upErr } = await supabaseAdmin
+    .from("anime")
+    .update(patch)
+    .eq("id", animeId);
+
+  if (upErr) throw upErr;
+
+  return { updated: 1 };
 }
 
 async function mapEpisodesForAnime(animeId: string, tvId: number) {
@@ -253,7 +354,7 @@ async function mapEpisodesForAnime(animeId: string, tvId: number) {
   }
 
   const { data: details, error: eDet } = await getTmdbTvDetails(tvId);
-  if (eDet || !details) throw new Error(eDet || "No TMDB details");
+  if (eDet || !details) throw new Error(eDet || "No TMDB TV details");
 
   const seasonNums =
     (details.seasons ?? [])
@@ -301,7 +402,6 @@ async function mapEpisodesForAnime(animeId: string, tvId: number) {
     };
   }
 
-  // ✅ NEW: map only the overlap, never require exact count match
   const overlapCount = Math.min(unmapped.length, flat.length);
 
   const updates = unmapped.slice(0, overlapCount).map((e) => {
@@ -502,19 +602,21 @@ async function importEpisodeStillsForAnime(animeId: string, tvId: number) {
       const rowsToInsert: InsertEpisodeArtwork[] = stills
         .map((it) => {
           const url = tmdbImageUrl(it.file_path, "original");
+          if (!url) return null;
+
           return {
             anime_episode_id: ep.id,
             source: "tmdb",
             kind: "still",
-            url: url!,
+            url,
             lang: it.iso_639_1 ?? null,
             width: it.width ?? null,
             height: it.height ?? null,
             vote: it.vote_average ?? null,
             is_primary: primaryStillPath ? it.file_path === primaryStillPath : false,
-          };
+          } satisfies InsertEpisodeArtwork;
         })
-        .filter((r) => !!r.url);
+        .filter(Boolean) as InsertEpisodeArtwork[];
 
       if (rowsToInsert.length > 0 && !rowsToInsert.some((r) => r.is_primary)) {
         let bestIdx = 0;
@@ -540,11 +642,11 @@ async function importEpisodeStillsForAnime(animeId: string, tvId: number) {
           .from("anime_episode_artwork")
           .insert(deduped);
 
-        if (!eIns) {
-          insertedForAnime += deduped.length;
-          for (const r of deduped) {
-            existingSet.add(`${r.anime_episode_id}||${r.url}`);
-          }
+        if (eIns) throw eIns;
+
+        insertedForAnime += deduped.length;
+        for (const r of deduped) {
+          existingSet.add(`${r.anime_episode_id}||${r.url}`);
         }
       }
     }
@@ -558,6 +660,7 @@ async function importEpisodeStillsForAnime(animeId: string, tvId: number) {
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (!requireAdmin(req, res)) return;
+
   if (req.method !== "POST") {
     return res.status(200).json({ ok: false, error: "Method not allowed" });
   }
@@ -566,10 +669,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const body = (req.body ?? {}) as {
       anilistId?: number | string;
       tmdbId?: number | string | null;
+      tmdbMediaType?: "tv" | "movie" | null;
     };
 
     const anilistId = parsePositiveInt(body.anilistId);
     const tmdbId = parsePositiveInt(body.tmdbId);
+const requestedType = parseMediaType(body.tmdbMediaType);
+let tmdbMediaType: "tv" | "movie" = requestedType ?? "tv";
 
     if (!anilistId) {
       return res.status(200).json({ ok: false, error: "Missing or invalid anilistId" });
@@ -579,11 +685,55 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({ ok: false, error: "Missing or invalid tmdbId" });
     }
 
+    try {
+  const tvCheck = await getTmdbTvDetails(tmdbId);
+
+  if (tvCheck.data) {
+    tmdbMediaType = "tv";
+  } else {
+    const movieCheck = await getTmdbMovieDetails(tmdbId);
+
+    if (movieCheck.data) {
+      tmdbMediaType = "movie";
+    }
+  }
+} catch {}
+
     const anime = await getAnimeByAniListId(anilistId);
+    await setTmdbOnAnime(anime.id, tmdbId, tmdbMediaType);
 
-    await setTmdbIdOnAnime(anime.id, tmdbId);
+    if (tmdbMediaType === "movie") {
+      const artwork = await importMovieArtworkForAnime(anime.id, tmdbId);
+      const details = await importMovieDetailsForAnime(anime.id, tmdbId);
 
-    const artwork = await importSeriesArtworkForAnime(anime.id, tmdbId);
+      const { data: refreshedAnime, error: refreshErr } = await supabaseAdmin
+        .from("anime")
+        .select("id, anilist_id, tmdb_id, title")
+        .eq("id", anime.id)
+        .single();
+
+      if (refreshErr) throw refreshErr;
+
+      return res.status(200).json({
+        ok: true,
+        anime: refreshedAnime,
+        tmdb: {
+          mediaType: "movie",
+          seriesArtworkInserted: artwork.inserted,
+          episodeMappingsAdded: 0,
+          episodeMappingSkippedReason: "movie import: no episode mapping",
+          episodeMappingLocalUnmappedCount: 0,
+          episodeMappingTmdbFlatCount: 0,
+          episodeMappingPartiallyMapped: false,
+          episodeDetailsUpdated: details.updated,
+          episodeDetailsSkippedUnmappable: 0,
+          episodeStillsInserted: 0,
+          episodeStillsSkippedUnmappable: 0,
+        },
+      });
+    }
+
+    const artwork = await importTvSeriesArtworkForAnime(anime.id, tmdbId);
     const mapping = await mapEpisodesForAnime(anime.id, tmdbId);
     const details = await importEpisodeDetailsForAnime(anime.id, tmdbId);
     const stills = await importEpisodeStillsForAnime(anime.id, tmdbId);
@@ -596,22 +746,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (refreshErr) throw refreshErr;
 
-return res.status(200).json({
-  ok: true,
-  anime: refreshedAnime,
-  tmdb: {
-    seriesArtworkInserted: artwork.inserted,
-    episodeMappingsAdded: mapping.mapped,
-    episodeMappingSkippedReason: mapping.skipped,
-    episodeMappingLocalUnmappedCount: mapping.localUnmappedCount,
-    episodeMappingTmdbFlatCount: mapping.tmdbFlatCount,
-    episodeMappingPartiallyMapped: mapping.partiallyMapped,
-    episodeDetailsUpdated: details.updated,
-    episodeDetailsSkippedUnmappable: details.skippedUnmappableEpisodes,
-    episodeStillsInserted: stills.inserted,
-    episodeStillsSkippedUnmappable: stills.skippedUnmappableEpisodes,
-  },
-});
+    return res.status(200).json({
+      ok: true,
+      anime: refreshedAnime,
+      tmdb: {
+        mediaType: "tv",
+        seriesArtworkInserted: artwork.inserted,
+        episodeMappingsAdded: mapping.mapped,
+        episodeMappingSkippedReason: mapping.skipped,
+        episodeMappingLocalUnmappedCount: mapping.localUnmappedCount,
+        episodeMappingTmdbFlatCount: mapping.tmdbFlatCount,
+        episodeMappingPartiallyMapped: mapping.partiallyMapped,
+        episodeDetailsUpdated: details.updated,
+        episodeDetailsSkippedUnmappable: details.skippedUnmappableEpisodes,
+        episodeStillsInserted: stills.inserted,
+        episodeStillsSkippedUnmappable: stills.skippedUnmappableEpisodes,
+      },
+    });
   } catch (err: any) {
     return res.status(500).json({
       ok: false,
