@@ -9,6 +9,8 @@ import Header from "../components/Header";
 import AuthModalManager from "../components/AuthModalManager";
 import UsernameGate from "../components/UsernameGate";
 
+import { Analytics } from "@vercel/analytics/react";
+
 export type NextPageWithHeader = NextPage & {
   hideHeader?: boolean;
   headerTransparent?: boolean;
@@ -43,6 +45,7 @@ export default function App({ Component, pageProps }: AppPropsWithHeader) {
         </div>
 
         <AuthModalManager />
+        <Analytics />
       </>
     </UsernameGate>
   );
