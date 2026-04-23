@@ -322,7 +322,7 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
                       <span className={rowSpacer} />
                     </button>
 
-                    <button
+{/*                     <button
                       className={rowBtn}
                       onClick={() => signInWithOAuth("google")}
                       disabled={busy}
@@ -331,9 +331,9 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
                       <span className={rowIcon}>G</span>
                       <span className={rowLabel}>Continue with Google</span>
                       <span className={rowSpacer} />
-                    </button>
+                    </button> */}
 
-                    <button
+{/*                     <button
                       className={rowBtn}
                       onClick={() => signInWithOAuth("apple")}
                       disabled={busy}
@@ -342,7 +342,7 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
                       <span className={rowIcon}></span>
                       <span className={rowLabel}>Continue with Apple</span>
                       <span className={rowSpacer} />
-                    </button>
+                    </button> */}
                   </>
                 ) : (
                   <>
@@ -352,12 +352,12 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
                       disabled={busy}
                       type="button"
                     >
-                      <span className={rowIcon}>✉️</span>
+                      <span className={rowIcon}>👤</span>
                       <span className={rowLabel}>Use email</span>
                       <span className={rowSpacer} />
                     </button>
 
-                    <button
+{/*                     <button
                       className={rowBtn}
                       onClick={() => signInWithOAuth("apple")}
                       disabled={busy}
@@ -366,9 +366,9 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
                       <span className={rowIcon}></span>
                       <span className={rowLabel}>Continue with Apple</span>
                       <span className={rowSpacer} />
-                    </button>
+                    </button> */}
 
-                    <button
+{/*                     <button
                       className={rowBtn}
                       onClick={() => signInWithOAuth("google")}
                       disabled={busy}
@@ -377,7 +377,7 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
                       <span className={rowIcon}>G</span>
                       <span className={rowLabel}>Continue with Google</span>
                       <span className={rowSpacer} />
-                    </button>
+                    </button> */}
                   </>
                 )}
               </div>
