@@ -21,7 +21,7 @@ type Props = {
   episodes: EpisodeRow[];
   canInteract: boolean;
   refreshToken?: number;
-  onOpenLog: (episodeId?: string) => void;
+  onOpenLog: (episodeId?: string | null, episodeNumber?: number | null) => void;
   onMessage?: (msg: string | null) => void;
   onLogCreated?: () => void;
 };
@@ -512,7 +512,7 @@ export default function AnimeQuickLogRow({
                     disabled={isDisabled}
                     onClick={() => {
                       startReviewPoll(nextEpisode);
-                      onOpenLog(nextEpisode.id);
+                      onOpenLog(nextEpisode.id, nextEpisode.episode_number);
                     }}
                     className={[
                       "relative rounded-md border px-3 py-1.5 text-[11px] font-semibold",
