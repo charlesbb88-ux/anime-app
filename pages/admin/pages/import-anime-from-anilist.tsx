@@ -87,6 +87,14 @@ type SavedGroupDetailItem = {
     updated_at: string;
 };
 
+type BulkPasteItem = {
+    title?: unknown;
+    anilistId?: unknown;
+    tmdbId?: unknown;
+    manualTotalEpisodes?: unknown;
+    importCharactersToo?: unknown;
+};
+
 type RowState = {
     localId: string;
     anilistId: string;
@@ -105,6 +113,18 @@ type RowState = {
 
     showRaw: boolean;
 };
+
+type ParsedRowInputs =
+    | {
+        ok: true;
+        anilistId: number;
+        tmdbId: number | null;
+        manualTotalEpisodes: number | null;
+    }
+    | {
+        ok: false;
+        error: string;
+    };
 
 function makeRow(partial?: Partial<RowState>): RowState {
     return {
@@ -150,6 +170,119 @@ function rowDisplayTitle(row: RowState) {
     }
 
     return row.savedTitleSnapshot || null;
+}
+
+function parsePositiveIntOrNull(value: unknown): number | null {
+    if (value == null || value === "") return null;
+
+    if (typeof value === "number") {
+        return Number.isInteger(value) && value > 0 ? value : null;
+    }
+
+    if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (!trimmed) return null;
+        const parsed = Number(trimmed);
+        return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+    }
+
+    return null;
+}
+
+function parseRowInputs(row: RowState): ParsedRowInputs {
+    const anilistId = parsePositiveIntOrNull(row.anilistId);
+    if (anilistId == null) {
+        return { ok: false, error: "AniList ID must be a positive number." };
+    }
+
+    const tmdbId = row.tmdbId.trim() === "" ? null : parsePositiveIntOrNull(row.tmdbId);
+    if (row.tmdbId.trim() !== "" && tmdbId == null) {
+        return { ok: false, error: "TMDB ID must be blank or a positive number." };
+    }
+
+    const manualTotalEpisodes =
+        row.manualTotalEpisodes.trim() === ""
+            ? null
+            : parsePositiveIntOrNull(row.manualTotalEpisodes);
+
+    if (row.manualTotalEpisodes.trim() !== "" && manualTotalEpisodes == null) {
+        return { ok: false, error: "Manual episodes must be blank or a positive number." };
+    }
+
+    return {
+        ok: true,
+        anilistId,
+        tmdbId,
+        manualTotalEpisodes,
+    };
+}
+
+function parseBulkPasteRows(
+    rawText: string,
+    defaultImportCharactersToo: boolean
+): RowState[] {
+    const trimmed = rawText.trim();
+
+    if (!trimmed) {
+        throw new Error("Paste your JSON list first.");
+    }
+
+    let parsed: unknown;
+
+    try {
+        parsed = JSON.parse(trimmed);
+    } catch {
+        throw new Error("Invalid JSON. Paste the full array from the script output.");
+    }
+
+    if (!Array.isArray(parsed)) {
+        throw new Error("Expected a JSON array.");
+    }
+
+    const nextRows: RowState[] = [];
+
+    for (let index = 0; index < parsed.length; index += 1) {
+        const item = parsed[index] as BulkPasteItem;
+
+        if (!item || typeof item !== "object" || Array.isArray(item)) {
+            throw new Error(`Row ${index + 1}: each item must be an object.`);
+        }
+
+        const anilistId = parsePositiveIntOrNull(item.anilistId);
+        if (anilistId == null) {
+            throw new Error(`Row ${index + 1}: missing or invalid anilistId.`);
+        }
+
+        const tmdbId = parsePositiveIntOrNull(item.tmdbId);
+        const manualTotalEpisodes = parsePositiveIntOrNull(item.manualTotalEpisodes);
+
+        const title =
+            typeof item.title === "string" && item.title.trim()
+                ? item.title.trim()
+                : null;
+
+        const importCharactersToo =
+            typeof item.importCharactersToo === "boolean"
+                ? item.importCharactersToo
+                : defaultImportCharactersToo;
+
+        nextRows.push(
+            makeRow({
+                anilistId: String(anilistId),
+                tmdbId: tmdbId == null ? "" : String(tmdbId),
+                manualTotalEpisodes:
+                    manualTotalEpisodes == null ? "" : String(manualTotalEpisodes),
+                importCharactersToo,
+                savedTitleSnapshot: title,
+            })
+        );
+    }
+
+    if (nextRows.length === 0) {
+        throw new Error("The pasted array is empty.");
+    }
+
+    return nextRows;
 }
 
 async function runAnimeImport(
@@ -287,13 +420,25 @@ async function saveGroup(
     name: string,
     rows: RowState[]
 ) {
-    const payloadRows = rows.map((row) => ({
-        anilistId: row.anilistId.trim(),
-        tmdbId: row.tmdbId.trim() === "" ? null : row.tmdbId.trim(),
-        manualTotalEpisodes:
-            row.manualTotalEpisodes.trim() === "" ? null : row.manualTotalEpisodes.trim(),
-        importCharactersToo: row.importCharactersToo,
-    }));
+    const payloadRows = rows.map((row, index) => {
+        const parsed = parseRowInputs(row);
+
+        if (!parsed.ok) {
+            throw new Error(`Row ${index + 1}: ${parsed.error}`);
+        }
+
+        return {
+            anilistId: parsed.anilistId,
+            tmdbId: parsed.tmdbId,
+            manualTotalEpisodes: parsed.manualTotalEpisodes,
+            importCharactersToo: row.importCharactersToo,
+            titleSnapshot: row.savedTitleSnapshot,
+        };
+    });
+
+    if (payloadRows.length === 0) {
+        throw new Error("There are no rows to save.");
+    }
 
     const r = await fetch("/api/admin/anime-import-groups", {
         method: "POST",
@@ -310,8 +455,13 @@ async function saveGroup(
     });
 
     const payload = await r.json();
+
     if (!r.ok || !payload?.ok) {
         throw new Error(payload?.error || `HTTP ${r.status}`);
+    }
+
+    if (!payload?.savedCount || payload.savedCount < 1) {
+        throw new Error("The group was created, but no anime rows were saved.");
     }
 
     return payload as { ok: true; id: string; savedCount: number };
@@ -343,27 +493,31 @@ export default function ImportAnimeFromAniListPage() {
     const [pageError, setPageError] = useState<string | null>(null);
     const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
+    const [bulkPasteText, setBulkPasteText] = useState("");
+    const [bulkPasteAppend, setBulkPasteAppend] = useState(false);
+    const [bulkPasteCharactersDefault, setBulkPasteCharactersDefault] = useState(true);
+
     const trimmedSecret = adminSecret.trim();
 
-    const validRowCount = useMemo(() => {
-        return rows.filter((row) => {
-            const anilistId = Number(row.anilistId.trim());
-            const tmdbId = row.tmdbId.trim() === "" ? null : Number(row.tmdbId.trim());
-            const manualTotalEpisodes =
-                row.manualTotalEpisodes.trim() === "" ? null : Number(row.manualTotalEpisodes.trim());
-
-            const anilistOk = Number.isFinite(anilistId) && anilistId > 0;
-            const tmdbOk = tmdbId === null || (Number.isFinite(tmdbId) && tmdbId > 0);
-            const manualOk =
-                manualTotalEpisodes === null ||
-                (Number.isFinite(manualTotalEpisodes) && manualTotalEpisodes > 0);
-
-            return anilistOk && tmdbOk && manualOk;
-        }).length;
+    const rowValidation = useMemo(() => {
+        return rows.map((row) => parseRowInputs(row));
     }, [rows]);
 
-    const canSave = trimmedSecret.length > 0 && groupName.trim().length > 0 && validRowCount > 0;
-    const canRun = trimmedSecret.length > 0 && validRowCount > 0 && !runningAll;
+    const validRowCount = useMemo(() => {
+        return rowValidation.filter((result) => result.ok).length;
+    }, [rowValidation]);
+
+    const allRowsValid = rows.length > 0 && validRowCount === rows.length;
+
+    const canSave =
+        trimmedSecret.length > 0 &&
+        groupName.trim().length > 0 &&
+        allRowsValid;
+
+    const canRun =
+        trimmedSecret.length > 0 &&
+        allRowsValid &&
+        !runningAll;
 
     async function refreshGroups() {
         if (!trimmedSecret) return;
@@ -406,12 +560,43 @@ export default function ImportAnimeFromAniListPage() {
         setGroupId(null);
         setGroupName("");
         setRows([makeRow()]);
+        setBulkPasteText("");
         setSaveMessage(null);
         setPageError(null);
     }
 
+    function handleLoadBulkPaste() {
+        setPageError(null);
+        setSaveMessage(null);
+
+        try {
+            const importedRows = parseBulkPasteRows(
+                bulkPasteText,
+                bulkPasteCharactersDefault
+            );
+
+            setRows((prev) => {
+                if (bulkPasteAppend) {
+                    return [...prev, ...importedRows];
+                }
+
+                return importedRows;
+            });
+
+            setSaveMessage(`Loaded ${importedRows.length} pasted row(s).`);
+        } catch (err: any) {
+            setPageError(String(err?.message || err));
+        }
+    }
+
     async function handleSaveGroup() {
-        if (!canSave) return;
+        if (!canSave) {
+            setPageError(
+                "Cannot save yet. Make sure ADMIN_SECRET is filled in, the group has a name, and every row is valid."
+            );
+            return;
+        }
+
         setPageError(null);
         setSaveMessage(null);
 
@@ -489,23 +674,14 @@ export default function ImportAnimeFromAniListPage() {
     }
 
     async function runOneRow(row: RowState): Promise<RowState> {
-        const parsedAniListId = Number(row.anilistId.trim());
-        const parsedTmdbId = row.tmdbId.trim() === "" ? null : Number(row.tmdbId.trim());
-        const parsedManualEpisodes =
-            row.manualTotalEpisodes.trim() === "" ? null : Number(row.manualTotalEpisodes.trim());
+        const parsed = parseRowInputs(row);
 
-        const anilistOk = Number.isFinite(parsedAniListId) && parsedAniListId > 0;
-        const tmdbOk = parsedTmdbId === null || (Number.isFinite(parsedTmdbId) && parsedTmdbId > 0);
-        const manualOk =
-            parsedManualEpisodes === null ||
-            (Number.isFinite(parsedManualEpisodes) && parsedManualEpisodes > 0);
-
-        if (!anilistOk || !tmdbOk || !manualOk) {
+        if (!parsed.ok) {
             return {
                 ...row,
                 status: "error",
                 step: null,
-                error: "Invalid input in this row",
+                error: parsed.error,
             };
         }
 
@@ -520,9 +696,9 @@ export default function ImportAnimeFromAniListPage() {
             });
 
             const animeResult = await runAnimeImport(
-                parsedAniListId,
+                parsed.anilistId,
                 trimmedSecret,
-                parsedManualEpisodes
+                parsed.manualTotalEpisodes
             );
 
             if (animeResult.success !== true) {
@@ -547,7 +723,7 @@ export default function ImportAnimeFromAniListPage() {
                     animeResult,
                 });
 
-                characterResult = await runCharacterImport(parsedAniListId, trimmedSecret);
+                characterResult = await runCharacterImport(parsed.anilistId, trimmedSecret);
 
                 if (!("ok" in characterResult) || characterResult.ok !== true) {
                     return {
@@ -563,7 +739,7 @@ export default function ImportAnimeFromAniListPage() {
                 }
             }
 
-            if (parsedTmdbId !== null) {
+            if (parsed.tmdbId !== null) {
                 updateRow(row.localId, {
                     status: "running",
                     step: "Importing TMDB content",
@@ -571,7 +747,7 @@ export default function ImportAnimeFromAniListPage() {
                     characterResult,
                 });
 
-                tmdbResult = await runTmdbImport(parsedAniListId, parsedTmdbId, trimmedSecret);
+                tmdbResult = await runTmdbImport(parsed.anilistId, parsed.tmdbId, trimmedSecret);
 
                 if (!("ok" in tmdbResult) || tmdbResult.ok !== true) {
                     return {
@@ -606,7 +782,12 @@ export default function ImportAnimeFromAniListPage() {
     }
 
     async function handleRunAll() {
-        if (!canRun) return;
+        if (!canRun) {
+            setPageError(
+                "Cannot run yet. Make sure ADMIN_SECRET is filled in and every row is valid."
+            );
+            return;
+        }
 
         setRunningAll(true);
         setPageError(null);
@@ -637,6 +818,11 @@ export default function ImportAnimeFromAniListPage() {
                     savedTitleSnapshot: item.title_snapshot ?? null,
                 })
             );
+
+            const loadedValid = loadedRows.every((row) => parseRowInputs(row).ok);
+            if (!loadedValid) {
+                throw new Error("This saved group contains one or more invalid rows.");
+            }
 
             setGroupId(payload.group.id);
             setGroupName(payload.group.name);
@@ -879,7 +1065,8 @@ export default function ImportAnimeFromAniListPage() {
                         </div>
 
                         <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
-                            {groupId ? "Saved group" : "Unsaved group"} • valid rows: {validRowCount}
+                            {groupId ? "Saved group" : "Unsaved group"} • valid rows: {validRowCount}/{rows.length}
+                            {!allRowsValid ? " • fix invalid rows before saving or running" : ""}
                         </div>
 
                         {saveMessage ? (
@@ -906,11 +1093,126 @@ export default function ImportAnimeFromAniListPage() {
                                     border: "1px solid rgba(255,0,0,0.25)",
                                     background: "rgba(255,0,0,0.06)",
                                     fontWeight: 700,
+                                    whiteSpace: "pre-wrap",
                                 }}
                             >
                                 Error: {pageError}
                             </div>
                         ) : null}
+                    </div>
+
+                    <div
+                        style={{
+                            border: "1px solid rgba(0,0,0,0.12)",
+                            borderRadius: 14,
+                            padding: 12,
+                            background: "white",
+                            marginBottom: 14,
+                        }}
+                    >
+                        <div style={{ fontWeight: 900, marginBottom: 8 }}>Paste JSON list</div>
+
+                        <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 10 }}>
+                            Paste the array from your script output. It will fill AniList ID, TMDB ID,
+                            and title snapshot automatically.
+                        </div>
+
+                        <textarea
+                            value={bulkPasteText}
+                            onChange={(e) => setBulkPasteText(e.target.value)}
+                            placeholder={`[
+  {
+    "title": "Yano-kun's Ordinary Days",
+    "anilistId": 183965,
+    "tmdbId": 276349
+  }
+]`}
+                            style={{
+                                width: "100%",
+                                minHeight: 220,
+                                resize: "vertical",
+                                padding: 12,
+                                borderRadius: 12,
+                                border: "1px solid rgba(0,0,0,0.15)",
+                                fontFamily: "monospace",
+                                fontSize: 12,
+                                lineHeight: 1.45,
+                            }}
+                        />
+
+                        <div
+                            style={{
+                                display: "flex",
+                                gap: 10,
+                                flexWrap: "wrap",
+                                alignItems: "center",
+                                marginTop: 10,
+                            }}
+                        >
+                            <label
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                    fontSize: 13,
+                                    fontWeight: 700,
+                                }}
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={bulkPasteAppend}
+                                    onChange={(e) => setBulkPasteAppend(e.target.checked)}
+                                />
+                                Append instead of replace
+                            </label>
+
+                            <label
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                    fontSize: 13,
+                                    fontWeight: 700,
+                                }}
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={bulkPasteCharactersDefault}
+                                    onChange={(e) =>
+                                        setBulkPasteCharactersDefault(e.target.checked)
+                                    }
+                                />
+                                Default pasted rows to import characters
+                            </label>
+
+                            <button
+                                onClick={handleLoadBulkPaste}
+                                style={{
+                                    padding: "10px 14px",
+                                    borderRadius: 10,
+                                    border: "1px solid rgba(0,0,0,0.15)",
+                                    background: "white",
+                                    fontWeight: 800,
+                                    cursor: "pointer",
+                                }}
+                            >
+                                Load pasted rows
+                            </button>
+
+                            <button
+                                onClick={() => setBulkPasteText("")}
+                                style={{
+                                    padding: "10px 14px",
+                                    borderRadius: 10,
+                                    border: "1px solid rgba(0,0,0,0.15)",
+                                    background: "white",
+                                    fontWeight: 800,
+                                    cursor: "pointer",
+                                }}
+                            >
+                                Clear paste box
+                            </button>
+                        </div>
                     </div>
 
                     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

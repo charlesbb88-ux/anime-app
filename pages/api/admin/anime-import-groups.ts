@@ -1,18 +1,19 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { requireAdmin } from "@/lib/adminGuard";
-import { getAniListAnimeById } from "@/lib/anilist";
-import type { AniListAnime } from "@/lib/anilist";
 
 type IncomingItem = {
   anilistId?: number | string;
   tmdbId?: number | string | null;
   manualTotalEpisodes?: number | string | null;
   importCharactersToo?: boolean;
+  titleSnapshot?: string | null;
 };
 
 function parsePositiveInt(v: unknown): number | null {
-  const n = typeof v === "string" ? parseInt(v, 10) : typeof v === "number" ? v : NaN;
+  const n =
+    typeof v === "string" ? parseInt(v, 10) : typeof v === "number" ? v : NaN;
+
   if (!Number.isFinite(n) || n <= 0) return null;
   return n;
 }
@@ -22,11 +23,6 @@ function parseOptionalPositiveInt(v: unknown): number | null {
   return parsePositiveInt(v);
 }
 
-function pickSnapshotTitle(a: AniListAnime) {
-  const t = a.title;
-  return t.english || t.userPreferred || t.romaji || t.native || "Untitled";
-}
-
 function normalizeItems(items: IncomingItem[]) {
   const out: Array<{
     order_index: number;
@@ -34,6 +30,7 @@ function normalizeItems(items: IncomingItem[]) {
     tmdb_id: number | null;
     manual_total_episodes: number | null;
     import_characters: boolean;
+    title_snapshot: string | null;
   }> = [];
 
   for (let i = 0; i < items.length; i++) {
@@ -50,20 +47,14 @@ function normalizeItems(items: IncomingItem[]) {
       tmdb_id: tmdbId,
       manual_total_episodes: manualTotalEpisodes,
       import_characters: raw.importCharactersToo !== false,
+      title_snapshot:
+        typeof raw.titleSnapshot === "string" && raw.titleSnapshot.trim()
+          ? raw.titleSnapshot.trim()
+          : null,
     });
   }
 
   return out;
-}
-
-async function resolveAniListTitle(anilistId: number): Promise<string | null> {
-  try {
-    const { data } = await getAniListAnimeById(anilistId);
-    if (!data) return null;
-    return pickSnapshotTitle(data);
-  } catch {
-    return null;
-  }
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -117,7 +108,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (groupsErr) return res.status(500).json({ ok: false, error: groupsErr.message });
 
       const groupIds = (groups ?? []).map((g: any) => g.id);
-      let countsMap = new Map<string, number>();
+      const countsMap = new Map<string, number>();
 
       if (groupIds.length > 0) {
         const { data: items, error: itemsErr } = await supabaseAdmin
@@ -202,33 +193,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           .single();
 
         if (insErr || !insertedGroup) {
-          return res.status(500).json({ ok: false, error: insErr?.message || "Failed to create group" });
+          return res
+            .status(500)
+            .json({ ok: false, error: insErr?.message || "Failed to create group" });
         }
 
         groupId = insertedGroup.id as string;
       }
 
-      const rowsToInsert = [];
-      for (const item of items) {
-        const titleSnapshot = await resolveAniListTitle(item.anilist_id);
+      const now = new Date().toISOString();
 
-        rowsToInsert.push({
-          group_id: groupId!,
-          order_index: item.order_index,
-          anilist_id: item.anilist_id,
-          tmdb_id: item.tmdb_id,
-          manual_total_episodes: item.manual_total_episodes,
-          import_characters: item.import_characters,
-          title_snapshot: titleSnapshot,
-          updated_at: new Date().toISOString(),
-        });
-      }
+      const rowsToInsert = items.map((item) => ({
+        group_id: groupId!,
+        order_index: item.order_index,
+        anilist_id: item.anilist_id,
+        tmdb_id: item.tmdb_id,
+        manual_total_episodes: item.manual_total_episodes,
+        import_characters: item.import_characters,
+        title_snapshot: item.title_snapshot,
+        updated_at: now,
+      }));
 
       const { error: itemsInsErr } = await supabaseAdmin
         .from("admin_anime_import_group_items")
         .insert(rowsToInsert);
 
-      if (itemsInsErr) return res.status(500).json({ ok: false, error: itemsInsErr.message });
+      if (itemsInsErr) {
+        return res.status(500).json({ ok: false, error: itemsInsErr.message });
+      }
 
       return res.status(200).json({
         ok: true,
