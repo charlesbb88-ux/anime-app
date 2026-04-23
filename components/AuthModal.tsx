@@ -31,7 +31,7 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
   const router = useRouter();
 
   const [step, setStep] = useState<Step>("chooser");
-  const [localMode, setLocalMode] = useState<"login" | "signup">(mode);
+  const [localMode, setLocalMode] = useState<"login" | "signup">("signup");
   const [showPassword, setShowPassword] = useState(false);
 
   const [identifier, setIdentifier] = useState(""); // email or username for login
@@ -53,7 +53,7 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
   // Reset internal state whenever opened / mode changes
   useEffect(() => {
     if (!isOpen) return;
-    setLocalMode(mode);
+    setLocalMode("signup");
     setStep("chooser");
     setIdentifier("");
     setEmail("");
@@ -322,7 +322,7 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
                       <span className={rowSpacer} />
                     </button>
 
-{/*                     <button
+                    {/*                     <button
                       className={rowBtn}
                       onClick={() => signInWithOAuth("google")}
                       disabled={busy}
@@ -333,7 +333,7 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
                       <span className={rowSpacer} />
                     </button> */}
 
-{/*                     <button
+                    {/*                     <button
                       className={rowBtn}
                       onClick={() => signInWithOAuth("apple")}
                       disabled={busy}
@@ -357,7 +357,7 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
                       <span className={rowSpacer} />
                     </button>
 
-{/*                     <button
+                    {/*                     <button
                       className={rowBtn}
                       onClick={() => signInWithOAuth("apple")}
                       disabled={busy}
@@ -368,7 +368,7 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
                       <span className={rowSpacer} />
                     </button> */}
 
-{/*                     <button
+                    {/*                     <button
                       className={rowBtn}
                       onClick={() => signInWithOAuth("google")}
                       disabled={busy}
