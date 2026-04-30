@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import CommentRow from "../components/CommentRow";
 import { MessageCircle, Heart, Bookmark } from "lucide-react";
+import OnboardingTutorialModal from "../components/OnboardingTutorialModal";
 
 const AVATAR_SIZE = 46; // match CommentRow non-main avatar size
 
@@ -218,71 +219,75 @@ export default function TestCommentPage() {
   ];
 
   return (
-    <main
-      style={{
-        maxWidth: 600,
-        margin: "2rem auto",
-        padding: "1rem",
-        fontFamily: "system-ui, sans-serif",
-        backgroundColor: "#f5f5f5",
-      }}
-    >
-      <h1 style={{ marginBottom: "0.5rem", fontSize: "1.25rem" }}>
-        🧪 Comment & Review Layout Test
-      </h1>
-
-      <section
+    <>
+      <main
         style={{
-          borderRadius: 8,
-          overflow: "hidden",
-          boxShadow: "0 0 0 1px #e5e7eb",
-          backgroundColor: "white",
+          maxWidth: 600,
+          margin: "2rem auto",
+          padding: "1rem",
+          fontFamily: "system-ui, sans-serif",
+          backgroundColor: "#f5f5f5",
         }}
       >
-        {feed.map((item, idx) => {
-          if (item.kind === "comment") {
-            const c = mockComments[item.index];
+        <h1 style={{ marginBottom: "0.5rem", fontSize: "1.25rem" }}>
+          🧪 Comment & Review Layout Test
+        </h1>
+
+        <section
+          style={{
+            borderRadius: 8,
+            overflow: "hidden",
+            boxShadow: "0 0 0 1px #e5e7eb",
+            backgroundColor: "white",
+          }}
+        >
+          {feed.map((item, idx) => {
+            if (item.kind === "comment") {
+              const c = mockComments[item.index];
+              return (
+                <CommentRow
+                  key={`comment-${c.id}-${idx}`}
+                  id={c.id}
+                  userId={c.userId}
+                  createdAt={c.createdAt}
+                  content={`[${c.label}] ${c.content}`}
+                  displayName={getDisplayName(c.userId)}
+                  initial={getInitial(c.userId)}
+                  isOwner={c.isOwner}
+                  isMain={c.isMain}
+                  replyCount={c.replyCount}
+                  likeCount={c.likeCount}
+                  likedByMe={c.likedByMe}
+                  href={undefined}
+                  onReplyClick={(id, e) => alert(`Reply clicked on ${id}`)}
+                  onToggleLike={(id, e) => alert(`Like toggled on ${id}`)}
+                  onBookmarkClick={(id, e) => alert(`Bookmark clicked on ${id}`)}
+                  onShareClick={(id, e) => alert(`Share clicked on ${id}`)}
+                  onEdit={(id, e) => alert(`Edit clicked on ${id}`)}
+                  onDelete={(id, e) => alert(`Delete clicked on ${id}`)}
+                  isMenuOpen={menuOpenId === c.id}
+                  onToggleMenu={(id, e) =>
+                    setMenuOpenId((prev) => (prev === id ? null : id))
+                  }
+                />
+              );
+            }
+
+            const r = mockReviews[item.index];
             return (
-              <CommentRow
-                key={`comment-${c.id}-${idx}`}
-                id={c.id}
-                userId={c.userId}
-                createdAt={c.createdAt}
-                content={`[${c.label}] ${c.content}`}
-                displayName={getDisplayName(c.userId)}
-                initial={getInitial(c.userId)}
-                isOwner={c.isOwner}
-                isMain={c.isMain}
-                replyCount={c.replyCount}
-                likeCount={c.likeCount}
-                likedByMe={c.likedByMe}
-                href={undefined}
-                onReplyClick={(id, e) => alert(`Reply clicked on ${id}`)}
-                onToggleLike={(id, e) => alert(`Like toggled on ${id}`)}
-                onBookmarkClick={(id, e) => alert(`Bookmark clicked on ${id}`)}
-                onShareClick={(id, e) => alert(`Share clicked on ${id}`)}
-                onEdit={(id, e) => alert(`Edit clicked on ${id}`)}
-                onDelete={(id, e) => alert(`Delete clicked on ${id}`)}
-                isMenuOpen={menuOpenId === c.id}
-                onToggleMenu={(id, e) =>
-                  setMenuOpenId((prev) => (prev === id ? null : id))
-                }
+              <ReviewRow
+                key={`review-${r.id}-${idx}`}
+                data={r}
+                displayName={getDisplayName(r.userId)}
+                initial={getInitial(r.userId)}
               />
             );
-          }
+          })}
+        </section>
+      </main>
 
-          const r = mockReviews[item.index];
-          return (
-            <ReviewRow
-              key={`review-${r.id}-${idx}`}
-              data={r}
-              displayName={getDisplayName(r.userId)}
-              initial={getInitial(r.userId)}
-            />
-          );
-        })}
-      </section>
-    </main>
+      <OnboardingTutorialModal />
+    </>
   );
 }
 
