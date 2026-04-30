@@ -53,8 +53,15 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
   // Reset internal state whenever opened / mode changes
   useEffect(() => {
     if (!isOpen) return;
-    setLocalMode("signup");
-    setStep("chooser");
+
+    setLocalMode(mode);
+
+    if (mode === "signup") {
+      setStep("email");
+    } else {
+      setStep("chooser");
+    }
+
     setIdentifier("");
     setEmail("");
     setUsername("");
