@@ -124,8 +124,8 @@ function PodiumCard({
         rank === 1
             ? "h-[190px] sm:h-[270px]"
             : rank === 2
-            ? "h-[160px] sm:h-[225px]"
-            : "h-[145px] sm:h-[205px]";
+                ? "h-[160px] sm:h-[225px]"
+                : "h-[145px] sm:h-[205px]";
 
     const orderClass = rank === 1 ? "order-2" : rank === 2 ? "order-1" : "order-3";
 
@@ -134,8 +134,8 @@ function PodiumCard({
         rank === 1
             ? "h-20 w-20 sm:h-28 sm:w-28"
             : rank === 2
-            ? "h-16 w-16 sm:h-24 sm:w-24"
-            : "h-14 w-14 sm:h-20 sm:w-20";
+                ? "h-16 w-16 sm:h-24 sm:w-24"
+                : "h-14 w-14 sm:h-20 sm:w-20";
 
     return (
         <Link
@@ -241,7 +241,13 @@ function Avatar({
             className={`${size} relative shrink-0 overflow-hidden rounded-full border-[2px] border-black bg-neutral-100`}
         >
             {src ? (
-                <Image src={src} alt={username} fill className="object-cover" />
+                <Image
+                    src={src}
+                    alt={username}
+                    fill
+                    sizes="56px"
+                    className="object-cover"
+                />
             ) : (
                 <div className="flex h-full w-full items-center justify-center text-lg font-black text-black">
                     {username.slice(0, 1).toUpperCase()}
