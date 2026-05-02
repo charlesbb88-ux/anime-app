@@ -13,7 +13,7 @@ type AuthModalProps = {
   next?: string;
 };
 
-type Step = "chooser" | "email" | "reset";
+type Step = "chooser" | "email" | "reset" | "confirm";
 
 function normalizeUsername(raw: string) {
   return raw.trim().toLowerCase();
@@ -194,10 +194,36 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
     setBusy(false);
 
     if (!signUpData.session) {
-      return setMsg(`We sent a confirmation email to ${e2}. Please confirm to finish signing up.`);
+      setEmail(e2); // store for resend
+      setStep("confirm");
+      return;
     }
 
     onClose();
+  }
+
+  async function handleResendConfirm() {
+    setMsg(null);
+    setBusy(true);
+
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: {
+        emailRedirectTo: `${origin}${nextUrl}`,
+      },
+    });
+
+    setBusy(false);
+
+    if (error) {
+      setMsg(error.message || "Could not resend email.");
+    } else {
+      setMsg("Confirmation email resent.");
+    }
   }
 
   async function handleSendReset() {
@@ -568,6 +594,34 @@ export default function AuthModal({ isOpen, onClose, mode, next }: AuthModalProp
                 <p className="text-xs text-black/45 leading-relaxed">
                   We’ll email you a reset link. Open it to set a new password.
                 </p>
+              </div>
+            )}
+
+            {/* STEP 4: confirm email */}
+            {step === "confirm" && (
+              <div className="mt-4 text-center space-y-4">
+                <h3 className="text-xl font-bold">Almost done</h3>
+
+                <p className="text-sm text-black/70">
+                  We sent a confirmation email to
+                </p>
+
+                <p className="font-semibold">{email}</p>
+
+                <p className="text-sm text-black/60">
+                  Open the email and click the link to finish signing up.
+                  <br />
+                  Check spam or promotions if you don’t see it.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={handleResendConfirm}
+                  disabled={busy}
+                  className="w-full h-12 rounded-xl border border-black text-sm font-semibold disabled:opacity-60"
+                >
+                  {busy ? "Sending…" : "Resend email"}
+                </button>
               </div>
             )}
           </div>
