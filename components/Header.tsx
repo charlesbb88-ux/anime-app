@@ -284,7 +284,7 @@ export default function Header({ transparent = false }: { transparent?: boolean 
           }}
         >
           {/* Left: brand + nav links */}
-          <div style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", minWidth: 0 }}>
             <Link
               href="/"
               style={{
@@ -297,7 +297,7 @@ export default function Header({ transparent = false }: { transparent?: boolean 
                   display: "inline-block",
                   padding: "0.1rem 0.3rem",
                   fontWeight: 700,
-                  fontSize: "1.7rem",
+                  fontSize: "clamp(1.55rem, 5vw, 1.7rem)",
                   color: "#000",
                   background: "#fff",
                   border: "2px solid #000",
@@ -326,7 +326,7 @@ export default function Header({ transparent = false }: { transparent?: boolean 
               position: "relative",
               display: "flex",
               alignItems: "center",
-              gap: "0.6rem",
+              gap: "0.35rem",
             }}
           >
             <Link
@@ -353,6 +353,61 @@ export default function Header({ transparent = false }: { transparent?: boolean 
                 }}
               >
                 DISCOVER
+              </span>
+            </Link>
+
+            <Link
+              href="/leaderboard"
+              style={{
+                textDecoration: "none",
+              }}
+            >
+              {/* DESKTOP BUTTON */}
+              <span
+                className="hidden sm:inline-flex"
+                style={{
+                  alignItems: "center",
+                  justifyContent: "center",
+                  height: HEADER_BTN_H,
+                  padding: "0 0.55rem",
+                  fontWeight: 700,
+                  fontSize: "1.05rem",
+                  color: "#ffffff",
+                  background: "#000000",
+                  border: "1px solid #ffffff",
+                  borderRadius: 0,
+                  lineHeight: "1",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                LEADERBOARD
+              </span>
+
+              {/* MOBILE BUTTON */}
+              <span
+                className="inline-flex sm:hidden"
+                style={{
+                  alignItems: "center",
+                  justifyContent: "center",
+                  height: HEADER_BTN_H,
+                  width: HEADER_BTN_H,
+                  background: "#000000",
+                  border: "1px solid #ffffff",
+                }}
+              >
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "flex-end",
+                    justifyContent: "center",
+                    gap: "2px",
+                    height: 18,
+                  }}
+                >
+                  <span style={{ width: 4, height: 8, background: "#ffffff" }} />
+                  <span style={{ width: 4, height: 16, background: "#ffffff" }} />
+                  <span style={{ width: 4, height: 12, background: "#ffffff" }} />
+                </span>
               </span>
             </Link>
 
