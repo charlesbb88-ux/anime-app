@@ -163,7 +163,7 @@ export default function LeftSidebar() {
           .from("anime_weekly_trending")
           .select("slug, title, image_url, score")
           .order("score", { ascending: false })
-          .limit(10);
+          .limit(4);
 
         if (error) throw error;
         if (!cancelled) setAnimeRows((data ?? []) as TrendingRow[]);
@@ -186,7 +186,7 @@ export default function LeftSidebar() {
           .from("manga_weekly_trending")
           .select("slug, title, image_url, score")
           .order("score", { ascending: false })
-          .limit(10);
+          .limit(4);
 
         if (error) throw error;
         if (!cancelled) setMangaRows((data ?? []) as TrendingRow[]);
