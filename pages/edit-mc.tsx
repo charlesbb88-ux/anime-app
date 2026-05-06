@@ -6,6 +6,7 @@ import { useMcPaperDollEditor } from "@/components/mc/paperdoll/useMcPaperDollEd
 import {
   MC_BODY_OPTIONS,
   MC_HAIR_OPTIONS,
+  MC_LOCKED_HAIR_OPTIONS,
 } from "@/components/mc/paperdoll/mcPaperDollCatalog";
 
 export default function EditMcPage() {
@@ -14,12 +15,26 @@ export default function EditMcPage() {
     saving,
     error,
     draftLoadout,
+    unlockedItems,
     canSave,
     setBody,
     setHair,
     reset,
     save,
   } = useMcPaperDollEditor();
+
+  const unlockedHairIds = new Set(
+    unlockedItems
+      .filter((item) => item.slot === "hair")
+      .map((item) => item.item_id)
+  );
+
+  const availableHairOptions = [
+    ...MC_HAIR_OPTIONS,
+    ...MC_LOCKED_HAIR_OPTIONS.filter((option) =>
+      unlockedHairIds.has(option.id)
+    ),
+  ];
 
   return (
     <div className="min-h-screen px-4 py-8 text-black">
@@ -51,7 +66,7 @@ export default function EditMcPage() {
 
               <McPaperDollOptionSelector
                 title="Hair"
-                options={MC_HAIR_OPTIONS}
+                options={availableHairOptions}
                 selectedId={draftLoadout.hair}
                 onSelect={setHair}
                 allowNone

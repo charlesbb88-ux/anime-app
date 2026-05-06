@@ -2,7 +2,12 @@
 
 import { supabase } from "@/lib/supabaseClient";
 import type { McPaperDollLoadout } from "@/components/mc/paperdoll/mcPaperDollTypes";
-import { DEFAULT_MC_PAPERDOLL_LOADOUT } from "@/components/mc/paperdoll/mcPaperDollCatalog";
+import {
+  DEFAULT_MC_PAPERDOLL_LOADOUT,
+  MC_HAIR_OPTIONS,
+  MC_LOCKED_HAIR_OPTIONS,
+} from "@/components/mc/paperdoll/mcPaperDollCatalog";
+import { getMyUnlockedMcItems } from "@/lib/mcUnlockedItemsService";
 
 export type UserMcPaperDollLoadoutRow = {
   user_id: string;
@@ -40,6 +45,14 @@ function rowToLoadout(row: UserMcPaperDollLoadoutRow): McPaperDollLoadout {
     hands: row.hands_id,
     eyes: row.eyes_id,
   };
+}
+
+function isPublicOption(
+  options: { id: string; label: string }[],
+  itemId: string | null | undefined
+) {
+  if (!itemId) return true;
+  return options.some((option) => option.id === itemId);
 }
 
 function loadoutToRow(loadout: McPaperDollLoadout) {
@@ -103,6 +116,27 @@ export async function saveMyMcPaperDollLoadout(
   loadout: McPaperDollLoadout
 ): Promise<McPaperDollLoadout> {
   const userId = await getSignedInUserId();
+
+  const unlockedItems = await getMyUnlockedMcItems();
+
+  const unlockedHairIds = new Set(
+    unlockedItems
+      .filter((item) => item.slot === "hair")
+      .map((item) => item.item_id)
+  );
+
+  const isLockedHair = MC_LOCKED_HAIR_OPTIONS.some(
+    (option) => option.id === loadout.hair
+  );
+
+  if (
+    loadout.hair &&
+    !isPublicOption(MC_HAIR_OPTIONS, loadout.hair) &&
+    isLockedHair &&
+    !unlockedHairIds.has(loadout.hair)
+  ) {
+    throw new Error("You have not unlocked this hair.");
+  }
 
   const { data, error } = await supabase
     .from("user_mc_paperdoll_loadouts")

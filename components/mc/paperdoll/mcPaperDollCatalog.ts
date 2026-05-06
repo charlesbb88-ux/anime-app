@@ -21,6 +21,10 @@ export const MC_HAIR_OPTIONS: McPaperDollOption[] = [
   { id: "spiky_black_01", label: "Spiky Black" },
 ];
 
+export const MC_LOCKED_HAIR_OPTIONS: McPaperDollOption[] = [
+  { id: "special_hair_01", label: "Special Hair" },
+];
+
 export const DEFAULT_MC_PAPERDOLL_LOADOUT: McPaperDollLoadout = {
   body: "base_male_01",
   hair: null,
@@ -50,10 +54,13 @@ export const MC_PAPERDOLL_CATALOG: McPaperDollCatalog = {
     ),
   },
   hair: {
-    spiky_black_01: createSpriteSetFromFolder(
-      "/mc/paperdoll/hair/spiky_black_01"
-    ),
-  },
+  spiky_black_01: createSpriteSetFromFolder(
+    "/mc/paperdoll/hair/spiky_black_01"
+  ),
+  special_hair_01: createSpriteSetFromFolder(
+    "/mc/paperdoll/hair/special_hair_01"
+  ),
+},
   torso: {},
   bottoms: {},
   feet: {},

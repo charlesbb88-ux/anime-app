@@ -9,6 +9,12 @@ import {
   getOrCreateMyMcPaperDollLoadout,
   saveMyMcPaperDollLoadout,
 } from "@/lib/mcPaperDollLoadoutService";
+import {
+  getMyUnlockedMcItems,
+} from "@/lib/mcUnlockedItemsService";
+import type {
+  UserMcUnlockedItem,
+} from "@/lib/mcUnlockedItemsService";
 
 function sameLoadout(a: McPaperDollLoadout | null, b: McPaperDollLoadout | null) {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -24,6 +30,8 @@ export function useMcPaperDollEditor() {
     DEFAULT_MC_PAPERDOLL_LOADOUT
   );
 
+  const [unlockedItems, setUnlockedItems] = useState<UserMcUnlockedItem[]>([]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -32,12 +40,16 @@ export function useMcPaperDollEditor() {
         setLoading(true);
         setError(null);
 
-        const loadout = await getOrCreateMyMcPaperDollLoadout();
+const [loadout, unlocked] = await Promise.all([
+  getOrCreateMyMcPaperDollLoadout(),
+  getMyUnlockedMcItems(),
+]);
 
         if (cancelled) return;
 
-        setSavedLoadout(loadout);
-        setDraftLoadout(loadout);
+setSavedLoadout(loadout);
+setDraftLoadout(loadout);
+setUnlockedItems(unlocked);
       } catch (err: any) {
         if (cancelled) return;
         setError(err?.message ?? "Failed to load MC character.");
@@ -95,14 +107,15 @@ function setBody(bodyId: string) {
   }
 
   return {
-    loading,
-    saving,
-    error,
-    draftLoadout,
-    canSave,
-    setBody,
-    setHair,
-    reset,
-    save,
-  };
+  loading,
+  saving,
+  error,
+  draftLoadout,
+  unlockedItems,
+  canSave,
+  setBody,
+  setHair,
+  reset,
+  save,
+};
 }
