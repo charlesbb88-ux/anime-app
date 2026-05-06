@@ -23,6 +23,7 @@ export const MC_HAIR_OPTIONS: McPaperDollOption[] = [
 
 export const MC_LOCKED_HAIR_OPTIONS: McPaperDollOption[] = [
   { id: "special_hair_01", label: "Special Hair" },
+  { id: "blonde_curtain_undercut_01", label: "Blonde Curtain Undercut" },
 ];
 
 export const DEFAULT_MC_PAPERDOLL_LOADOUT: McPaperDollLoadout = {
@@ -53,14 +54,17 @@ export const MC_PAPERDOLL_CATALOG: McPaperDollCatalog = {
       "/mc/paperdoll/body/base_skin_dark_01"
     ),
   },
-  hair: {
-  spiky_black_01: createSpriteSetFromFolder(
-    "/mc/paperdoll/hair/spiky_black_01"
-  ),
-  special_hair_01: createSpriteSetFromFolder(
-    "/mc/paperdoll/hair/special_hair_01"
-  ),
-},
+    hair: {
+    spiky_black_01: createSpriteSetFromFolder(
+      "/mc/paperdoll/hair/spiky_black_01"
+    ),
+    special_hair_01: createSpriteSetFromFolder(
+      "/mc/paperdoll/hair/special_hair_01"
+    ),
+    blonde_curtain_undercut_01: createSpriteSetFromFolder(
+      "/mc/paperdoll/hair/blonde_curtain_undercut_01"
+    ),
+  },
   torso: {},
   bottoms: {},
   feet: {},
