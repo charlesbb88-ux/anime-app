@@ -8,6 +8,7 @@ import {
   MC_HAIR_OPTIONS,
   MC_LOCKED_HAIR_OPTIONS,
   MC_LOCKED_TORSO_OPTIONS,
+  MC_LOCKED_BOTTOMS_OPTIONS,
 } from "@/components/mc/paperdoll/mcPaperDollCatalog";
 
 export default function EditMcPage() {
@@ -21,6 +22,7 @@ export default function EditMcPage() {
     setBody,
     setHair,
     setTorso,
+    setBottoms,
     reset,
     save,
   } = useMcPaperDollEditor();
@@ -37,6 +39,12 @@ export default function EditMcPage() {
       .map((item) => item.item_id)
   );
 
+  const unlockedBottomsIds = new Set(
+    unlockedItems
+      .filter((item) => item.slot === "bottoms")
+      .map((item) => item.item_id)
+  );
+
   const availableHairOptions = [
     ...MC_HAIR_OPTIONS,
     ...MC_LOCKED_HAIR_OPTIONS.filter((option) =>
@@ -48,7 +56,14 @@ export default function EditMcPage() {
     unlockedTorsoIds.has(option.id)
   );
 
+  const availableBottomsOptions =
+    MC_LOCKED_BOTTOMS_OPTIONS.filter((option) =>
+      unlockedBottomsIds.has(option.id)
+    );
+
   const showTorsoSelector = availableTorsoOptions.length > 0;
+
+  const showBottomsSelector = availableBottomsOptions.length > 0;
 
   return (
     <div className="min-h-screen px-4 py-8 text-black">
@@ -95,6 +110,17 @@ export default function EditMcPage() {
                   onSelect={setTorso}
                   allowNone
                   noneLabel="No Shirt"
+                />
+              ) : null}
+
+              {showBottomsSelector ? (
+                <McPaperDollOptionSelector
+                  title="Pants"
+                  options={availableBottomsOptions}
+                  selectedId={draftLoadout.bottoms}
+                  onSelect={setBottoms}
+                  allowNone
+                  noneLabel="No Pants"
                 />
               ) : null}
 

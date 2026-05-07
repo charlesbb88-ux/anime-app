@@ -30,6 +30,10 @@ export const MC_LOCKED_TORSO_OPTIONS: McPaperDollOption[] = [
   { id: "rolled_sleeve_suspenders_01", label: "Rolled Sleeve Suspenders" },
 ];
 
+export const MC_LOCKED_BOTTOMS_OPTIONS: McPaperDollOption[] = [
+  { id: "beige_slacks_01", label: "Beige Slacks" },
+];
+
 export const DEFAULT_MC_PAPERDOLL_LOADOUT: McPaperDollLoadout = {
   body: "base_male_01",
   hair: null,
@@ -74,7 +78,11 @@ export const MC_PAPERDOLL_CATALOG: McPaperDollCatalog = {
       "/mc/paperdoll/torso/rolled_sleeve_suspenders_01"
     ),
   },
-  bottoms: {},
+bottoms: {
+  beige_slacks_01: createSpriteSetFromFolder(
+    "/mc/paperdoll/bottoms/beige_slacks_01"
+  ),
+},
   feet: {},
   hands: {},
   eyes: {},
