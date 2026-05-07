@@ -10,6 +10,7 @@ import {
   MC_LOCKED_TORSO_OPTIONS,
   MC_LOCKED_BOTTOMS_OPTIONS,
   MC_LOCKED_FEET_OPTIONS,
+  MC_LOCKED_HANDS_OPTIONS,
 } from "@/components/mc/paperdoll/mcPaperDollCatalog";
 
 export default function EditMcPage() {
@@ -25,6 +26,7 @@ export default function EditMcPage() {
     setTorso,
     setBottoms,
     setFeet,
+    setHands,
     reset,
     save,
   } = useMcPaperDollEditor();
@@ -53,6 +55,12 @@ export default function EditMcPage() {
       .map((item) => item.item_id)
   );
 
+  const unlockedHandsIds = new Set(
+    unlockedItems
+      .filter((item) => item.slot === "hands")
+      .map((item) => item.item_id)
+  );
+
   const availableHairOptions = [
     ...MC_HAIR_OPTIONS,
     ...MC_LOCKED_HAIR_OPTIONS.filter((option) =>
@@ -73,11 +81,17 @@ export default function EditMcPage() {
     unlockedFeetIds.has(option.id)
   );
 
+  const availableHandsOptions = MC_LOCKED_HANDS_OPTIONS.filter((option) =>
+    unlockedHandsIds.has(option.id)
+  );
+
   const showTorsoSelector = availableTorsoOptions.length > 0;
 
   const showBottomsSelector = availableBottomsOptions.length > 0;
 
   const showFeetSelector = availableFeetOptions.length > 0;
+
+  const showHandsSelector = availableHandsOptions.length > 0;
 
   return (
     <div className="min-h-screen px-4 py-8 text-black">
@@ -146,6 +160,17 @@ export default function EditMcPage() {
                   onSelect={setFeet}
                   allowNone
                   noneLabel="No Shoes"
+                />
+              ) : null}
+
+              {showHandsSelector ? (
+                <McPaperDollOptionSelector
+                  title="Hands"
+                  options={availableHandsOptions}
+                  selectedId={draftLoadout.hands}
+                  onSelect={setHands}
+                  allowNone
+                  noneLabel="No Hand Item"
                 />
               ) : null}
 

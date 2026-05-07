@@ -106,6 +106,13 @@ function setFeet(feetId: string | null) {
   }));
 }
 
+function setHands(handsId: string | null) {
+  setDraftLoadout((prev) => ({
+    ...prev,
+    hands: handsId,
+  }));
+}
+
   function reset() {
     if (!savedLoadout) return;
     setDraftLoadout(savedLoadout);
@@ -139,6 +146,7 @@ function setFeet(feetId: string | null) {
   setTorso,
   setBottoms,
   setFeet,
+  setHands,
   reset,
   save,
 };

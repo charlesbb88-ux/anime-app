@@ -38,6 +38,10 @@ export const MC_LOCKED_FEET_OPTIONS: McPaperDollOption[] = [
   { id: "brown_dress_shoes_01", label: "Brown Dress Shoes" },
 ];
 
+export const MC_LOCKED_HANDS_OPTIONS: McPaperDollOption[] = [
+  { id: "tie_wrap_01", label: "Tie Wrap" },
+];
+
 export const DEFAULT_MC_PAPERDOLL_LOADOUT: McPaperDollLoadout = {
   body: "base_male_01",
   hair: null,
@@ -92,6 +96,10 @@ feet: {
     "/mc/paperdoll/feet/brown_dress_shoes_01"
   ),
 },
-  hands: {},
+hands: {
+  tie_wrap_01: createSpriteSetFromFolder(
+    "/mc/paperdoll/hands/tie_wrap_01"
+  ),
+},
   eyes: {},
 };
