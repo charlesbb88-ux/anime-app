@@ -99,6 +99,13 @@ function setBottoms(bottomsId: string | null) {
   }));
 }
 
+function setFeet(feetId: string | null) {
+  setDraftLoadout((prev) => ({
+    ...prev,
+    feet: feetId,
+  }));
+}
+
   function reset() {
     if (!savedLoadout) return;
     setDraftLoadout(savedLoadout);
@@ -131,6 +138,7 @@ function setBottoms(bottomsId: string | null) {
   setHair,
   setTorso,
   setBottoms,
+  setFeet,
   reset,
   save,
 };

@@ -34,6 +34,10 @@ export const MC_LOCKED_BOTTOMS_OPTIONS: McPaperDollOption[] = [
   { id: "beige_slacks_01", label: "Beige Slacks" },
 ];
 
+export const MC_LOCKED_FEET_OPTIONS: McPaperDollOption[] = [
+  { id: "brown_dress_shoes_01", label: "Brown Dress Shoes" },
+];
+
 export const DEFAULT_MC_PAPERDOLL_LOADOUT: McPaperDollLoadout = {
   body: "base_male_01",
   hair: null,
@@ -83,7 +87,11 @@ bottoms: {
     "/mc/paperdoll/bottoms/beige_slacks_01"
   ),
 },
-  feet: {},
+feet: {
+  brown_dress_shoes_01: createSpriteSetFromFolder(
+    "/mc/paperdoll/feet/brown_dress_shoes_01"
+  ),
+},
   hands: {},
   eyes: {},
 };
