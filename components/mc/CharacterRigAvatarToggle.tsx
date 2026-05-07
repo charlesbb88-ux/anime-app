@@ -8,19 +8,35 @@ import { ZoomIn, ZoomOut, Pencil } from "lucide-react";
 type Props = {
     bodyId?: string | null;
     hairId?: string | null;
+    torsoId?: string | null;
+    bottomsId?: string | null;
+    feetId?: string | null;
+    handsId?: string | null;
     showEditButton?: boolean;
 };
 
 export default function CharacterRigAvatarToggle({
     bodyId,
     hairId,
+    torsoId,
+    bottomsId,
+    feetId,
+    handsId,
     showEditButton = false,
 }: Props) {
     const [isZoomed, setIsZoomed] = useState(true);
 
     return (
         <div className="relative w-full max-w-[420px]">
-            <CharacterRigAvatar isZoomed={isZoomed} bodyId={bodyId} hairId={hairId} />
+            <CharacterRigAvatar
+                isZoomed={isZoomed}
+                bodyId={bodyId}
+                hairId={hairId}
+                torsoId={torsoId}
+                bottomsId={bottomsId}
+                feetId={feetId}
+                handsId={handsId}
+            />
 
             <div className="absolute right-3 top-3 z-20">
                 <button

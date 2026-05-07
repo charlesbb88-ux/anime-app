@@ -5,195 +5,405 @@ import { motion } from "framer-motion";
 import type { ReactNode } from "react";
 import { getMcRigAssetSet } from "@/components/mc/rig/getMcRigAssetSet";
 import { getMcRigHairSrc } from "@/components/mc/rig/getMcRigHairSrc";
+import { getMcRigTorsoParts } from "@/components/mc/rig/getMcRigTorsoParts";
+import { getMcRigBottomsParts } from "@/components/mc/rig/getMcRigBottomsParts";
+import { getMcRigFeetParts } from "@/components/mc/rig/getMcRigFeetParts";
+import { getMcRigHandsParts } from "@/components/mc/rig/getMcRigHandsParts";
 
 type MotionValues = {
-    y?: number[];
-    rotate?: number[];
-    scaleX?: number[];
-    scaleY?: number[];
+  y?: number[];
+  rotate?: number[];
+  scaleX?: number[];
+  scaleY?: number[];
 };
 
 type RigNodeProps = {
-    origin: string;
-    animate?: MotionValues;
-    delay?: number;
-    children: ReactNode;
+  origin: string;
+  animate?: MotionValues;
+  delay?: number;
+  children: ReactNode;
 };
 
 type RigImageProps = {
-    src: string;
-    alt?: string;
-    hideOnError?: boolean;
+  src: string;
+  alt?: string;
+  hideOnError?: boolean;
 };
 
 type Props = {
-    isZoomed?: boolean;
-    bodyId?: string | null;
-    hairId?: string | null;
+  isZoomed?: boolean;
+  bodyId?: string | null;
+  hairId?: string | null;
+  torsoId?: string | null;
+  bottomsId?: string | null;
+  feetId?: string | null;
+  handsId?: string | null;
 };
 
 function getDefaultRigFallbackSrc(src: string): string | null {
-    if (!src.startsWith("/mc/rig/body/")) {
-        return null;
-    }
+  if (!src.startsWith("/mc/rig/body/")) {
+    return null;
+  }
 
-    return src.replace(/\/mc\/rig\/body\/[^/]+\//, "/mc/rig/body/base_male_01/");
+  return src.replace(/\/mc\/rig\/body\/[^/]+\//, "/mc/rig/body/base_male_01/");
 }
 
 function RigImage({ src, alt = "", hideOnError = false }: RigImageProps) {
-    const [currentSrc, setCurrentSrc] = useState(src);
-    const [isHidden, setIsHidden] = useState(false);
+  const [currentSrc, setCurrentSrc] = useState(src);
+  const [isHidden, setIsHidden] = useState(false);
 
-    useEffect(() => {
-        setCurrentSrc(src);
-        setIsHidden(false);
-    }, [src]);
+  useEffect(() => {
+    setCurrentSrc(src);
+    setIsHidden(false);
+  }, [src]);
 
-    if (isHidden) {
-        return null;
-    }
+  if (isHidden) {
+    return null;
+  }
 
-    return (
-        <img
-            src={currentSrc}
-            alt={alt}
-            draggable={false}
-            onError={() => {
-                if (hideOnError) {
-                    setIsHidden(true);
-                    return;
-                }
+  return (
+    <img
+      src={currentSrc}
+      alt={alt}
+      draggable={false}
+      onError={() => {
+        if (hideOnError) {
+          setIsHidden(true);
+          return;
+        }
 
-                const fallbackSrc = getDefaultRigFallbackSrc(src);
+        const fallbackSrc = getDefaultRigFallbackSrc(src);
 
-                if (!fallbackSrc) {
-                    return;
-                }
+        if (!fallbackSrc) {
+          return;
+        }
 
-                if (currentSrc !== fallbackSrc) {
-                    setCurrentSrc(fallbackSrc);
-                }
-            }}
-            className="pointer-events-none absolute inset-0 h-full w-full select-none object-contain"
-        />
-    );
+        if (currentSrc !== fallbackSrc) {
+          setCurrentSrc(fallbackSrc);
+        }
+      }}
+      className="pointer-events-none absolute inset-0 h-full w-full select-none object-contain"
+    />
+  );
 }
 
 function RigNode({ origin, animate, delay = 0, children }: RigNodeProps) {
-    return (
-        <motion.div
-            className="absolute inset-0"
-            style={{ transformOrigin: origin }}
-            animate={animate}
-            transition={{
-                duration: 1.85,
-                repeat: Infinity,
-                ease: "easeInOut",
-                delay,
-            }}
-        >
-            {children}
-        </motion.div>
-    );
+  return (
+    <motion.div
+      className="absolute inset-0"
+      style={{ transformOrigin: origin }}
+      animate={animate}
+      transition={{
+        duration: 1.85,
+        repeat: Infinity,
+        ease: "easeInOut",
+        delay,
+      }}
+    >
+      {children}
+    </motion.div>
+  );
 }
 
 export default function CharacterRigAvatar({
-    isZoomed = true,
-    bodyId,
-    hairId,
+  isZoomed = true,
+  bodyId,
+  hairId,
+  torsoId,
+  bottomsId,
+  feetId,
+  handsId,
 }: Props) {
-    const rig = useMemo(() => getMcRigAssetSet(bodyId), [bodyId]);
-    const hairSrc = useMemo(() => getMcRigHairSrc(hairId), [hairId]);
+  const rig = useMemo(() => getMcRigAssetSet(bodyId), [bodyId]);
+  const hairSrc = useMemo(() => getMcRigHairSrc(hairId), [hairId]);
 
-    return (
-        <div className="relative h-[560px] w-full max-w-[420px] overflow-hidden rounded-[2rem] border border-black border-2 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.12),rgba(255,255,255,0.02)_35%,rgba(0,0,0,0.18)_70%)]">
-            <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.04),transparent_30%,rgba(0,0,0,0.18))]" />
+  const torsoParts = useMemo(() => getMcRigTorsoParts(torsoId), [torsoId]);
 
-            <div
-                className={`absolute inset-0 transition-transform duration-300 ${isZoomed
-                    ? "scale-[1.3] translate-y-[-23px] sm:scale-[1.12] sm:translate-y-[-20px]"
-                    : "scale-75 translate-y-0"
-                    }`}
+  const bottomsParts = useMemo(
+    () => getMcRigBottomsParts(bottomsId),
+    [bottomsId]
+  );
+
+  const feetParts = useMemo(() => getMcRigFeetParts(feetId), [feetId]);
+  const handsParts = useMemo(() => getMcRigHandsParts(handsId), [handsId]);
+
+  return (
+    <div className="relative h-[560px] w-full max-w-[420px] overflow-hidden rounded-[2rem] border border-black border-2 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.12),rgba(255,255,255,0.02)_35%,rgba(0,0,0,0.18)_70%)]">
+      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.04),transparent_30%,rgba(0,0,0,0.18))]" />
+
+      <div
+        className={`absolute inset-0 transition-transform duration-300 ${
+          isZoomed
+            ? "scale-[1.3] translate-y-[-23px] sm:scale-[1.12] sm:translate-y-[-20px]"
+            : "scale-75 translate-y-0"
+        }`}
+      >
+        {/* LEFT LEG CHAIN */}
+        <RigNode
+          origin="50% 60%"
+          animate={{ y: [0, -1.0, 0], rotate: [0, 0.5, 0] }}
+          delay={0.02}
+        >
+          <RigImage src={rig.legLeftThigh} />
+
+          {bottomsParts.legLeftThigh ? (
+            <RigImage
+              src={bottomsParts.legLeftThigh}
+              alt="left thigh clothing"
+              hideOnError
+            />
+          ) : null}
+
+          <RigNode
+            origin="50% 73%"
+            animate={{ rotate: [0, 0.45, 0], y: [0, 0.2, 0] }}
+            delay={0.03}
+          >
+            <RigImage src={rig.legLeftShin} />
+
+            {bottomsParts.legLeftShin ? (
+              <RigImage
+                src={bottomsParts.legLeftShin}
+                alt="left shin clothing"
+                hideOnError
+              />
+            ) : null}
+
+            <RigNode
+              origin="50% 92%"
+              animate={{ rotate: [0, 0.15, 0] }}
+              delay={0.04}
             >
-                {/* LEFT LEG CHAIN */}
-                <RigNode origin="50% 60%" animate={{ y: [0, -1.0, 0], rotate: [0, 0.5, 0] }} delay={0.02}>
-                    <RigImage src={rig.legLeftThigh} />
+              <RigImage src={rig.leftFoot} />
 
-                    <RigNode origin="50% 73%" animate={{ rotate: [0, 0.45, 0], y: [0, 0.2, 0] }} delay={0.03}>
-                        <RigImage src={rig.legLeftShin} />
+              {feetParts.leftFoot ? (
+                <RigImage
+                  src={feetParts.leftFoot}
+                  alt="left shoe"
+                  hideOnError
+                />
+              ) : null}
+            </RigNode>
+          </RigNode>
+        </RigNode>
 
-                        <RigNode origin="50% 92%" animate={{ rotate: [0, 0.15, 0] }} delay={0.04}>
-                            <RigImage src={rig.leftFoot} />
-                        </RigNode>
-                    </RigNode>
+        {/* RIGHT LEG CHAIN */}
+        <RigNode
+          origin="50% 60%"
+          animate={{ y: [0, -1.0, 0], rotate: [0, -0.5, 0] }}
+          delay={0.02}
+        >
+          <RigImage src={rig.legRightThigh} />
+
+          {bottomsParts.legRightThigh ? (
+            <RigImage
+              src={bottomsParts.legRightThigh}
+              alt="right thigh clothing"
+              hideOnError
+            />
+          ) : null}
+
+          <RigNode
+            origin="50% 73%"
+            animate={{ rotate: [0, -0.45, 0], y: [0, 0.2, 0] }}
+            delay={0.03}
+          >
+            <RigImage src={rig.legRightShin} />
+
+            {bottomsParts.legRightShin ? (
+              <RigImage
+                src={bottomsParts.legRightShin}
+                alt="right shin clothing"
+                hideOnError
+              />
+            ) : null}
+
+            <RigNode
+              origin="50% 92%"
+              animate={{ rotate: [0, -0.15, 0] }}
+              delay={0.04}
+            >
+              <RigImage src={rig.rightFoot} />
+
+              {feetParts.rightFoot ? (
+                <RigImage
+                  src={feetParts.rightFoot}
+                  alt="right shoe"
+                  hideOnError
+                />
+              ) : null}
+            </RigNode>
+          </RigNode>
+        </RigNode>
+
+        {/* HIPS + BODY CORE */}
+        <RigNode
+          origin="50% 60%"
+          animate={{ y: [0, -1.2, 0], rotate: [0, 0.2, 0] }}
+          delay={0.03}
+        >
+          {/* lower torso first = behind */}
+          <RigNode
+            origin="50% 56%"
+            animate={{ y: [0, -0.8, 0], rotate: [0, 0.25, 0] }}
+            delay={0.04}
+          >
+            <RigImage src={rig.torsoLower} />
+
+            {torsoParts.torsoLower ? (
+              <RigImage
+                src={torsoParts.torsoLower}
+                alt="lower shirt"
+                hideOnError
+              />
+            ) : null}
+
+            {/* ARMS should attach under torso_upper movement */}
+            <RigNode
+              origin="50% 48%"
+              animate={{ y: [0, -1.2, 0], rotate: [0, -0.35, 0] }}
+              delay={0.05}
+            >
+              {/* left upper arm */}
+              <RigNode
+                origin="44% 41%"
+                animate={{ rotate: [0, 1.0, 0], y: [0, -0.3, 0] }}
+                delay={0.06}
+              >
+                <RigImage src={rig.armLeftUpper} />
+
+                {torsoParts.armLeftUpper ? (
+                  <RigImage
+                    src={torsoParts.armLeftUpper}
+                    alt="left upper sleeve"
+                    hideOnError
+                  />
+                ) : null}
+
+                <RigNode
+                  origin="41% 51%"
+                  animate={{ rotate: [0, 1.2, 0] }}
+                  delay={0.07}
+                >
+                  <RigImage src={rig.armLeftForearm} />
+
+                  {torsoParts.armLeftForearm ? (
+                    <RigImage
+                      src={torsoParts.armLeftForearm}
+                      alt="left forearm sleeve"
+                      hideOnError
+                    />
+                  ) : null}
+
+                  <RigNode
+                    origin="40% 60%"
+                    animate={{ rotate: [0, 1.0, 0] }}
+                    delay={0.08}
+                  >
+                    <RigImage src={rig.leftHand} />
+
+                    {handsParts.leftHand ? (
+                      <RigImage
+                        src={handsParts.leftHand}
+                        alt="left hand item"
+                        hideOnError
+                      />
+                    ) : null}
+                  </RigNode>
                 </RigNode>
+              </RigNode>
 
-                {/* RIGHT LEG CHAIN */}
-                <RigNode origin="50% 60%" animate={{ y: [0, -1.0, 0], rotate: [0, -0.5, 0] }} delay={0.02}>
-                    <RigImage src={rig.legRightThigh} />
+              {/* right upper arm */}
+              <RigNode
+                origin="56% 41%"
+                animate={{ rotate: [0, -1.0, 0], y: [0, -0.3, 0] }}
+                delay={0.06}
+              >
+                <RigImage src={rig.armRightUpper} />
 
-                    <RigNode origin="50% 73%" animate={{ rotate: [0, -0.45, 0], y: [0, 0.2, 0] }} delay={0.03}>
-                        <RigImage src={rig.legRightShin} />
+                {torsoParts.armRightUpper ? (
+                  <RigImage
+                    src={torsoParts.armRightUpper}
+                    alt="right upper sleeve"
+                    hideOnError
+                  />
+                ) : null}
 
-                        <RigNode origin="50% 92%" animate={{ rotate: [0, -0.15, 0] }} delay={0.04}>
-                            <RigImage src={rig.rightFoot} />
-                        </RigNode>
-                    </RigNode>
+                <RigNode
+                  origin="59% 51%"
+                  animate={{ rotate: [0, -1.2, 0] }}
+                  delay={0.07}
+                >
+                  <RigImage src={rig.armRightForearm} />
+
+                  {torsoParts.armRightForearm ? (
+                    <RigImage
+                      src={torsoParts.armRightForearm}
+                      alt="right forearm sleeve"
+                      hideOnError
+                    />
+                  ) : null}
+
+                  <RigNode
+                    origin="60% 60%"
+                    animate={{ rotate: [0, -1.0, 0] }}
+                    delay={0.08}
+                  >
+                    <RigImage src={rig.rightHand} />
+
+                    {handsParts.rightHand ? (
+                      <RigImage
+                        src={handsParts.rightHand}
+                        alt="right hand item"
+                        hideOnError
+                      />
+                    ) : null}
+                  </RigNode>
                 </RigNode>
+              </RigNode>
 
-                {/* HIPS + BODY CORE */}
-                <RigNode origin="50% 60%" animate={{ y: [0, -1.2, 0], rotate: [0, 0.2, 0] }} delay={0.03}>
-                    {/* lower torso first = behind */}
-                    <RigNode origin="50% 56%" animate={{ y: [0, -0.8, 0], rotate: [0, 0.25, 0] }} delay={0.04}>
-                        <RigImage src={rig.torsoLower} />
+              <RigNode
+                origin="50% 44%"
+                animate={{ y: [0, -1.2, 0], rotate: [0, -0.15, 0] }}
+                delay={0.06}
+              >
+                <RigImage src={rig.neck} />
 
-                        {/* ARMS should attach under torso_upper movement */}
-                        <RigNode origin="50% 48%" animate={{ y: [0, -1.2, 0], rotate: [0, -0.35, 0] }} delay={0.05}>
-                            {/* left upper arm */}
-                            <RigNode origin="44% 41%" animate={{ rotate: [0, 1.0, 0], y: [0, -0.3, 0] }} delay={0.06}>
-                                <RigImage src={rig.armLeftUpper} />
+                <RigNode
+                  origin="50% 40%"
+                  animate={{ y: [0, -1.4, 0], rotate: [0, 0.5, 0] }}
+                  delay={0.08}
+                >
+                  <RigImage src={rig.head} />
 
-                                <RigNode origin="41% 51%" animate={{ rotate: [0, 1.2, 0] }} delay={0.07}>
-                                    <RigImage src={rig.armLeftForearm} />
-
-                                    <RigNode origin="40% 60%" animate={{ rotate: [0, 1.0, 0] }} delay={0.08}>
-                                        <RigImage src={rig.leftHand} />
-                                    </RigNode>
-                                </RigNode>
-                            </RigNode>
-
-                            {/* right upper arm */}
-                            <RigNode origin="56% 41%" animate={{ rotate: [0, -1.0, 0], y: [0, -0.3, 0] }} delay={0.06}>
-                                <RigImage src={rig.armRightUpper} />
-
-                                <RigNode origin="59% 51%" animate={{ rotate: [0, -1.2, 0] }} delay={0.07}>
-                                    <RigImage src={rig.armRightForearm} />
-
-                                    <RigNode origin="60% 60%" animate={{ rotate: [0, -1.0, 0] }} delay={0.08}>
-                                        <RigImage src={rig.rightHand} />
-                                    </RigNode>
-                                </RigNode>
-                            </RigNode>
-
-                            <RigNode origin="50% 44%" animate={{ y: [0, -1.2, 0], rotate: [0, -0.15, 0] }} delay={0.06}>
-                                <RigImage src={rig.neck} />
-
-                                <RigNode origin="50% 40%" animate={{ y: [0, -1.4, 0], rotate: [0, 0.5, 0] }} delay={0.08}>
-                                    <RigImage src={rig.head} />
-                                    {hairSrc ? <RigImage src={hairSrc} alt="hair" hideOnError /> : null}
-                                </RigNode>
-                            </RigNode>
-
-                            <RigImage src={rig.torsoUpper} />
-                        </RigNode>
-                    </RigNode>
-
-                    {/* hips last = in front */}
-                    <RigImage src={rig.hips} />
+                  {hairSrc ? (
+                    <RigImage src={hairSrc} alt="hair" hideOnError />
+                  ) : null}
                 </RigNode>
-            </div>
+              </RigNode>
 
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/30 to-transparent" />
-        </div>
-    );
+              <RigImage src={rig.torsoUpper} />
+
+              {torsoParts.torsoUpper ? (
+                <RigImage
+                  src={torsoParts.torsoUpper}
+                  alt="upper shirt"
+                  hideOnError
+                />
+              ) : null}
+            </RigNode>
+          </RigNode>
+
+          {/* hips last = in front */}
+          <RigImage src={rig.hips} />
+
+          {bottomsParts.hips ? (
+            <RigImage src={bottomsParts.hips} alt="pants hips" hideOnError />
+          ) : null}
+        </RigNode>
+      </div>
+
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/30 to-transparent" />
+    </div>
+  );
 }

@@ -14,6 +14,10 @@ type Props = {
   avatarLayers?: CharacterAvatarLayer[];
   bodyId?: string | null;
   hairId?: string | null;
+  torsoId?: string | null;
+  bottomsId?: string | null;
+  feetId?: string | null;
+  handsId?: string | null;
   showEditButton?: boolean;
 };
 
@@ -25,6 +29,10 @@ export default function CharacterPanel({
   avatarLayers = [],
   bodyId,
   hairId,
+  torsoId,
+  bottomsId,
+  feetId,
+  handsId,
   showEditButton = false,
 }: Props) {
   const hasAvatar = avatarLayers.length > 0;
@@ -74,6 +82,10 @@ export default function CharacterPanel({
               <CharacterRigAvatarToggle
                 bodyId={bodyId}
                 hairId={hairId}
+                torsoId={torsoId}
+                bottomsId={bottomsId}
+                feetId={feetId}
+                handsId={handsId}
                 showEditButton={showEditButton}
               />
             ) : (
