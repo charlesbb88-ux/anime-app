@@ -7,6 +7,7 @@ import {
   MC_BODY_OPTIONS,
   MC_HAIR_OPTIONS,
   MC_LOCKED_HAIR_OPTIONS,
+  MC_LOCKED_TORSO_OPTIONS,
 } from "@/components/mc/paperdoll/mcPaperDollCatalog";
 
 export default function EditMcPage() {
@@ -19,6 +20,7 @@ export default function EditMcPage() {
     canSave,
     setBody,
     setHair,
+    setTorso,
     reset,
     save,
   } = useMcPaperDollEditor();
@@ -29,12 +31,24 @@ export default function EditMcPage() {
       .map((item) => item.item_id)
   );
 
+  const unlockedTorsoIds = new Set(
+    unlockedItems
+      .filter((item) => item.slot === "torso")
+      .map((item) => item.item_id)
+  );
+
   const availableHairOptions = [
     ...MC_HAIR_OPTIONS,
     ...MC_LOCKED_HAIR_OPTIONS.filter((option) =>
       unlockedHairIds.has(option.id)
     ),
   ];
+
+  const availableTorsoOptions = MC_LOCKED_TORSO_OPTIONS.filter((option) =>
+    unlockedTorsoIds.has(option.id)
+  );
+
+  const showTorsoSelector = availableTorsoOptions.length > 0;
 
   return (
     <div className="min-h-screen px-4 py-8 text-black">
@@ -72,6 +86,17 @@ export default function EditMcPage() {
                 allowNone
                 noneLabel="Bald"
               />
+
+              {showTorsoSelector ? (
+                <McPaperDollOptionSelector
+                  title="Shirt"
+                  options={availableTorsoOptions}
+                  selectedId={draftLoadout.torso}
+                  onSelect={setTorso}
+                  allowNone
+                  noneLabel="No Shirt"
+                />
+              ) : null}
 
               <div className="flex flex-wrap gap-3">
                 <button

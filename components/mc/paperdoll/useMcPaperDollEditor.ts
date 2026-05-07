@@ -85,6 +85,13 @@ function setBody(bodyId: string) {
     }));
   }
 
+  function setTorso(torsoId: string | null) {
+  setDraftLoadout((prev) => ({
+    ...prev,
+    torso: torsoId,
+  }));
+}
+
   function reset() {
     if (!savedLoadout) return;
     setDraftLoadout(savedLoadout);
@@ -115,6 +122,7 @@ function setBody(bodyId: string) {
   canSave,
   setBody,
   setHair,
+  setTorso,
   reset,
   save,
 };

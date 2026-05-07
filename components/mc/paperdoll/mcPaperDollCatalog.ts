@@ -26,6 +26,10 @@ export const MC_LOCKED_HAIR_OPTIONS: McPaperDollOption[] = [
   { id: "blonde_curtain_undercut_01", label: "Blonde Curtain Undercut" },
 ];
 
+export const MC_LOCKED_TORSO_OPTIONS: McPaperDollOption[] = [
+  { id: "rolled_sleeve_suspenders_01", label: "Rolled Sleeve Suspenders" },
+];
+
 export const DEFAULT_MC_PAPERDOLL_LOADOUT: McPaperDollLoadout = {
   body: "base_male_01",
   hair: null,
@@ -65,7 +69,11 @@ export const MC_PAPERDOLL_CATALOG: McPaperDollCatalog = {
       "/mc/paperdoll/hair/blonde_curtain_undercut_01"
     ),
   },
-  torso: {},
+  torso: {
+    rolled_sleeve_suspenders_01: createSpriteSetFromFolder(
+      "/mc/paperdoll/torso/rolled_sleeve_suspenders_01"
+    ),
+  },
   bottoms: {},
   feet: {},
   hands: {},
